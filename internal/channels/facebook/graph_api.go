@@ -66,7 +66,7 @@ func (g *GraphClient) SubscribeApp(ctx context.Context) error {
 	if err := validateFBID(g.pageID); err != nil {
 		return fmt.Errorf("facebook: subscribe app: %w", err)
 	}
-	path := fmt.Sprintf("/%s/subscribed_apps?subscribed_fields=feed,messages", g.pageID)
+	path := fmt.Sprintf("/%s/subscribed_apps?subscribed_fields=feed,messages,message_echoes,messaging_postbacks", g.pageID)
 	_, err := g.doRequest(ctx, http.MethodPost, path, nil)
 	if err != nil {
 		return fmt.Errorf("facebook: subscribe app failed: %w", err)

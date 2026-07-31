@@ -3,7 +3,10 @@ package facebook
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
+	"os"
 	"time"
 
 	"github.com/nextlevelbuilder/goclaw/internal/store"
@@ -63,15 +66,28 @@ func (ch *Channel) handleMessagingEvent(ctx context.Context, entry WebhookEntry,
 		return
 	}
 
-	// Extract text content.
+	// Extract text content and media.
 	var content string
-	switch {
-	case event.Message != nil && event.Message.Text != "":
+	var media []string
+
+	if event.Message != nil {
 		content = event.Message.Text
-	case event.Postback != nil:
+		for _, att := range event.Message.Attachments {
+			if att.Type == "image" && att.Payload.URL != "" {
+				localPath, err := ch.downloadMedia(ctx, att.Payload.URL)
+				if err != nil {
+					slog.Warn("facebook: failed to download media", "url", att.Payload.URL, "error", err)
+					continue
+				}
+				media = append(media, localPath)
+			}
+		}
+	} else if event.Postback != nil {
 		content = event.Postback.Title
-	default:
-		// Attachment-only message — skip for now.
+	}
+
+	// If no content and no media, skip.
+	if content == "" && len(media) == 0 {
 		return
 	}
 
@@ -88,7 +104,7 @@ func (ch *Channel) handleMessagingEvent(ctx context.Context, entry WebhookEntry,
 		metadata["session_timeout"] = ch.config.MessengerOptions.SessionTimeout
 	}
 
-	ch.HandleMessage(senderID, chatID, content, nil, metadata, "direct")
+	ch.HandleMessage(senderID, chatID, content, media, metadata, "direct")
 }
 
 func messagingEventTime(ts int64) time.Time {
@@ -100,4 +116,40 @@ func messagingEventTime(ts int64) time.Time {
 	default:
 		return time.Now()
 	}
+}
+
+
+func (ch *Channel) downloadMedia(ctx context.Context, url string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("download failed: HTTP status %d", resp.StatusCode)
+	}
+
+	tmpFile, err := os.CreateTemp("", "facebook_media_*.jpg")
+	if err != nil {
+		return "", err
+	}
+	defer tmpFile.Close()
+
+	const maxMediaBytes = 25 << 20
+	written, err := io.Copy(tmpFile, io.LimitReader(resp.Body, maxMediaBytes+1))
+	if err != nil {
+		os.Remove(tmpFile.Name())
+		return "", err
+	}
+	if written > maxMediaBytes {
+		os.Remove(tmpFile.Name())
+		return "", fmt.Errorf("file exceeds maximum size of 25MB")
+	}
+
+	return tmpFile.Name(), nil
 }
