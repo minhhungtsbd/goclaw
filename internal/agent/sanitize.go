@@ -58,6 +58,12 @@ func SanitizeAssistantContent(content string) string {
 	// 7. Strip MEDIA: paths from LLM output (media delivered separately)
 	content = stripMediaPaths(content)
 
+	// 7.5. Strip Omniroute/Antigravity disclaimers and skill suggestions
+	content = stripOmnirouteSentinels(content)
+
+	// 7.6. Strip raw JSON tool calls printed as text
+	content = stripRawJsonToolCalls(content)
+
 	// 8. Strip leading blank lines (preserve indentation)
 	content = stripLeadingBlankLines(content)
 
@@ -509,3 +515,35 @@ func StripMessageDirectives(content string) string {
 	})
 	return strings.TrimSpace(result)
 }
+
+// --- 10. Strip Omniroute/Antigravity Sentinels ---
+
+var omnirouteDisclaimerPattern = regexp.MustCompile(`(?i)This response is AI-generated,\s*for\s*reference\s*only\.?`)
+var omnirouteSkillHintPattern = regexp.MustCompile(`(?i)_?This task involved several steps\.\s*Want me to save the process as a reusable skill\?\s*Reply "save as skill" or "skip"\.?_?`)
+
+func stripOmnirouteSentinels(content string) string {
+	content = omnirouteDisclaimerPattern.ReplaceAllString(content, "")
+	content = omnirouteSkillHintPattern.ReplaceAllString(content, "")
+	return content
+}
+
+// --- 11. Strip Raw JSON Tool Calls ---
+
+var rawJsonToolCallPattern = regexp.MustCompile(`(?m)^\s*\{\s*"name"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*:\s*\{.*$`)
+
+func stripRawJsonToolCalls(content string) string {
+	if !strings.Contains(content, `{"name"`) {
+		return content
+	}
+	lines := strings.Split(content, "\n")
+	var result []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if rawJsonToolCallPattern.MatchString(trimmed) {
+			continue
+		}
+		result = append(result, line)
+	}
+	return strings.Join(result, "\n")
+}
+
