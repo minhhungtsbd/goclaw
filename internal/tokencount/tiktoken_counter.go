@@ -21,18 +21,46 @@ var tokenizerToEncoding = map[TokenizerID]string{
 // Caches encoders per tokenizer ID and token counts per message content hash.
 type tiktokenCounter struct {
 	mu       sync.RWMutex
-	encoders map[TokenizerID]*tiktoken.Tiktoken
 	msgCache map[uint64]int
 	fallback *FallbackCounter
+	loader   *encodingLoader
 }
+
+// encodingLoader owns the process-wide encoder cache. Loading a tiktoken
+// encoding may fetch a BPE file over the network, so callers must never wait
+// for it on the agent request path.
+type encodingLoader struct {
+	mu          sync.RWMutex
+	encoders    map[TokenizerID]*tiktoken.Tiktoken
+	loading     map[TokenizerID]bool
+	unavailable map[TokenizerID]bool
+	load        func(string) (*tiktoken.Tiktoken, error)
+}
+
+func newEncodingLoader(load func(string) (*tiktoken.Tiktoken, error)) *encodingLoader {
+	return &encodingLoader{
+		encoders:    make(map[TokenizerID]*tiktoken.Tiktoken),
+		loading:     make(map[TokenizerID]bool),
+		unavailable: make(map[TokenizerID]bool),
+		load:        load,
+	}
+}
+
+var sharedEncodingLoader = newEncodingLoader(tiktoken.GetEncoding)
 
 // NewTiktokenCounter creates a tiktoken-based counter with fallback.
 func NewTiktokenCounter() *tiktokenCounter {
-	return &tiktokenCounter{
-		encoders: make(map[TokenizerID]*tiktoken.Tiktoken),
+	counter := &tiktokenCounter{
 		msgCache: make(map[uint64]int),
 		fallback: NewFallbackCounter(),
+		loader:   sharedEncodingLoader,
 	}
+	// Warm supported encodings in the background. A cold or unavailable cache
+	// must degrade to the heuristic counter, never delay a customer message.
+	for tokenizerID, encodingName := range tokenizerToEncoding {
+		counter.loader.encoderFor(tokenizerID, encodingName)
+	}
+	return counter
 }
 
 // Count returns BPE token count for text using the model's tokenizer.
@@ -147,35 +175,60 @@ func (c *tiktokenCounter) encoderForModel(model string) *tiktoken.Tiktoken {
 		return nil
 	}
 
-	c.mu.RLock()
-	enc, ok := c.encoders[info.TokenizerID]
-	c.mu.RUnlock()
-	if ok {
-		return enc
-	}
-
 	encodingName, exists := tokenizerToEncoding[info.TokenizerID]
 	if !exists {
 		return nil
 	}
+	return c.loader.encoderFor(info.TokenizerID, encodingName)
+}
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	// Double-check after acquiring write lock
-	if enc, ok := c.encoders[info.TokenizerID]; ok {
-		return enc
+// encoderFor returns a cached encoder when ready. On a cache miss it begins a
+// single background load and returns nil so the current request uses the
+// fallback counter immediately.
+func (l *encodingLoader) encoderFor(tokenizerID TokenizerID, encodingName string) *tiktoken.Tiktoken {
+	l.mu.RLock()
+	if encoder := l.encoders[tokenizerID]; encoder != nil {
+		l.mu.RUnlock()
+		return encoder
 	}
-
-	enc, err := tiktoken.GetEncoding(encodingName)
-	if err != nil {
-		slog.Warn("tiktoken: failed to load encoding, using fallback",
-			"encoding", encodingName, "err", err)
+	loading := l.loading[tokenizerID]
+	unavailable := l.unavailable[tokenizerID]
+	l.mu.RUnlock()
+	if loading || unavailable {
 		return nil
 	}
 
-	c.encoders[info.TokenizerID] = enc
-	return enc
+	l.mu.Lock()
+	if encoder := l.encoders[tokenizerID]; encoder != nil {
+		l.mu.Unlock()
+		return encoder
+	}
+	if l.loading[tokenizerID] || l.unavailable[tokenizerID] {
+		l.mu.Unlock()
+		return nil
+	}
+	l.loading[tokenizerID] = true
+	l.mu.Unlock()
+
+	go l.loadAsync(tokenizerID, encodingName)
+	return nil
+}
+
+func (l *encodingLoader) loadAsync(tokenizerID TokenizerID, encodingName string) {
+	encoder, err := l.load(encodingName)
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.loading, tokenizerID)
+	if err != nil {
+		// Avoid retrying an unreachable BPE endpoint for every incoming message.
+		// A process restart intentionally gives the cache another opportunity.
+		l.unavailable[tokenizerID] = true
+		slog.Warn("tiktoken: encoding unavailable, using fallback until restart",
+			"encoding", encodingName, "err", err)
+		return
+	}
+	l.encoders[tokenizerID] = encoder
 }
 
 // resolveModelInfo finds the best matching ModelInfo from DefaultRegistry.
