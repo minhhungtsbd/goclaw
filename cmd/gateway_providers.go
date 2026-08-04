@@ -304,6 +304,10 @@ func registerProvidersFromDB(registry *providers.Registry, provStore store.Provi
 			registerClaudeCLIFromDB(registry, p, gatewayAddr, gatewayToken, mcpStore, cfg)
 			continue
 		}
+		if p.ProviderType == store.ProviderAntigravityCLI {
+			registerAntigravityCLIFromDB(registry, p)
+			continue
+		}
 		// ACP provider — no API key needed (agents manage their own auth).
 		if p.ProviderType == store.ProviderACP {
 			registerACPFromDB(registry, p, configuredShellDenyGroups(cfg))
@@ -529,6 +533,33 @@ func registerClaudeCLIFromDB(registry *providers.Registry, p store.LLMProviderDa
 	}
 	registry.RegisterForTenant(p.TenantID, providers.NewClaudeCLIProvider(cliPath, cliOpts...))
 	slog.Info("registered provider from DB", "name", p.Name)
+	return true
+}
+
+func registerAntigravityCLIFromDB(registry *providers.Registry, p store.LLMProviderData) bool {
+	cliPath := p.APIBase
+	if cliPath == "" {
+		cliPath = "agy"
+	}
+	if cliPath != "agy" && !filepath.IsAbs(cliPath) {
+		slog.Warn("security.antigravity_cli: invalid path, skipping", "path", cliPath, "provider", p.Name)
+		return false
+	}
+	if _, err := exec.LookPath(cliPath); err != nil {
+		slog.Warn("antigravity-cli: binary not found, skipping", "path", cliPath, "provider", p.Name, "error", err)
+		return false
+	}
+	opts := []providers.AntigravityCLIOption{providers.WithAntigravityCLIName(p.Name)}
+	if settings := store.ParseAntigravityCLISettings(p.Settings); settings != nil {
+		if settings.Model != "" {
+			opts = append(opts, providers.WithAntigravityCLIModel(settings.Model))
+		}
+		if settings.WorkDir != "" {
+			opts = append(opts, providers.WithAntigravityCLIWorkDir(settings.WorkDir))
+		}
+	}
+	registry.RegisterForTenant(p.TenantID, providers.NewAntigravityCLIProvider(cliPath, opts...))
+	slog.Info("registered Antigravity CLI provider from DB", "name", p.Name)
 	return true
 }
 

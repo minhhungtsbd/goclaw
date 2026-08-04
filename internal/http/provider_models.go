@@ -55,6 +55,10 @@ func (h *ProvidersHandler) handleListProviderModels(w http.ResponseWriter, r *ht
 		respond(claudeCLIModels())
 		return
 	}
+	if p.ProviderType == store.ProviderAntigravityCLI {
+		respond([]ModelInfo{{ID: "default", Name: "AGY default model"}})
+		return
+	}
 
 	if p.ProviderType == store.ProviderChatGPTOAuth {
 		respond(chatGPTOAuthModels())

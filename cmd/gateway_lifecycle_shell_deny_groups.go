@@ -83,6 +83,8 @@ func reloadShellDenyProviderPolicies(providerReg *providers.Registry, provStore 
 		switch p.ProviderType {
 		case store.ProviderClaudeCLI:
 			registerClaudeCLIFromDB(providerReg, p, gatewayAddr, snapshot.Gateway.Token, mcpStore, snapshot)
+		case store.ProviderAntigravityCLI:
+			registerAntigravityCLIFromDB(providerReg, p)
 		case store.ProviderACP:
 			registerACPFromDB(providerReg, p, snapshot.ShellDenyGroupsSnapshot())
 		}

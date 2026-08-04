@@ -25,6 +25,7 @@ const (
 	ProviderBailian         = "bailian"
 	ProviderChatGPTOAuth    = "chatgpt_oauth"
 	ProviderClaudeCLI       = "claude_cli"
+	ProviderAntigravityCLI  = "antigravity_cli" // Antigravity CLI (agy) with its own OAuth session
 	ProviderYesScale        = "yescale"
 	ProviderZai             = "zai"
 	ProviderZaiCoding       = "zai_coding"
@@ -85,6 +86,7 @@ var ValidProviderTypes = map[string]bool{
 	ProviderBailian:         true,
 	ProviderChatGPTOAuth:    true,
 	ProviderClaudeCLI:       true,
+	ProviderAntigravityCLI:  true,
 	ProviderYesScale:        true,
 	ProviderZai:             true,
 	ProviderZaiCoding:       true,
@@ -159,6 +161,24 @@ type OllamaSettings struct {
 	// When nil, the gateway queries the Ollama API (/api/show) for the model's native
 	// context length, falling back to 131072 if the API is unreachable.
 	NumCtx *int `json:"num_ctx,omitempty" db:"-"`
+}
+
+// AntigravityCLISettings contains non-secret AGY execution defaults. OAuth is
+// owned by the locally authenticated CLI, not persisted in GoClaw.
+type AntigravityCLISettings struct {
+	Model   string `json:"model,omitempty" db:"-"`
+	WorkDir string `json:"work_dir,omitempty" db:"-"`
+}
+
+func ParseAntigravityCLISettings(settings json.RawMessage) *AntigravityCLISettings {
+	if len(settings) == 0 {
+		return nil
+	}
+	var parsed AntigravityCLISettings
+	if json.Unmarshal(settings, &parsed) != nil || (parsed.Model == "" && parsed.WorkDir == "") {
+		return nil
+	}
+	return &parsed
 }
 
 // ParseOllamaSettings extracts Ollama-specific config from a provider's settings JSONB.
@@ -266,6 +286,7 @@ var NoEmbeddingTypes = map[string]bool{
 	ProviderAnthropicNative: true, // uses x-api-key auth, not Bearer; no embedding models
 	ProviderACP:             true,
 	ProviderClaudeCLI:       true,
+	ProviderAntigravityCLI:  true,
 	ProviderChatGPTOAuth:    true,
 	ProviderVertex:          true, // Vertex embeddings live on a different native endpoint, not on /endpoints/openapi
 }

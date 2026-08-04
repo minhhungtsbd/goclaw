@@ -114,6 +114,7 @@
     "cohere": "Cohere",
     "perplexity": "Perplexity",
     "chatgpt_oauth": "ChatGPT Subscription (OAuth)",
+    "antigravity_cli": "Antigravity CLI (Local)",
     "yescale": "YesScale",
     "acp": "ACP"
   },
@@ -190,6 +191,12 @@
     "notAuthenticated": "Not authenticated",
     "runOnServer": "Run on the server terminal:",
     "recheckButton": "Re-check"
+  },
+  "agy": {
+    "description": "Antigravity CLI uses your local",
+    "descriptionSuffix": "OAuth session. No API key needed.",
+    "switchAccountInstructions": "Run on the server terminal to sign in again:",
+    "runOnServer": "Run on the server terminal to sign in with Google:"
   },
   "detail": {
     "title": "Provider Details",

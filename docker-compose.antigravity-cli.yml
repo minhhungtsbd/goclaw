@@ -1,0 +1,17 @@
+# Optional overlay: run the host-installed Antigravity CLI inside GoClaw.
+# The entrypoint copies the binary and OAuth token to the goclaw data volume,
+# where they remain available to the unprivileged gateway process.
+#
+# Usage:
+# docker compose -f docker-compose.yml -f docker-compose.postgres.yml -f docker-compose.browser.yml -f docker-compose.antigravity-cli.yml up -d --build
+
+services:
+  goclaw:
+    build:
+      args:
+        ENABLE_ANTIGRAVITY_CLI: "true"
+    environment:
+      AGY_TOKEN_FILE: /app/.gemini/antigravity-cli/antigravity-oauth-token
+    volumes:
+      - ${AGY_BINARY_PATH:-/root/.local/bin/agy}:/app/.agy-host/agy:ro
+      - ${AGY_TOKEN_DIR:-/root/.gemini/antigravity-cli}:/app/.agy-auth-host:ro

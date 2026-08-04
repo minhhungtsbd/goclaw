@@ -119,6 +119,7 @@
     "cohere": "Cohere",
     "perplexity": "Perplexity",
     "chatgpt_oauth": "ChatGPT Subscription (OAuth)",
+    "antigravity_cli": "Antigravity CLI (Cục bộ)",
     "yescale": "YesScale",
     "acp": "ACP"
   },
@@ -195,6 +196,12 @@
     "notAuthenticated": "Chưa xác thực",
     "runOnServer": "Chạy trên terminal máy chủ:",
     "recheckButton": "Kiểm tra lại"
+  },
+  "agy": {
+    "description": "Antigravity CLI sử dụng phiên",
+    "descriptionSuffix": "OAuth cục bộ. Không cần API key.",
+    "switchAccountInstructions": "Chạy trong terminal máy chủ để đăng nhập lại:",
+    "runOnServer": "Chạy trong terminal máy chủ để đăng nhập Google:"
   },
   "detail": {
     "advanced": "Nâng cao",

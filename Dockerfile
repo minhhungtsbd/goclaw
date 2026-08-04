@@ -74,6 +74,7 @@ ARG ENABLE_PYTHON=false
 ARG ENABLE_NODE=false
 ARG ENABLE_FULL_SKILLS=false
 ARG ENABLE_CLAUDE_CLI=false
+ARG ENABLE_ANTIGRAVITY_CLI=false
 
 # Copy pinned Python deps (cleaned up after install).
 # requirements-base.txt: shared deps for ENABLE_PYTHON and ENABLE_FULL_SKILLS.
@@ -108,6 +109,9 @@ RUN set -eux; \
     if [ "$ENABLE_CLAUDE_CLI" = "true" ]; then \
         npm install -g --cache /tmp/npm-cache @anthropic-ai/claude-code@^2.1.91; \
         rm -rf /tmp/npm-cache; \
+    fi; \
+    if [ "$ENABLE_ANTIGRAVITY_CLI" = "true" ]; then \
+        apk add --no-cache gcompat libstdc++; \
     fi; \
     rm -f /tmp/requirements-base.txt /tmp/requirements-skills.txt
 
@@ -146,8 +150,9 @@ RUN chmod +x /app/docker-entrypoint.sh && \
 # Symlink .claude → data volume so Claude CLI credentials persist across container recreates.
 RUN mkdir -p /app/workspace /app/data/.runtime/pip /app/data/.runtime/npm-global/lib \
         /app/data/.runtime/pip-cache /app/data/.runtime/bin /app/data/.claude /app/skills \
-        /app/tsnet-state /app/.goclaw \
+        /app/data/.gemini /app/tsnet-state /app/.goclaw \
     && ln -s /app/data/.claude /app/.claude \
+    && ln -s /app/data/.gemini /app/.gemini \
     && touch /app/data/.runtime/apk-packages \
     && chown -R goclaw:goclaw /app/workspace /app/skills /app/tsnet-state /app/.goclaw \
     && chown goclaw:goclaw /app/bundled-skills /app/data \
@@ -159,6 +164,7 @@ RUN mkdir -p /app/workspace /app/data/.runtime/pip /app/data/.runtime/npm-global
 
 # Default environment
 ENV GOCLAW_CONFIG=/app/config.json \
+    HOME=/app \
     GOCLAW_WORKSPACE=/app/workspace \
     GOCLAW_DATA_DIR=/app/data \
     GOCLAW_SKILLS_DIR=/app/skills \

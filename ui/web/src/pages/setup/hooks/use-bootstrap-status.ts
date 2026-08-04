@@ -30,6 +30,7 @@ export function useBootstrapStatus() {
     const hasProvider = providers.some((provider) => provider.enabled && (
       provider.api_key === "***"
       || provider.provider_type === "claude_cli"
+      || provider.provider_type === "antigravity_cli"
       || provider.provider_type === "ollama"
       || (provider.provider_type === "chatgpt_oauth" && readyOAuthProviders.has(provider.name))
     ));

@@ -105,6 +105,33 @@ if [ -d /app/.claude-host ] && ! command -v claude >/dev/null 2>&1; then
   echo "WARNING: Claude credentials mounted but claude CLI not installed. Rebuild with: --build"
 fi
 
+# Sync an operator-installed Antigravity CLI and its OAuth session into the
+# persistent data volume. The AGY binary is copied rather than bind-mounted so
+# it remains available after the container drops privileges to the goclaw user.
+if [ -f /app/.agy-host/agy ]; then
+  (cp /app/.agy-host/agy "$RUNTIME_DIR/bin/agy" \
+    && chown goclaw:goclaw "$RUNTIME_DIR/bin/agy" \
+    && chmod 0755 "$RUNTIME_DIR/bin/agy" \
+    && echo "Antigravity CLI synced from host.") || echo "WARNING: Antigravity CLI copy failed (non-fatal)"
+fi
+AGY_TOKEN_SOURCE="/app/.agy-auth-host/antigravity-oauth-token"
+AGY_TOKEN_DEST="/app/data/.gemini/antigravity-cli/antigravity-oauth-token"
+# A token refreshed inside the container is newer than the read-only host copy.
+# Only import a host login when it is newer, or the persistent token is absent.
+if [ -f "$AGY_TOKEN_SOURCE" ] && { [ ! -f "$AGY_TOKEN_DEST" ] || [ "$AGY_TOKEN_SOURCE" -nt "$AGY_TOKEN_DEST" ]; }; then
+  (mkdir -p /app/data/.gemini/antigravity-cli \
+    && if command -v su-exec >/dev/null 2>&1 && [ "$(id -u)" = "0" ]; then
+         su-exec goclaw sh -c 'umask 077 && cp /app/.agy-auth-host/antigravity-oauth-token /app/data/.gemini/antigravity-cli/antigravity-oauth-token'
+       else
+         ( umask 077 && cp /app/.agy-auth-host/antigravity-oauth-token /app/data/.gemini/antigravity-cli/antigravity-oauth-token )
+       fi \
+    && echo "Antigravity OAuth session synced from host.") || echo "WARNING: Antigravity OAuth session copy failed (non-fatal)"
+fi
+
+if [ -d /app/.agy-host ] && ! command -v agy >/dev/null 2>&1; then
+  echo "WARNING: Antigravity CLI mounted but agy is unavailable. Rebuild with docker-compose.antigravity-cli.yml."
+fi
+
 # Run command with privilege drop (su-exec in Docker, direct otherwise).
 run_as_goclaw() {
   if command -v su-exec >/dev/null 2>&1 && [ "$(id -u)" = "0" ]; then

@@ -68,7 +68,9 @@ export function ProviderFormDialog({ open, onOpenChange, onSubmit, existingProvi
 
   const hasClaudeCLI = existingProviders.some((p) => p.provider_type === "claude_cli");
   const isOAuth = providerType === "chatgpt_oauth";
-  const isCLI = providerType === "claude_cli";
+  const isClaudeCLI = providerType === "claude_cli";
+  const isAntigravityCLI = providerType === "antigravity_cli";
+  const isCLI = isClaudeCLI || isAntigravityCLI;
   const isACP = providerType === "acp";
 
   // Reset form when dialog opens
@@ -206,7 +208,7 @@ export function ProviderFormDialog({ open, onOpenChange, onSubmit, existingProvi
                 </div>
               </div>
 
-              {isCLI && <CLISection open={open} />}
+              {isCLI && <CLISection open={open} provider={isAntigravityCLI ? "antigravity" : "claude"} />}
 
               {isACP && (
                 <ACPSection

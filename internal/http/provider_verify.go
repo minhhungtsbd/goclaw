@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -100,6 +101,27 @@ func (h *ProvidersHandler) handleVerifyProvider(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	if p.ProviderType == store.ProviderAntigravityCLI {
+		binary := p.APIBase
+		if binary == "" {
+			binary = "agy"
+		}
+		if binary != "agy" && !filepath.IsAbs(binary) {
+			writeJSON(w, http.StatusOK, map[string]any{"valid": false, "error": "invalid binary path"})
+			return
+		}
+		if _, err := exec.LookPath(binary); err != nil {
+			writeJSON(w, http.StatusOK, map[string]any{"valid": false, "error": "binary not found: " + binary})
+			return
+		}
+		if pingMode {
+			writeJSON(w, http.StatusOK, map[string]any{"valid": true})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"valid": true, "note": "AGY binary available; use a chat test to validate the OAuth session"})
+		return
+	}
+
 	if h.providerReg == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"valid": false, "error": "no provider registry available"})
 		return
@@ -191,6 +213,38 @@ func (h *ProvidersHandler) handleClaudeCLIAuthStatus(w http.ResponseWriter, r *h
 		"email":             status.Email,
 		"subscription_type": status.SubscriptionType,
 		"in_docker":         inDocker,
+	})
+}
+
+func (h *ProvidersHandler) handleAntigravityCLIAuthStatus(w http.ResponseWriter, r *http.Request) {
+	tokenPath := strings.TrimSpace(os.Getenv("AGY_TOKEN_FILE"))
+	if tokenPath == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			writeJSON(w, http.StatusOK, map[string]any{"logged_in": false, "error": "cannot resolve AGY home directory", "in_docker": config.InDocker()})
+			return
+		}
+		tokenPath = filepath.Join(home, ".gemini", "antigravity-cli", "antigravity-oauth-token")
+	}
+	data, err := os.ReadFile(tokenPath)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"logged_in": false, "error": "AGY OAuth token file not found", "in_docker": config.InDocker()})
+		return
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"logged_in": false, "error": "AGY OAuth token file is invalid", "in_docker": config.InDocker()})
+		return
+	}
+	token := raw
+	if nested, ok := raw["token"].(map[string]any); ok {
+		token = nested
+	}
+	access, _ := token["access_token"].(string)
+	refresh, _ := token["refresh_token"].(string)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"logged_in": strings.TrimSpace(access) != "" && strings.TrimSpace(refresh) != "",
+		"in_docker": config.InDocker(),
 	})
 }
 
