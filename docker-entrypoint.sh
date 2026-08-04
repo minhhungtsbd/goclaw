@@ -100,6 +100,20 @@ if [ -f /app/.claude-host/.credentials.json ]; then
     && echo "Claude CLI credentials synced from host.") || echo "WARNING: Claude credentials copy failed (non-fatal)"
 fi
 
+# Sync the Antigravity OAuth token from a root-owned read-only bind mount.
+# The gateway runs as goclaw, so the live token must be copied with mode 0600
+# into its data volume rather than read from the host mount directly.
+if [ -f /app/.antigravity-host-token ]; then
+  (mkdir -p /app/data/.gemini/antigravity-cli \
+    && ln -sfn /app/data/.gemini /app/.gemini \
+    && if command -v su-exec >/dev/null 2>&1 && [ "$(id -u)" = "0" ]; then
+         su-exec goclaw sh -c 'umask 077 && cp /app/.antigravity-host-token /app/data/.gemini/antigravity-cli/antigravity-oauth-token'
+       else
+         ( umask 077 && cp /app/.antigravity-host-token /app/data/.gemini/antigravity-cli/antigravity-oauth-token )
+       fi \
+    && echo "Antigravity CLI token synced from host.") || echo "WARNING: Antigravity token copy failed (non-fatal)"
+fi
+
 # Warn if Claude credentials are mounted but CLI binary is missing (forgot --build).
 if [ -d /app/.claude-host ] && ! command -v claude >/dev/null 2>&1; then
   echo "WARNING: Claude credentials mounted but claude CLI not installed. Rebuild with: --build"

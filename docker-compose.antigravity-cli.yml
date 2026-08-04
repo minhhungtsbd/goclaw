@@ -1,0 +1,14 @@
+# Optional overlay: run the host-installed Antigravity CLI inside GoClaw.
+# The host token is mounted read-only and copied into the goclaw data volume at
+# startup. Do not add --dangerously-skip-permissions to any provider command.
+#
+# Usage:
+# docker compose -f docker-compose.yml -f docker-compose.postgres.yml -f docker-compose.antigravity-cli.yml up -d --build
+services:
+  goclaw:
+    build:
+      args:
+        ENABLE_ANTIGRAVITY_CLI: "true"
+    volumes:
+      - /root/.local/bin/agy:/usr/local/bin/agy:ro
+      - /root/.gemini/antigravity-cli/antigravity-oauth-token:/app/.antigravity-host-token:ro

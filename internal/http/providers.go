@@ -229,20 +229,29 @@ func (h *ProvidersHandler) registerInMemory(p *store.LLMProviderData) providerRu
 		return providerRuntimeSkipped
 	}
 	// Claude CLI doesn't need an API key — register immediately
-	if p.ProviderType == store.ProviderClaudeCLI {
+	if p.ProviderType == store.ProviderClaudeCLI || p.ProviderType == store.ProviderAntigravityCLI {
 		cliPath := p.APIBase // reuse APIBase field for CLI path
-		if cliPath == "" {
-			cliPath = "claude"
-		}
 		// Validate: only accept "claude" or absolute path (mirrors startup path in cmd/gateway_providers.go).
 		// Prevents DB-poisoning attacks where a relative path resolves against CWD.
-		if cliPath != "claude" && !filepath.IsAbs(cliPath) {
-			slog.Warn("security.claude_cli: invalid path, using default", "path", cliPath, "provider", p.Name)
-			cliPath = "claude"
+		defaultCLI := "claude"
+		if p.ProviderType == store.ProviderAntigravityCLI {
+			defaultCLI = "agy"
+		}
+		if cliPath == "" {
+			cliPath = defaultCLI
+		}
+		if cliPath != defaultCLI && !filepath.IsAbs(cliPath) {
+			slog.Warn("security.cli: invalid path, using default", "path", cliPath, "provider", p.Name)
+			cliPath = defaultCLI
 		}
 		if _, err := exec.LookPath(cliPath); err != nil {
-			slog.Warn("claude-cli: binary not found, skipping in-memory registration", "path", cliPath, "provider", p.Name, "error", err)
+			slog.Warn("cli: binary not found, skipping in-memory registration", "path", cliPath, "provider", p.Name, "error", err)
 			return providerRuntimeInvalidConfig
+		}
+		if p.ProviderType == store.ProviderAntigravityCLI {
+			h.providerReg.RegisterForTenant(p.TenantID, providers.NewAntigravityCLIProvider(cliPath,
+				providers.WithAntigravityCLIName(p.Name)))
+			return providerRuntimeRegistered
 		}
 		cliOpts := []providers.ClaudeCLIOption{
 			providers.WithClaudeCLIName(p.Name),
@@ -490,7 +499,7 @@ func validateProviderURL(rawURL string, providerType string) error {
 	if rawURL == "" {
 		return nil
 	}
-	if providerType == store.ProviderClaudeCLI {
+	if providerType == store.ProviderClaudeCLI || providerType == store.ProviderAntigravityCLI {
 		return validateClaudeCLIExecutablePath(rawURL)
 	}
 	u, err := url.Parse(rawURL)
