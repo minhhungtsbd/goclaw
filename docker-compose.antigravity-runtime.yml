@@ -1,0 +1,28 @@
+# Ubuntu/glibc sidecar for the locally authenticated Antigravity CLI.
+# GoClaw connects internally at http://antigravity-runtime:8080/v1.
+services:
+  antigravity-runtime:
+    build:
+      context: ./antigravity-runtime
+    environment:
+      AGY_PATH: /app/bin/agy
+      AGY_WORKSPACE: /app/workspace
+    volumes:
+      - ${AGY_BINARY_PATH:-/root/.local/bin/agy}:/app/bin/agy:ro
+      - ${AGY_TOKEN_DIR:-/root/.gemini/antigravity-cli}:/root/.gemini/antigravity-cli:ro
+    expose:
+      - "8080"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+      - /app/workspace:rw,noexec,nosuid,size=256m
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '2.0'
+          pids: 100
+    restart: unless-stopped
