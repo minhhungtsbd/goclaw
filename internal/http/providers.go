@@ -183,7 +183,6 @@ func (h *ProvidersHandler) RegisterRoutes(mux *http.ServeMux) {
 
 	// Claude CLI auth status (global — not per-provider; read-only status)
 	mux.HandleFunc("GET /v1/providers/claude-cli/auth-status", h.readAuth(h.handleClaudeCLIAuthStatus))
-	mux.HandleFunc("GET /v1/providers/antigravity-cli/auth-status", h.readAuth(h.handleAntigravityCLIAuthStatus))
 }
 
 // auth gates provider mutations at Admin.
@@ -255,31 +254,6 @@ func (h *ProvidersHandler) registerInMemory(p *store.LLMProviderData) providerRu
 			cliOpts = append(cliOpts, providers.WithClaudeCLIMCPConfigData(mcpData))
 		}
 		h.providerReg.RegisterForTenant(p.TenantID, providers.NewClaudeCLIProvider(cliPath, cliOpts...))
-		return providerRuntimeRegistered
-	}
-	if p.ProviderType == store.ProviderAntigravityCLI {
-		cliPath := p.APIBase
-		if cliPath == "" {
-			cliPath = "agy"
-		}
-		if cliPath != "agy" && !filepath.IsAbs(cliPath) {
-			slog.Warn("security.antigravity_cli: invalid path", "path", cliPath, "provider", p.Name)
-			return providerRuntimeInvalidConfig
-		}
-		if _, err := exec.LookPath(cliPath); err != nil {
-			slog.Warn("antigravity-cli: binary not found, skipping in-memory registration", "path", cliPath, "provider", p.Name, "error", err)
-			return providerRuntimeInvalidConfig
-		}
-		opts := []providers.AntigravityCLIOption{providers.WithAntigravityCLIName(p.Name)}
-		if settings := store.ParseAntigravityCLISettings(p.Settings); settings != nil {
-			if settings.Model != "" {
-				opts = append(opts, providers.WithAntigravityCLIModel(settings.Model))
-			}
-			if settings.WorkDir != "" {
-				opts = append(opts, providers.WithAntigravityCLIWorkDir(settings.WorkDir))
-			}
-		}
-		h.providerReg.RegisterForTenant(p.TenantID, providers.NewAntigravityCLIProvider(cliPath, opts...))
 		return providerRuntimeRegistered
 	}
 	// Ollama doesn't need an API key — handle before the key guard (same as startup).
@@ -516,8 +490,8 @@ func validateProviderURL(rawURL string, providerType string) error {
 	if rawURL == "" {
 		return nil
 	}
-	if providerType == store.ProviderClaudeCLI || providerType == store.ProviderAntigravityCLI {
-		return validateCLIExecutablePath(rawURL, providerType)
+	if providerType == store.ProviderClaudeCLI {
+		return validateClaudeCLIExecutablePath(rawURL)
 	}
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -593,23 +567,17 @@ func validateProviderURL(rawURL string, providerType string) error {
 	return nil
 }
 
-func validateCLIExecutablePath(path, providerType string) error {
-	cliName := "claude"
-	label := "Claude CLI"
-	if providerType == store.ProviderAntigravityCLI {
-		cliName = "agy"
-		label = "Antigravity CLI"
-	}
+func validateClaudeCLIExecutablePath(path string) error {
 	if strings.Contains(path, "\x00") {
-		return fmt.Errorf("%s executable path cannot contain NUL byte", label)
+		return fmt.Errorf("Claude CLI executable path cannot contain NUL byte")
 	}
 	if _, err := url.ParseRequestURI(path); err == nil && strings.Contains(path, "://") {
-		return fmt.Errorf("%s api_base must be an executable path or %q, got URL %q", label, cliName, path)
+		return fmt.Errorf("Claude CLI api_base must be an executable path or %q, got URL %q", "claude", path)
 	}
-	if path == cliName || filepath.IsAbs(path) {
+	if path == "claude" || filepath.IsAbs(path) {
 		return nil
 	}
-	return fmt.Errorf("%s api_base must be %q or an absolute executable path, got %q", label, cliName, path)
+	return fmt.Errorf("Claude CLI api_base must be %q or an absolute executable path, got %q", "claude", path)
 }
 
 // --- Provider CRUD ---
@@ -655,21 +623,17 @@ func (h *ProvidersHandler) handleCreateProvider(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// One provider per local CLI type is allowed because each type shares one local auth session.
+	// Only one Claude CLI provider is allowed per instance (1 machine = 1 auth session).
 	// Mutex serializes check+create to prevent TOCTOU race.
-	if p.ProviderType == store.ProviderClaudeCLI || p.ProviderType == store.ProviderAntigravityCLI {
+	if p.ProviderType == store.ProviderClaudeCLI {
 		h.cliMu.Lock()
 		defer h.cliMu.Unlock()
 
 		existing, _ := h.store.ListProviders(r.Context())
 		for _, ep := range existing {
-			if ep.ProviderType == p.ProviderType {
-				label := "Claude CLI provider"
-				if p.ProviderType == store.ProviderAntigravityCLI {
-					label = "Antigravity CLI provider"
-				}
+			if ep.ProviderType == store.ProviderClaudeCLI {
 				writeJSON(w, http.StatusConflict, map[string]string{
-					"error": i18n.T(locale, i18n.MsgAlreadyExists, label, "only one is allowed per instance"),
+					"error": i18n.T(locale, i18n.MsgAlreadyExists, "Claude CLI provider", "only one is allowed per instance"),
 				})
 				return
 			}

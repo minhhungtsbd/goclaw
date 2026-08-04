@@ -12,9 +12,7 @@ interface CLIAuthStatus {
   in_docker?: boolean;
 }
 
-type CLIKind = "claude" | "antigravity";
-
-export function CLISection({ open, provider }: { open: boolean; provider: CLIKind }) {
+export function CLISection({ open }: { open: boolean }) {
   const { t } = useTranslation("providers");
   const http = useHttp();
   const [cliAuth, setCliAuth] = useState<CLIAuthStatus | null>(null);
@@ -23,16 +21,11 @@ export function CLISection({ open, provider }: { open: boolean; provider: CLIKin
   const checkAuth = useCallback(() => {
     setLoading(true);
     http
-      .get<CLIAuthStatus>(`/v1/providers/${provider}-cli/auth-status`)
+      .get<CLIAuthStatus>("/v1/providers/claude-cli/auth-status")
       .then(setCliAuth)
       .catch(() => setCliAuth({ logged_in: false, error: "Failed to check auth status" }))
       .finally(() => setLoading(false));
-  }, [http, provider]);
-
-  const isAntigravity = provider === "antigravity";
-  const binary = isAntigravity ? "agy" : "claude";
-  const composeLogin = isAntigravity ? "docker compose exec goclaw agy" : "docker compose exec goclaw claude auth login";
-  const localLogin = isAntigravity ? "agy" : "claude auth login";
+  }, [http]);
 
   useEffect(() => {
     if (open) {
@@ -45,7 +38,7 @@ export function CLISection({ open, provider }: { open: boolean; provider: CLIKin
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">
-        {isAntigravity ? t("agy.description") : t("cli.description")} <code className="rounded bg-muted px-1 py-0.5">{binary}</code> {isAntigravity ? t("agy.descriptionSuffix") : t("cli.descriptionSuffix")}
+        {t("cli.description")} <code className="rounded bg-muted px-1 py-0.5">claude</code> {t("cli.descriptionSuffix")}
       </p>
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -77,9 +70,11 @@ export function CLISection({ open, provider }: { open: boolean; provider: CLIKin
           <details className="text-xs text-muted-foreground">
             <summary className="cursor-pointer hover:text-foreground">{t("cli.switchAccount")}</summary>
             <div className="mt-1.5 space-y-1 rounded-md border bg-muted/50 px-3 py-2">
-              <p>{isAntigravity ? t("agy.switchAccountInstructions") : t("cli.switchAccountInstructions")}</p>
+              <p>{t("cli.switchAccountInstructions")}</p>
               <code className="block rounded bg-muted px-2 py-1 font-mono">
-                {cliAuth?.in_docker ? composeLogin : localLogin}
+                {cliAuth?.in_docker
+                  ? "docker compose exec goclaw claude auth logout && docker compose exec goclaw claude auth login"
+                  : "claude auth logout && claude auth login"}
               </code>
               <p>{t("cli.switchAccountRecheck")} <RefreshCw className="inline h-3 w-3" /> {t("cli.switchAccountRecheckSuffix")}</p>
             </div>
@@ -104,10 +99,10 @@ export function CLISection({ open, provider }: { open: boolean; provider: CLIKin
             </Button>
           </div>
           <p className="mt-1 text-sm text-amber-600 dark:text-amber-400">
-            {isAntigravity ? t("agy.runOnServer") : t("cli.runOnServer")}
+            {t("cli.runOnServer")}
           </p>
           <code className="mt-1 block rounded bg-amber-100 px-2 py-1 text-xs font-mono dark:bg-amber-900 dark:text-amber-300">
-            {cliAuth.in_docker ? composeLogin : localLogin}
+            {cliAuth.in_docker ? "docker compose exec goclaw claude auth login" : "claude auth login"}
           </code>
           {cliAuth.error && (
             <p className="mt-1 text-xs text-amber-500">{cliAuth.error}</p>

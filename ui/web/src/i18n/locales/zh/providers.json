@@ -128,7 +128,6 @@
     "cohere": "Cohere",
     "perplexity": "Perplexity",
     "chatgpt_oauth": "ChatGPT Subscription (OAuth)",
-    "antigravity_cli": "Antigravity CLI（本地）",
     "yescale": "YesScale",
     "acp": "ACP"
   },
@@ -214,12 +213,6 @@
     "notAuthenticated": "未认证",
     "runOnServer": "在服务器终端运行：",
     "recheckButton": "重新检查"
-  },
-  "agy": {
-    "description": "Antigravity CLI 使用本地",
-    "descriptionSuffix": "OAuth 会话，无需 API 密钥。",
-    "switchAccountInstructions": "请在服务器终端重新登录：",
-    "runOnServer": "请在服务器终端使用 Google 登录："
   },
   "detail": {
     "advanced": "高级设置",

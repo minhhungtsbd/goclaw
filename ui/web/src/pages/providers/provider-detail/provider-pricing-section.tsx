@@ -13,7 +13,7 @@ import { useModelPricing } from "../hooks/use-model-pricing";
 const PRICE_FIELDS: Array<keyof UsagePricingFields> = [
   "input", "output", "cache_read", "cache_write", "reasoning", "request", "image", "web_search",
 ];
-const SUBSCRIPTION_TYPES = new Set(["chatgpt_oauth", "claude_cli", "antigravity_cli", "bailian", "acp", "ollama"]);
+const SUBSCRIPTION_TYPES = new Set(["chatgpt_oauth", "claude_cli", "bailian", "acp", "ollama"]);
 
 export function ProviderPricingSection({ provider }: { provider: ProviderData }) {
   const { t } = useTranslation("providers");
