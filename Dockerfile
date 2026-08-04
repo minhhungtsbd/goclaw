@@ -74,7 +74,6 @@ ARG ENABLE_PYTHON=false
 ARG ENABLE_NODE=false
 ARG ENABLE_FULL_SKILLS=false
 ARG ENABLE_CLAUDE_CLI=false
-ARG ENABLE_ANTIGRAVITY_CLI=false
 
 # Copy pinned Python deps (cleaned up after install).
 # requirements-base.txt: shared deps for ENABLE_PYTHON and ENABLE_FULL_SKILLS.
@@ -87,10 +86,6 @@ COPY docker/requirements-base.txt docker/requirements-skills.txt /tmp/
 # Otherwise, skill packages are installed on-demand via the admin UI.
 RUN set -eux; \
     apk add --no-cache ca-certificates wget su-exec tzdata; \
-    if [ "$ENABLE_ANTIGRAVITY_CLI" = "true" ]; then \
-        apk add --no-cache gcompat libstdc++; \
-        mkdir -p /lib64; ln -sf /lib/ld-linux-x86-64.so.2 /lib64/ld-linux-x86-64.so.2; \
-    fi; \
     if [ "$ENABLE_SANDBOX" = "true" ]; then \
         apk add --no-cache docker-cli; \
     fi; \
