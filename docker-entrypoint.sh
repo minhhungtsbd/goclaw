@@ -109,9 +109,13 @@ fi
 # persistent data volume. The AGY binary is copied rather than bind-mounted so
 # it remains available after the container drops privileges to the goclaw user.
 if [ -f /app/.agy-host/agy ]; then
-  (cp /app/.agy-host/agy "$RUNTIME_DIR/bin/agy" \
-    && chown goclaw:goclaw "$RUNTIME_DIR/bin/agy" \
-    && chmod 0755 "$RUNTIME_DIR/bin/agy" \
+  (if command -v su-exec >/dev/null 2>&1 && [ "$(id -u)" = "0" ]; then
+       # The data volume may reject root writes when Docker capabilities are
+       # restricted. Stream the root-readable mount into goclaw-owned storage.
+       cat /app/.agy-host/agy | su-exec goclaw sh -c 'cat > /app/data/.runtime/bin/agy && chmod 0755 /app/data/.runtime/bin/agy'
+     else
+       cp /app/.agy-host/agy "$RUNTIME_DIR/bin/agy" && chmod 0755 "$RUNTIME_DIR/bin/agy"
+     fi \
     && echo "Antigravity CLI synced from host.") || echo "WARNING: Antigravity CLI copy failed (non-fatal)"
 fi
 AGY_TOKEN_SOURCE="/app/.agy-auth-host/antigravity-oauth-token"
@@ -119,11 +123,10 @@ AGY_TOKEN_DEST="/app/data/.gemini/antigravity-cli/antigravity-oauth-token"
 # A token refreshed inside the container is newer than the read-only host copy.
 # Only import a host login when it is newer, or the persistent token is absent.
 if [ -f "$AGY_TOKEN_SOURCE" ] && { [ ! -f "$AGY_TOKEN_DEST" ] || [ "$AGY_TOKEN_SOURCE" -nt "$AGY_TOKEN_DEST" ]; }; then
-  (mkdir -p /app/data/.gemini/antigravity-cli \
-    && if command -v su-exec >/dev/null 2>&1 && [ "$(id -u)" = "0" ]; then
-         su-exec goclaw sh -c 'umask 077 && cp /app/.agy-auth-host/antigravity-oauth-token /app/data/.gemini/antigravity-cli/antigravity-oauth-token'
+  (if command -v su-exec >/dev/null 2>&1 && [ "$(id -u)" = "0" ]; then
+         cat "$AGY_TOKEN_SOURCE" | su-exec goclaw sh -c 'umask 077 && mkdir -p /app/data/.gemini/antigravity-cli && cat > /app/data/.gemini/antigravity-cli/antigravity-oauth-token'
        else
-         ( umask 077 && cp /app/.agy-auth-host/antigravity-oauth-token /app/data/.gemini/antigravity-cli/antigravity-oauth-token )
+         ( umask 077 && mkdir -p /app/data/.gemini/antigravity-cli && cp "$AGY_TOKEN_SOURCE" "$AGY_TOKEN_DEST" )
        fi \
     && echo "Antigravity OAuth session synced from host.") || echo "WARNING: Antigravity OAuth session copy failed (non-fatal)"
 fi
