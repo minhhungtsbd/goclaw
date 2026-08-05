@@ -80,6 +80,7 @@ func TestValidateProviderURL(t *testing.T) {
 		{"ollama ::1", "http://[::1]:11434/v1", "ollama", false},
 		{"ollama host.docker.internal", "http://host.docker.internal:11434/v1", "ollama", false},
 		{"acp 127.0.0.1", "http://127.0.0.1:9090", "acp", false},
+		{"antigravity runtime sidecar", "http://antigravity-runtime:8080/v1", "antigravity_cli", false},
 		{"claude_cli command name", "claude", "claude_cli", false},
 		{"claude_cli absolute path", absClaudePath, "claude_cli", false},
 
@@ -88,6 +89,7 @@ func TestValidateProviderURL(t *testing.T) {
 		{"ollama private IP", "http://10.0.0.5:11434/v1", "ollama", true},
 		{"ollama evil.com", "http://evil.attacker.tld:9999/v1", "ollama", true},
 		{"ollama postgres sidecar", "http://postgres:5432/v1", "ollama", true},
+		{"antigravity private service", "http://postgres:5432/v1", "antigravity_cli", true},
 		{"ollama link-local", "http://169.254.1.1:8080/v1", "ollama", true},
 		{"ollama .internal", "http://redis.internal:6379/v1", "ollama", true},
 		{"ollama gcp metadata", "http://metadata.google.internal/computeMetadata/v1/", "ollama", true},

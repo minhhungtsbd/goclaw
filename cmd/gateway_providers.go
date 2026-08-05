@@ -323,6 +323,14 @@ func registerProvidersFromDB(registry *providers.Registry, provStore store.Provi
 			slog.Info("registered provider from DB", "name", p.Name)
 			continue
 		}
+		if p.ProviderType == store.ProviderAntigravityCLI {
+			base := antigravityAPIBase(p.APIBase)
+			prov := providers.NewOpenAIProvider(p.Name, p.APIKey, base, "default").
+				WithProviderType(p.ProviderType)
+			registry.RegisterForTenant(p.TenantID, prov)
+			slog.Info("registered provider from DB", "name", p.Name, "type", p.ProviderType)
+			continue
+		}
 		// Vertex supports ADC (empty api_key) — handle before the generic key guard.
 		if p.ProviderType == store.ProviderVertex {
 			vsettings := store.ParseVertexProviderSettings(p.Settings)
@@ -456,6 +464,8 @@ func registerProvidersFromDB(registry *providers.Registry, provStore store.Provi
 
 func openAIProviderDefaults(providerType, apiBase string) (string, string) {
 	switch providerType {
+	case store.ProviderAntigravityCLI:
+		return antigravityAPIBase(apiBase), "default"
 	case store.ProviderMiniMax:
 		if apiBase == "" {
 			apiBase = store.MiniMaxDefaultAPIBase
@@ -464,6 +474,13 @@ func openAIProviderDefaults(providerType, apiBase string) (string, string) {
 	default:
 		return apiBase, ""
 	}
+}
+
+func antigravityAPIBase(apiBase string) string {
+	if apiBase == "" {
+		return "http://antigravity-runtime:8080/v1"
+	}
+	return apiBase
 }
 
 // resolveOllamaNumCtx returns the operator-configured num_ctx for an Ollama

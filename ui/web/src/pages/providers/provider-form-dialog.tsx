@@ -70,6 +70,7 @@ export function ProviderFormDialog({ open, onOpenChange, onSubmit, existingProvi
   const isOAuth = providerType === "chatgpt_oauth";
   const isCLI = providerType === "claude_cli";
   const isACP = providerType === "acp";
+  const isAntigravity = providerType === "antigravity_cli";
 
   // Reset form when dialog opens
   useEffect(() => {
@@ -229,6 +230,7 @@ export function ProviderFormDialog({ open, onOpenChange, onSubmit, existingProvi
                   errors={errors}
                   providerType={providerType}
                   control={control}
+                  showApiKey={!isAntigravity}
                 />
               )}
 

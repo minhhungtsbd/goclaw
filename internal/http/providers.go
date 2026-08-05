@@ -270,6 +270,12 @@ func (h *ProvidersHandler) registerInMemory(p *store.LLMProviderData) providerRu
 		h.providerReg.RegisterForTenant(p.TenantID, prov)
 		return providerRuntimeRegistered
 	}
+	if p.ProviderType == store.ProviderAntigravityCLI {
+		prov := providers.NewOpenAIProvider(p.Name, p.APIKey, antigravityAPIBase(p.APIBase), "default").
+			WithProviderType(p.ProviderType)
+		h.providerReg.RegisterForTenant(p.TenantID, prov)
+		return providerRuntimeRegistered
+	}
 	// Vertex supports ADC (empty api_key) — handle before the generic key guard.
 	if p.ProviderType == store.ProviderVertex {
 		vsettings := store.ParseVertexProviderSettings(p.Settings)
@@ -395,6 +401,8 @@ func (h *ProvidersHandler) resolveOllamaNumCtx(p *store.LLMProviderData, apiBase
 
 func openAIProviderDefaults(providerType, apiBase string) (string, string) {
 	switch providerType {
+	case store.ProviderAntigravityCLI:
+		return antigravityAPIBase(apiBase), "default"
 	case store.ProviderMiniMax:
 		if apiBase == "" {
 			apiBase = store.MiniMaxDefaultAPIBase
@@ -403,6 +411,13 @@ func openAIProviderDefaults(providerType, apiBase string) (string, string) {
 	default:
 		return apiBase, ""
 	}
+}
+
+func antigravityAPIBase(apiBase string) string {
+	if apiBase == "" {
+		return "http://antigravity-runtime:8080/v1"
+	}
+	return apiBase
 }
 
 // normalizeOllamaAPIBase normalizes the api_base stored for Ollama providers.
@@ -425,14 +440,19 @@ func normalizeOllamaAPIBase(p *store.LLMProviderData) {
 // They are restricted to an explicit localhost allowlist
 // rather than skipping SSRF validation entirely.
 var localURLProviderTypes = map[string]bool{
-	store.ProviderOllama: true,
-	store.ProviderACP:    true,
+	store.ProviderOllama:         true,
+	store.ProviderACP:            true,
+	store.ProviderAntigravityCLI: true,
 }
 
 // allowedLocalHosts are the only hosts permitted for local provider types.
 // Explicit allowlist (not blocklist) to prevent new internal addresses from
 // slipping through (e.g. 169.254.169.254 via ollama base URL).
 var allowedLocalHosts = []string{"localhost", "127.0.0.1", "::1", "host.docker.internal"}
+
+var localProviderExtraHosts = map[string][]string{
+	store.ProviderAntigravityCLI: {"antigravity-runtime"},
+}
 
 // dnsResolverFn resolves hostnames to IPs. Replaceable in tests.
 var dnsResolverFn = net.LookupHost
@@ -511,6 +531,11 @@ func validateProviderURL(rawURL string, providerType string) error {
 	// or cloud metadata endpoints.
 	if localURLProviderTypes[providerType] {
 		for _, a := range allowedLocalHosts {
+			if strings.EqualFold(host, a) {
+				return nil
+			}
+		}
+		for _, a := range localProviderExtraHosts[providerType] {
 			if strings.EqualFold(host, a) {
 				return nil
 			}

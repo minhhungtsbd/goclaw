@@ -45,8 +45,10 @@ export function StepProvider({ onComplete, existingProvider }: StepProviderProps
 
   const isOAuth = providerType === "chatgpt_oauth";
   const isCLI = providerType === "claude_cli";
+  const isAntigravity = providerType === "antigravity_cli";
   // Local Ollama uses no API key — the server accepts any non-empty Bearer value internally
   const isOllama = providerType === "ollama";
+  const needsApiKey = !isCLI && !isOllama && !isOAuth && !isAntigravity;
 
   const handleTypeChange = (value: string) => {
     setProviderType(value);
@@ -97,7 +99,7 @@ export function StepProvider({ onComplete, existingProvider }: StepProviderProps
 
   const handleSubmit = async () => {
     if (isOAuth) return;
-    if (!isEditing && !isCLI && !isOllama && !apiKey.trim()) { setError(t("provider.errors.apiKeyRequired")); return; }
+    if (!isEditing && needsApiKey && !apiKey.trim()) { setError(t("provider.errors.apiKeyRequired")); return; }
     setLoading(true);
     setError("");
     try {
@@ -116,7 +118,7 @@ export function StepProvider({ onComplete, existingProvider }: StepProviderProps
           name: name.trim(),
           provider_type: providerType,
           api_base: apiBase.trim() || undefined,
-          api_key: isCLI || isOllama || isOAuth ? undefined : apiKey.trim(),
+          api_key: needsApiKey ? apiKey.trim() : undefined,
           enabled: true,
         }) as ProviderData;
         onComplete(provider);
@@ -197,18 +199,20 @@ export function StepProvider({ onComplete, existingProvider }: StepProviderProps
             <CLISection open={true} />
           ) : (
             <>
-              <div className="space-y-2">
-                <Label className="inline-flex items-center gap-1.5">
-                  {t("provider.apiKey")}
-                  <InfoTip text={t("provider.apiKeyHint")} />
-                </Label>
-                <Input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="sk-..."
-                />
-              </div>
+              {needsApiKey && (
+                <div className="space-y-2">
+                  <Label className="inline-flex items-center gap-1.5">
+                    {t("provider.apiKey")}
+                    <InfoTip text={t("provider.apiKeyHint")} />
+                  </Label>
+                  <Input
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="sk-..."
+                  />
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label className="inline-flex items-center gap-1.5">
@@ -228,7 +232,7 @@ export function StepProvider({ onComplete, existingProvider }: StepProviderProps
 
           {!isOAuth && (
             <div className="flex justify-end">
-              <Button onClick={handleSubmit} disabled={loading || (!isEditing && !isCLI && !isOllama && !apiKey.trim())}>
+              <Button onClick={handleSubmit} disabled={loading || (!isEditing && needsApiKey && !apiKey.trim())}>
                 {loading
                   ? isEditing ? t("provider.updating", "Updating...") : t("provider.creating")
                   : isEditing ? t("provider.update", "Update") : t("provider.create")}
