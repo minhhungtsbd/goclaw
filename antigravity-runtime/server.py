@@ -94,10 +94,9 @@ class Handler(BaseHTTPRequestHandler):
 
 def run_agy(request, workspace):
     prompt = prompt_from_messages(request.get("messages", []), workspace)
-    command = [os.environ["AGY_PATH"], "--print", "--output-format", "json", "--print-timeout", "5m"]
+    command = [os.environ["AGY_PATH"], "-p", prompt, "--output-format", "json", "--print-timeout", "5m"]
     if request.get("model") and request["model"] != "default":
         command += ["--model", request["model"]]
-    command.append(prompt)
     try:
         result = subprocess.run(command, cwd=workspace, capture_output=True, text=True, timeout=310, check=True)
     except subprocess.CalledProcessError as error:
