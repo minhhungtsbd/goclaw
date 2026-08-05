@@ -9,7 +9,7 @@ services:
       AGY_WORKSPACE: /app/workspace
     volumes:
       - ${AGY_BINARY_PATH:-/root/.local/bin/agy}:/app/bin/agy:ro
-      - ${AGY_TOKEN_DIR:-/root/.gemini/antigravity-cli}:/root/.gemini/antigravity-cli:ro
+      - ${AGY_HOME_DIR:-/root/.gemini}:/root/.gemini:rw
     expose:
       - "8080"
     security_opt:

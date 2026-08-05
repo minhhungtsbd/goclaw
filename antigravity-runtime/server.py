@@ -1,6 +1,7 @@
 import base64
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import time
@@ -38,6 +39,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/health":
             self.send_json(200, {"status": "ok"})
+        elif self.path == "/v1/models":
+            self.send_json(200, {"object": "list", "data": [{"id": "default", "object": "model", "created": 0, "owned_by": "antigravity-cli"}]})
         else:
             self.send_json(404, {"error": {"message": "not found"}})
 
@@ -49,17 +52,16 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
             request = json.loads(self.rfile.read(length))
             workspace = tempfile.mkdtemp(prefix="request-", dir=os.environ["AGY_WORKSPACE"])
-            prompt = prompt_from_messages(request.get("messages", []), workspace)
-            command = [os.environ["AGY_PATH"], "--print", "--output-format", "json", "--print-timeout", "5m"]
-            if request.get("model") and request["model"] != "default":
-                command += ["--model", request["model"]]
-            command.append(prompt)
-            result = subprocess.run(command, cwd=workspace, capture_output=True, text=True, timeout=310, check=True)
-            output = json.loads(result.stdout)
-            if output.get("status") != "SUCCESS" or not output.get("response"):
-                raise RuntimeError("AGY returned empty content")
+            try:
+                output = run_agy(request, workspace)
+            finally:
+                shutil.rmtree(workspace, ignore_errors=True)
             usage = output.get("usage", {})
-            self.send_json(200, {"id": f"agy-{uuid.uuid4().hex}", "object": "chat.completion", "created": int(time.time()), "model": request.get("model", "default"), "choices": [{"index": 0, "message": {"role": "assistant", "content": output["response"]}, "finish_reason": "stop"}], "usage": {"prompt_tokens": usage.get("input_tokens", 0), "completion_tokens": usage.get("output_tokens", 0), "total_tokens": usage.get("total_tokens", 0)}})
+            response = {"id": f"agy-{uuid.uuid4().hex}", "object": "chat.completion", "created": int(time.time()), "model": request.get("model", "default"), "choices": [{"index": 0, "message": {"role": "assistant", "content": output["response"]}, "finish_reason": "stop"}], "usage": {"prompt_tokens": usage.get("input_tokens", 0), "completion_tokens": usage.get("output_tokens", 0), "total_tokens": usage.get("total_tokens", 0)}}
+            if request.get("stream"):
+                self.send_sse(response)
+            else:
+                self.send_json(200, response)
         except Exception as error:
             self.send_json(502, {"error": {"message": str(error), "type": "antigravity_runtime_error"}})
 
@@ -70,6 +72,41 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def send_sse(self, response):
+        text = response["choices"][0]["message"]["content"]
+        created = response["created"]
+        model = response["model"]
+        stream_id = response["id"]
+        chunks = [
+            {"id": stream_id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": [{"index": 0, "delta": {"role": "assistant", "content": text}, "finish_reason": None}]},
+            {"id": stream_id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "usage": response.get("usage", {})},
+        ]
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+        for chunk in chunks:
+            self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
+        self.wfile.write(b"data: [DONE]\n\n")
+
+
+def run_agy(request, workspace):
+    prompt = prompt_from_messages(request.get("messages", []), workspace)
+    command = [os.environ["AGY_PATH"], "--print", "--output-format", "json", "--print-timeout", "5m"]
+    if request.get("model") and request["model"] != "default":
+        command += ["--model", request["model"]]
+    command.append(prompt)
+    try:
+        result = subprocess.run(command, cwd=workspace, capture_output=True, text=True, timeout=310, check=True)
+    except subprocess.CalledProcessError as error:
+        detail = (error.stderr or error.stdout or "").strip()
+        raise RuntimeError(f"AGY exited with status {error.returncode}: {detail}") from error
+    output = json.loads(result.stdout)
+    if output.get("status") != "SUCCESS" or not output.get("response"):
+        raise RuntimeError("AGY returned empty content")
+    return output
 
 
 ThreadingHTTPServer(("0.0.0.0", int(os.environ["PORT"])), Handler).serve_forever()
