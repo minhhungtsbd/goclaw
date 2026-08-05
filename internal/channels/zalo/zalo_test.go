@@ -144,7 +144,13 @@ func TestGetMe_UnmarshalError(t *testing.T) {
 
 // TestGetUpdates_ParsesSingleUpdate verifies getUpdates decodes the single-object API response.
 func TestGetUpdates_ParsesSingleUpdate(t *testing.T) {
+	var gotBody struct {
+		Timeout string `json:"timeout"`
+	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
 		_, _ = w.Write([]byte(`{"ok":true,"result":{"event_name":"message.text.received","message":{"message_id":"m1","text":"hi","from":{"id":"user1"},"chat":{"id":"user1"}}}}`))
 	}))
 	defer srv.Close()
@@ -162,6 +168,9 @@ func TestGetUpdates_ParsesSingleUpdate(t *testing.T) {
 	}
 	if updates[0].Message == nil || updates[0].Message.Text != "hi" {
 		t.Errorf("Message = %+v", updates[0].Message)
+	}
+	if gotBody.Timeout != "10" {
+		t.Errorf("timeout = %q, want JSON string %q", gotBody.Timeout, "10")
 	}
 }
 

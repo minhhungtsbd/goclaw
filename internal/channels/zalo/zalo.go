@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -499,7 +500,10 @@ func (c *Channel) getMe() (*zaloBotInfo, error) {
 
 func (c *Channel) getUpdates(timeout int) ([]zaloUpdate, error) {
 	params := map[string]any{
-		"timeout": timeout,
+		// Zalo's Bot API expects timeout as a JSON string. Sending a JSON
+		// number can cause its gateway to return an HTML 504 response instead
+		// of the documented JSON API response.
+		"timeout": strconv.Itoa(timeout),
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second+pollTimeoutHeadroom)
