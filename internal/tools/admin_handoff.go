@@ -16,9 +16,10 @@ import (
 // the destination in agent configuration prevents the model from choosing an
 // arbitrary channel or chat ID.
 type AdminHandoffConfig struct {
-	Enabled bool   `json:"enabled"`
-	Channel string `json:"channel"`
-	ChatID  string `json:"chat_id"`
+	Enabled      bool     `json:"enabled"`
+	Channel      string   `json:"channel"`
+	ChatID       string   `json:"chat_id"`
+	AdminUserIDs []string `json:"admin_user_ids"`
 }
 
 // ParseAdminHandoffConfig reads the optional per-agent handoff destination.
@@ -31,6 +32,7 @@ func ParseAdminHandoffConfig(raw json.RawMessage) (AdminHandoffConfig, bool) {
 	}
 	bag.AdminHandoff.Channel = strings.TrimSpace(bag.AdminHandoff.Channel)
 	bag.AdminHandoff.ChatID = strings.TrimSpace(bag.AdminHandoff.ChatID)
+	bag.AdminHandoff.AdminUserIDs = normalizedAdminUserIDs(bag.AdminHandoff.AdminUserIDs)
 	if !bag.AdminHandoff.Enabled || bag.AdminHandoff.Channel == "" || bag.AdminHandoff.ChatID == "" {
 		return AdminHandoffConfig{}, false
 	}
@@ -42,9 +44,10 @@ func ParseAdminHandoffConfig(raw json.RawMessage) (AdminHandoffConfig, bool) {
 type AdminHandoffTool struct {
 	sender        ChannelSender
 	tenantChecker ChannelTenantChecker
+	store         store.AdminHandoffStore
 }
 
-func NewAdminHandoffTool() *AdminHandoffTool { return &AdminHandoffTool{} }
+func NewAdminHandoffTool(handoffStore store.AdminHandoffStore) *AdminHandoffTool { return &AdminHandoffTool{store: handoffStore} }
 
 func (t *AdminHandoffTool) SetChannelSender(sender ChannelSender) { t.sender = sender }
 func (t *AdminHandoffTool) SetChannelTenantChecker(checker ChannelTenantChecker) {
@@ -82,6 +85,9 @@ func (t *AdminHandoffTool) Execute(ctx context.Context, args map[string]any) *Re
 	if t.sender == nil {
 		return ErrorResult("admin handoff is unavailable: channel sender is not configured")
 	}
+	if t.store == nil {
+		return ErrorResult("admin handoff is unavailable: case store is not configured")
+	}
 
 	snap, ok := store.AgentAudioFromCtx(ctx)
 	if !ok {
@@ -118,16 +124,46 @@ func (t *AdminHandoffTool) Execute(ctx context.Context, args map[string]any) *Re
 		return ErrorResult("priority must be normal, high, or urgent")
 	}
 
-	message := formatAdminHandoff(ctx, priority, strings.TrimSpace(argString(args, "service")), summary, stringSlice(args["identifiers"]))
+	handoff := &store.AdminHandoff{ID: uuid.New(), TenantID: store.TenantIDFromContext(ctx), AgentID: snap.AgentID, AdminChannel: cfg.Channel, AdminChatID: cfg.ChatID, SourceChannel: ToolChannelFromCtx(ctx), SourceChatID: ToolChatIDFromCtx(ctx), Summary: summary, Status: "pending", CreatedAt: time.Now().UTC()}
+	if handoff.TenantID == uuid.Nil || handoff.SourceChannel == "" || handoff.SourceChatID == "" {
+		return ErrorResult("admin handoff is unavailable: source route is missing")
+	}
+	if err := t.store.Create(ctx, handoff); err != nil {
+		return ErrorResult(fmt.Sprintf("admin handoff case creation failed: %v", err))
+	}
+	message := formatAdminHandoff(ctx, handoff.ID, priority, strings.TrimSpace(argString(args, "service")), summary, stringSlice(args["identifiers"]))
 	if err := t.sender(ctx, cfg.Channel, cfg.ChatID, message); err != nil {
+		if markErr := t.store.MarkDeliveryFailed(ctx, handoff.ID); markErr != nil {
+			return ErrorResult(fmt.Sprintf("admin handoff delivery failed: %v (also failed to mark case delivery failure: %v)", err, markErr))
+		}
 		return ErrorResult(fmt.Sprintf("admin handoff delivery failed: %v", err))
 	}
-	return SilentResult(`{"status":"sent","destination":"admin_handoff"}`)
+	return SilentResult(fmt.Sprintf(`{"status":"sent","destination":"admin_handoff","case_id":"CMH-%s"}`, strings.ToUpper(handoff.ID.String()[:8])))
 }
 
-func formatAdminHandoff(ctx context.Context, priority, service, summary string, identifiers []string) string {
+func normalizedAdminUserIDs(ids []string) []string {
+	seen := make(map[string]struct{}, len(ids))
+	result := make([]string, 0, len(ids))
+	for _, raw := range ids {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		result = append(result, id)
+	}
+	return result
+}
+
+func formatAdminHandoff(ctx context.Context, id uuid.UUID, priority, service, summary string, identifiers []string) string {
 	var b strings.Builder
 	b.WriteString("[CLOUDMINI ADMIN HANDOFF]\n")
+	b.WriteString("Case: CMH-")
+	b.WriteString(strings.ToUpper(id.String()[:8]))
+	b.WriteString("\n")
 	b.WriteString("Priority: ")
 	b.WriteString(strings.ToUpper(priority))
 	b.WriteString("\n")

@@ -51,12 +51,12 @@ func Factory(name string, creds json.RawMessage, cfg json.RawMessage,
 }
 
 // FactoryWithStores returns a ChannelFactory that includes optional stores via functional options.
-func FactoryWithStores(agentStore store.AgentStore, configPermStore store.ConfigPermissionStore, teamStore store.TeamStore, subagentTaskStore store.SubagentTaskStore, pendingStore store.PendingMessageStore) channels.ChannelFactory {
-	return FactoryWithStoresAndAudio(agentStore, configPermStore, teamStore, subagentTaskStore, pendingStore, nil)
+func FactoryWithStores(agentStore store.AgentStore, configPermStore store.ConfigPermissionStore, teamStore store.TeamStore, subagentTaskStore store.SubagentTaskStore, pendingStore store.PendingMessageStore, adminHandoffStore store.AdminHandoffStore) channels.ChannelFactory {
+	return FactoryWithStoresAndAudio(agentStore, configPermStore, teamStore, subagentTaskStore, pendingStore, adminHandoffStore, nil)
 }
 
 // FactoryWithStoresAndAudio returns a ChannelFactory with all stores and STT support.
-func FactoryWithStoresAndAudio(agentStore store.AgentStore, configPermStore store.ConfigPermissionStore, teamStore store.TeamStore, subagentTaskStore store.SubagentTaskStore, pendingStore store.PendingMessageStore, audioMgr *audio.Manager) channels.ChannelFactory {
+func FactoryWithStoresAndAudio(agentStore store.AgentStore, configPermStore store.ConfigPermissionStore, teamStore store.TeamStore, subagentTaskStore store.SubagentTaskStore, pendingStore store.PendingMessageStore, adminHandoffStore store.AdminHandoffStore, audioMgr *audio.Manager) channels.ChannelFactory {
 	return func(name string, creds json.RawMessage, cfg json.RawMessage,
 		msgBus *bus.MessageBus, pairingSvc store.PairingStore) (channels.Channel, error) {
 		return buildChannel(name, creds, cfg, msgBus, pairingSvc, audioMgr,
@@ -65,6 +65,7 @@ func FactoryWithStoresAndAudio(agentStore store.AgentStore, configPermStore stor
 			WithTeamStore(teamStore),
 			WithSubagentTaskStore(subagentTaskStore),
 			WithPendingMessageStore(pendingStore),
+			WithAdminHandoffStore(adminHandoffStore),
 		)
 	}
 }

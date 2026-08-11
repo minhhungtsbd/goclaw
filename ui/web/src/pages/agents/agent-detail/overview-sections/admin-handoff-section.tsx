@@ -34,7 +34,7 @@ export function AdminHandoffSection({ agent, onUpdate }: Props) {
   useEffect(() => setConfig(readConfig(agent)), [agent.other_config]);
 
   const dirty = JSON.stringify(config) !== JSON.stringify(saved);
-  const valid = !config.enabled || (config.channel.trim() !== "" && config.chat_id.trim() !== "");
+  const valid = !config.enabled || (config.channel.trim() !== "" && config.chat_id.trim() !== "" && config.admin_user_ids.length > 0);
 
   const save = async () => {
     setSaving(true);
@@ -83,7 +83,7 @@ export function AdminHandoffSection({ agent, onUpdate }: Props) {
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor="admin-handoff-admins">{t("detail.adminHandoff.adminUserIds", "Allowed Telegram Admin IDs")}</Label>
             <Input id="admin-handoff-admins" className="text-base md:text-sm" value={config.admin_user_ids.join(", ")} onChange={(event) => setConfig((current) => ({ ...current, admin_user_ids: event.target.value.split(",").map((id) => id.trim()).filter(Boolean) }))} placeholder="1602998514, 123456789" />
-            <p className="text-xs text-muted-foreground">{t("detail.adminHandoff.adminUserIdsHint", "Only these Telegram user IDs can complete or update a handoff.")}</p>
+            <p className="text-xs text-muted-foreground">{t("detail.adminHandoff.adminUserIdsHint", "Required. Only these Telegram user IDs can complete or update a handoff.")}</p>
           </div>
         </div>
       )}

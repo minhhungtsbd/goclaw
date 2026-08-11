@@ -11,13 +11,24 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
+type testAdminHandoffStore struct{}
+
+func (*testAdminHandoffStore) Create(context.Context, *store.AdminHandoff) error { return nil }
+func (*testAdminHandoffStore) Get(context.Context, uuid.UUID) (*store.AdminHandoff, error) { return nil, nil }
+func (*testAdminHandoffStore) ListPending(context.Context, uuid.UUID, string, string, int) ([]store.AdminHandoff, error) { return nil, nil }
+func (*testAdminHandoffStore) MarkCompleted(context.Context, uuid.UUID, string) (*store.AdminHandoff, error) { return nil, nil }
+func (*testAdminHandoffStore) MarkDeliveryFailed(context.Context, uuid.UUID) error { return nil }
+
 func TestParseAdminHandoffConfig(t *testing.T) {
-	cfg, ok := ParseAdminHandoffConfig(json.RawMessage(`{"admin_handoff":{"enabled":true,"channel":" telegram ","chat_id":" -5570031702 "}}`))
+	cfg, ok := ParseAdminHandoffConfig(json.RawMessage(`{"admin_handoff":{"enabled":true,"channel":" telegram ","chat_id":" -5570031702 ","admin_user_ids":["1602998514"," 1602998514 ",""]}}`))
 	if !ok {
 		t.Fatal("ParseAdminHandoffConfig() ok = false")
 	}
 	if cfg.Channel != "telegram" || cfg.ChatID != "-5570031702" {
 		t.Fatalf("config = %+v", cfg)
+	}
+	if len(cfg.AdminUserIDs) != 1 || cfg.AdminUserIDs[0] != "1602998514" {
+		t.Fatalf("admin user IDs = %+v", cfg.AdminUserIDs)
 	}
 	if _, ok := ParseAdminHandoffConfig(json.RawMessage(`{"admin_handoff":{"enabled":true,"channel":"telegram"}}`)); ok {
 		t.Fatal("incomplete config must be rejected")
@@ -25,7 +36,7 @@ func TestParseAdminHandoffConfig(t *testing.T) {
 }
 
 func TestAdminHandoffToolSendsOnlyConfiguredDestination(t *testing.T) {
-	tool := NewAdminHandoffTool()
+	tool := NewAdminHandoffTool(&testAdminHandoffStore{})
 	var channel, chatID, content string
 	tool.SetChannelSender(func(_ context.Context, gotChannel, gotChatID, gotContent string) error {
 		channel, chatID, content = gotChannel, gotChatID, gotContent
@@ -54,7 +65,7 @@ func TestAdminHandoffToolSendsOnlyConfiguredDestination(t *testing.T) {
 	if channel != "telegram" || chatID != "-5570031702" {
 		t.Fatalf("sent to %s/%s, want configured destination", channel, chatID)
 	}
-	if !strings.Contains(content, "#449329") || !strings.Contains(content, "facebook / customer-1") {
+	if !strings.Contains(content, "#449329") || !strings.Contains(content, "facebook / customer-1") || !strings.Contains(content, "Case: CMH-") {
 		t.Fatalf("handoff content missing expected context: %s", content)
 	}
 }

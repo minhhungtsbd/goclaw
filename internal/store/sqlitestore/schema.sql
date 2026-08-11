@@ -2367,3 +2367,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS mcp_oauth_tokens_global_uq
 CREATE UNIQUE INDEX IF NOT EXISTS mcp_oauth_tokens_user_uq
     ON mcp_oauth_tokens (server_id, tenant_id, user_id) WHERE user_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_mcp_oauth_tokens_server_tenant ON mcp_oauth_tokens (server_id, tenant_id);
+
+CREATE TABLE IF NOT EXISTS admin_handoffs (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    admin_channel TEXT NOT NULL,
+    admin_chat_id TEXT NOT NULL,
+    source_channel TEXT NOT NULL,
+    source_chat_id TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'delivery_failed')),
+    created_at TEXT NOT NULL,
+    completed_at TEXT,
+    completion_message TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_admin_handoffs_pending ON admin_handoffs(tenant_id, admin_channel, admin_chat_id, created_at DESC) WHERE status = 'pending';

@@ -65,7 +65,7 @@ func wireExtraTools(
 	toolsReg.Register(tools.NewMessageTool(workspace, agentCfg.RestrictToWorkspace))
 	// Admin handoffs use a per-agent fixed destination. Unlike message, the
 	// model cannot choose an arbitrary chat or channel.
-	toolsReg.Register(tools.NewAdminHandoffTool())
+	toolsReg.Register(tools.NewAdminHandoffTool(pgStores.AdminHandoffs))
 	// Send file tool (deliver existing workspace file as attachment)
 	toolsReg.Register(tools.NewSendFileTool(workspace, agentCfg.RestrictToWorkspace))
 	// Group members tool (list members in group chats)

@@ -207,6 +207,10 @@ func (c *Channel) handleCallbackQuery(ctx context.Context, query *telego.Callbac
 		c.handleSubagentCallback(ctx, query)
 		return
 	}
+	if strings.HasPrefix(query.Data, "ah:") {
+		c.handleAdminHandoffCallback(ctx, query)
+		return
+	}
 
 	if !strings.HasPrefix(query.Data, "td:") {
 		return

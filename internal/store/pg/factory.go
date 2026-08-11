@@ -43,6 +43,7 @@ func NewPGStores(cfg store.StoreConfig) (*store.Stores, error) {
 		Teams:                  NewPGTeamStore(db),
 		BuiltinTools:           NewPGBuiltinToolStore(db),
 		PendingMessages:        NewPGPendingMessageStore(db),
+		AdminHandoffs:          NewPGAdminHandoffStore(db),
 		ChannelMemory:          NewPGChannelMemoryExtractionStore(db),
 		KnowledgeGraph:         NewPGKnowledgeGraphStore(db),
 		Contacts:               NewPGContactStore(db),

@@ -16,7 +16,7 @@ var schemaSQL string
 
 // SchemaVersion is the current SQLite schema version.
 // Bump this when adding new migration steps below.
-const SchemaVersion = 59
+const SchemaVersion = 60
 
 // migrations maps version → SQL to apply when upgrading FROM that version.
 // schema.sql always represents the LATEST full schema (for fresh DBs).
@@ -95,6 +95,21 @@ BEGIN
 END;`
 
 var migrations = map[int]string{
+	59: `CREATE TABLE IF NOT EXISTS admin_handoffs (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    admin_channel TEXT NOT NULL,
+    admin_chat_id TEXT NOT NULL,
+    source_channel TEXT NOT NULL,
+    source_chat_id TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'delivery_failed')),
+    created_at TEXT NOT NULL,
+    completed_at TEXT,
+    completion_message TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_admin_handoffs_pending ON admin_handoffs(tenant_id, admin_channel, admin_chat_id, created_at DESC) WHERE status = 'pending';`,
 	// Version 58 → 59: scope persisted subagent tasks by immutable root-agent UUID.
 	// Metadata is authoritative; key fallback is allowed only for one matching
 	// agent that predates the task. Unmatched rows remain inaccessible.
