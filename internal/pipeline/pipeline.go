@@ -35,6 +35,7 @@ func NewDefaultPipeline(deps PipelineDeps) *Pipeline {
 
 	setup := []Stage{
 		NewContextStage(d),
+		NewCloudminiServicePreflightStage(d),
 	}
 	iteration := []Stage{
 		NewPruneStage(d, memFlush),
