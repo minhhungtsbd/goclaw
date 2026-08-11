@@ -42,6 +42,19 @@ func TestCloudminiProxyCheckReturnsServiceEmailForInternalMatching(t *testing.T)
 	}
 }
 
+func TestCloudminiProxyCheckMarksNullExpiryAsDeleted(t *testing.T) {
+	got, err := sanitizeCloudminiProxyResponse("service_info", "191.101.251.120", "", []byte(`{"error":false,"msg":"Success","data":[{"id":1,"ip":"191.101.251.120","expire":null,"plan":"PrivateV4","user_email":"private@example.com"}]}`))
+	if err != nil {
+		t.Fatalf("sanitizeCloudminiProxyResponse: %v", err)
+	}
+	if !strings.Contains(got, `"expire":null`) {
+		t.Fatalf("expiry must remain null: %s", got)
+	}
+	if !strings.Contains(got, `"service_status":"deleted"`) {
+		t.Fatalf("deleted service status missing: %s", got)
+	}
+}
+
 func TestCloudminiProxyCheckCallsFixedEndpoint(t *testing.T) {
 	secrets := &cloudminiTestSecretsStore{data: map[string]string{cloudminiProxyTokenKey: "secret"}}
 	tool := NewCloudminiProxyCheckTool(secrets)

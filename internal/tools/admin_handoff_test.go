@@ -93,7 +93,7 @@ func TestAdminHandoffToolSendsOnlyConfiguredDestination(t *testing.T) {
 	if channel != "telegram" || chatID != "-5570031702" {
 		t.Fatalf("sent to %s/%s, want configured destination", channel, chatID)
 	}
-	if !strings.Contains(content, "#449329") || !strings.Contains(content, "facebook / customer-1") || !strings.Contains(content, "Case: CMH-") {
+	if !strings.Contains(content, "#449329") || !strings.Contains(content, "Mã case: CMH-") || !strings.Contains(content, "Ưu tiên: Cao") || strings.Contains(content, "facebook / customer-1") {
 		t.Fatalf("handoff content missing expected context: %s", content)
 	}
 	if handoffStore.created == nil || handoffStore.created.SourceMetadata["fb_mode"] != "messenger" {

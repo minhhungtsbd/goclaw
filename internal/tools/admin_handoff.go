@@ -61,7 +61,7 @@ func (t *AdminHandoffTool) SetChannelTenantChecker(checker ChannelTenantChecker)
 func (t *AdminHandoffTool) Name() string { return "escalate_to_admin" }
 
 func (t *AdminHandoffTool) Description() string {
-	return "Create and deliver an internal support handoff to the administrator group configured for this agent. Use only when Admin or technical action is required. The configured destination cannot be changed by this tool call. Report to the customer that the case was transferred only after this tool succeeds."
+	return "Tạo và gửi yêu cầu xử lý nội bộ đến nhóm Admin đã cấu hình cho agent. Chỉ dùng khi cần Admin hoặc Kỹ thuật thao tác thủ công. Summary và identifiers phải viết ngắn gọn bằng tiếng Việt có dấu; không ghi mật khẩu, token, cookie, OTP hoặc API key. Chỉ xác nhận đã chuyển yêu cầu cho khách sau khi tool thành công."
 }
 
 func (t *AdminHandoffTool) Parameters() map[string]any {
@@ -69,16 +69,16 @@ func (t *AdminHandoffTool) Parameters() map[string]any {
 		"type": "object",
 		"properties": map[string]any{
 			"summary": map[string]any{
-				"type": "string", "description": "Concise description of the required manual action and observed issue.",
+				"type": "string", "description": "Mô tả bằng tiếng Việt có dấu, ngắn gọn (2-4 câu) về việc cần xử lý và hiện trạng. Không viết bằng tiếng Anh.",
 			},
 			"priority": map[string]any{
-				"type": "string", "enum": []string{"normal", "high", "urgent"}, "description": "Use urgent only for a customer-blocking or time-sensitive incident.",
+				"type": "string", "enum": []string{"normal", "high", "urgent"}, "description": "Chỉ dùng urgent khi sự cố chặn hoàn toàn khách hàng hoặc cần xử lý gấp.",
 			},
 			"service": map[string]any{
-				"type": "string", "description": "Service type and package when known, for example VPS-Custom Singapore.",
+				"type": "string", "description": "Loại dịch vụ và gói nếu đã xác định, viết bằng tiếng Việt có dấu.",
 			},
 			"identifiers": map[string]any{
-				"type": "array", "items": map[string]any{"type": "string"}, "description": "Relevant order IDs, IPs, or account email if needed for the handoff. Never include passwords, tokens, cookies, OTPs, or API keys.",
+				"type": "array", "items": map[string]any{"type": "string"}, "description": "Chỉ liệt kê mã đơn, IP hoặc email tài khoản cần thiết. Không ghi mật khẩu, token, cookie, OTP hoặc API key.",
 			},
 		},
 		"required": []string{"summary"},
@@ -152,7 +152,7 @@ func (t *AdminHandoffTool) Execute(ctx context.Context, args map[string]any) *Re
 		return ErrorResult(fmt.Sprintf("admin handoff case creation failed: %v", err))
 	}
 	handoff = stored
-	message := formatAdminHandoff(ctx, handoff.ID, priority, strings.TrimSpace(argString(args, "service")), summary, identifiers)
+	message := formatAdminHandoff(handoff.ID, priority, strings.TrimSpace(argString(args, "service")), summary, identifiers)
 	if err := t.sender(ctx, cfg.Channel, cfg.ChatID, message); err != nil {
 		// A failed update notification must not close the existing pending case.
 		if handoff.ID == newCaseID {
@@ -210,35 +210,39 @@ func adminHandoffSourceMetadata(ctx context.Context) map[string]string {
 	return metadata
 }
 
-func formatAdminHandoff(ctx context.Context, id uuid.UUID, priority, service, summary string, identifiers []string) string {
+func formatAdminHandoff(id uuid.UUID, priority, service, summary string, identifiers []string) string {
 	var b strings.Builder
 	b.WriteString("[CLOUDMINI ADMIN HANDOFF]\n")
-	b.WriteString("Case: CMH-")
+	b.WriteString("Mã case: CMH-")
 	b.WriteString(strings.ToUpper(id.String()[:8]))
 	b.WriteString("\n")
-	b.WriteString("Priority: ")
-	b.WriteString(strings.ToUpper(priority))
+	b.WriteString("Ưu tiên: ")
+	b.WriteString(adminHandoffPriorityLabel(priority))
 	b.WriteString("\n")
 	if service != "" {
-		b.WriteString("Service: ")
+		b.WriteString("Dịch vụ: ")
 		b.WriteString(service)
 		b.WriteString("\n")
 	}
 	if len(identifiers) > 0 {
-		b.WriteString("Identifiers: ")
+		b.WriteString("Thông tin: ")
 		b.WriteString(strings.Join(identifiers, ", "))
 		b.WriteString("\n")
 	}
-	b.WriteString("Source: ")
-	b.WriteString(ToolChannelFromCtx(ctx))
-	b.WriteString(" / ")
-	b.WriteString(ToolChatIDFromCtx(ctx))
-	b.WriteString("\n")
-	b.WriteString("Time (UTC): ")
-	b.WriteString(time.Now().UTC().Format(time.RFC3339))
-	b.WriteString("\n\nRequest:\n")
+	b.WriteString("\nYêu cầu xử lý:\n")
 	b.WriteString(summary)
 	return b.String()
+}
+
+func adminHandoffPriorityLabel(priority string) string {
+	switch priority {
+	case "urgent":
+		return "Khẩn"
+	case "high":
+		return "Cao"
+	default:
+		return "Bình thường"
+	}
 }
 
 func stringSlice(raw any) []string {

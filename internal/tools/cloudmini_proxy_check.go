@@ -170,6 +170,7 @@ func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, body []b
 		}
 		expectedEmail := strings.TrimSpace(accountEmail)
 		for i := range items {
+			items[i].setServiceStatus()
 			if expectedEmail == "" || strings.TrimSpace(items[i].UserEmail) == "" {
 				continue
 			}
@@ -200,8 +201,20 @@ func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, body []b
 type cloudminiServiceInfo struct {
 	ID                  any    `json:"id"`
 	IP                  string `json:"ip"`
-	Expire              string `json:"expire"`
+	Expire              *string `json:"expire"`
 	Plan                string `json:"plan"`
 	UserEmail           string `json:"user_email,omitempty"`
 	AccountEmailMatches *bool  `json:"account_email_matches,omitempty"`
+	ServiceStatus       string `json:"service_status"`
+	StatusNote          string `json:"status_note"`
+}
+
+func (s *cloudminiServiceInfo) setServiceStatus() {
+	if s.Expire == nil {
+		s.ServiceStatus = "deleted"
+		s.StatusNote = "IP đã bị xóa và không còn gắn với dịch vụ nào."
+		return
+	}
+	s.ServiceStatus = "linked"
+	s.StatusNote = "IP vẫn đang gắn với dịch vụ."
 }
