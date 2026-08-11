@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/nextlevelbuilder/goclaw/internal/bootstrap"
@@ -193,6 +194,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *Result
 	if err := checkDeniedPath(resolved, t.workspace, t.deniedPrefixes); err != nil {
 		return ErrorResult(err.Error())
 	}
+	resolved = resolveLatestManagedSkillPath(resolved)
 	if err := ValidateRegularFileForRead(resolved); err != nil {
 		return ErrorResult(fmt.Sprintf("cannot read path: %v", err))
 	}
@@ -220,6 +222,50 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *Result
 	}
 
 	return t.paginateOutput(string(data), args)
+}
+
+// resolveLatestManagedSkillPath prevents an old tool call in conversation
+// history from loading a stale version of a managed skill. Rollback copies
+// remain on disk for operators, but agents always consume the newest version.
+func resolveLatestManagedSkillPath(path string) string {
+	cleaned := filepath.Clean(path)
+	parts := strings.Split(filepath.ToSlash(cleaned), "/")
+	for i, part := range parts {
+		if part != "skills-store" || i+3 >= len(parts) {
+			continue
+		}
+		requestedVersion, err := strconv.Atoi(parts[i+2])
+		if err != nil || requestedVersion < 1 {
+			continue
+		}
+
+		skillRoot := filepath.FromSlash(strings.Join(parts[:i+2], "/"))
+		entries, err := os.ReadDir(skillRoot)
+		if err != nil {
+			return path
+		}
+		latestVersion := requestedVersion
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			version, err := strconv.Atoi(entry.Name())
+			if err == nil && version > latestVersion {
+				latestVersion = version
+			}
+		}
+		if latestVersion == requestedVersion {
+			return path
+		}
+
+		relPath := filepath.FromSlash(strings.Join(parts[i+3:], "/"))
+		candidate := filepath.Join(skillRoot, strconv.Itoa(latestVersion), relPath)
+		if info, err := os.Stat(candidate); err == nil && info.Mode().IsRegular() {
+			return candidate
+		}
+		return path
+	}
+	return path
 }
 
 func (t *ReadFileTool) executeInSandbox(ctx context.Context, path, sandboxKey string, args map[string]any) *Result {

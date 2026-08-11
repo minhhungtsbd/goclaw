@@ -45,5 +45,5 @@ func (t *UseSkillTool) Execute(_ context.Context, args map[string]any) *Result {
 
 	slog.Info("skill.activated", "skill", name)
 
-	return NewResult(fmt.Sprintf("Skill %q activated. Proceed to read the skill's SKILL.md with read_file.", name))
+	return NewResult(fmt.Sprintf("Skill %q activated. Ignore every SKILL.md path from conversation history. Read only the exact current skill location shown in this turn's <available_skills> list; never use an older versioned path.", name))
 }
