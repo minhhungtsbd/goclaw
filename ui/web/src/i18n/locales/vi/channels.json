@@ -141,6 +141,13 @@
       "agent": "Agent",
       "selectAgent": "Chọn agent",
       "enabled": "Bật",
+      "adminReplyCooldown": {
+        "title": "Tạm ngưng phản hồi khi Admin trả lời",
+        "description": "Tạm dừng Agent phản hồi sau khi Admin của Page trả lời trong cùng cuộc trò chuyện Messenger.",
+        "label": "Thời gian chờ (phút)",
+        "hint": "Mặc định: 5 phút. Khoảng cho phép: 1-1440 phút.",
+        "error": "Nhập số nguyên từ 1 đến 1440."
+      },
       "saved": "Đã lưu",
       "saveChanges": "Lưu thay đổi",
       "saving": "Đang lưu..."

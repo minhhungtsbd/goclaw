@@ -142,6 +142,13 @@
       "agent": "Agent",
       "selectAgent": "Select agent",
       "enabled": "Enabled",
+      "adminReplyCooldown": {
+        "title": "Admin Reply Cooldown",
+        "description": "Pause AI replies after a human Page Admin replies in the same Messenger conversation.",
+        "label": "Cooldown (minutes)",
+        "hint": "Default: 5 minutes. Allowed range: 1-1440 minutes.",
+        "error": "Enter a whole number from 1 to 1440."
+      },
       "saved": "Saved",
       "saveChanges": "Save Changes",
       "saving": "Saving..."

@@ -141,6 +141,13 @@
       "agent": "Agent",
       "selectAgent": "选择Agent",
       "enabled": "已启用",
+      "adminReplyCooldown": {
+        "title": "管理员回复冷却时间",
+        "description": "当页面管理员在同一 Messenger 对话中回复后，暂停 AI 回复。",
+        "label": "等待时间（分钟）",
+        "hint": "默认：5 分钟。允许范围：1-1440 分钟。",
+        "error": "请输入 1 到 1440 之间的整数。"
+      },
       "saved": "已保存",
       "saveChanges": "保存更改",
       "saving": "保存中..."

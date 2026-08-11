@@ -30,6 +30,7 @@ interface ChannelGeneralTabProps {
 
 export function ChannelGeneralTab({ instance, agents, onUpdate }: ChannelGeneralTabProps) {
   const { t } = useTranslation("channels");
+  const isFacebook = instance.channel_type === "facebook";
 
   const [displayName, setDisplayName] = useState(instance.display_name ?? "");
   const [agentId, setAgentId] = useState(instance.agent_id);
@@ -46,6 +47,14 @@ export function ChannelGeneralTab({ instance, agents, onUpdate }: ChannelGeneral
       .map((k) => [k, existingConfig[k]]),
   );
   const [policyValues, setPolicyValues] = useState<Record<string, unknown>>(initialPolicyValues);
+  const rawMessengerOptions = existingConfig.messenger_options;
+  const messengerOptions = rawMessengerOptions && typeof rawMessengerOptions === "object" && !Array.isArray(rawMessengerOptions)
+    ? rawMessengerOptions as Record<string, unknown>
+    : {};
+  const [adminReplyCooldown, setAdminReplyCooldown] = useState(
+    String(messengerOptions.admin_reply_cooldown_minutes ?? 5),
+  );
+  const [cooldownError, setCooldownError] = useState("");
 
   const [saving, setSaving] = useState(false);
 
@@ -54,13 +63,25 @@ export function ChannelGeneralTab({ instance, agents, onUpdate }: ChannelGeneral
   }, []);
 
   const handleSave = async () => {
+    const cooldownMinutes = Number(adminReplyCooldown);
+    if (isFacebook && (!Number.isInteger(cooldownMinutes) || cooldownMinutes < 1 || cooldownMinutes > 1440)) {
+      setCooldownError(t("detail.general.adminReplyCooldown.error"));
+      return;
+    }
     setSaving(true);
+    setCooldownError("");
     try {
       // Merge policy values into existing config, preserving other keys (groups, advanced)
       const cleanPolicies = Object.fromEntries(
         Object.entries(policyValues).filter(([, v]) => v !== undefined && v !== "" && v !== null),
       );
       const mergedConfig = { ...existingConfig, ...cleanPolicies };
+      if (isFacebook) {
+        mergedConfig.messenger_options = {
+          ...messengerOptions,
+          admin_reply_cooldown_minutes: cooldownMinutes,
+        };
+      }
       await onUpdate({
         display_name: displayName || null,
         agent_id: agentId,
@@ -139,6 +160,31 @@ export function ChannelGeneralTab({ instance, agents, onUpdate }: ChannelGeneral
             idPrefix="cd-pol"
             contextValues={policyValues}
           />
+        </section>
+      )}
+
+      {isFacebook && (
+        <section className="space-y-3 rounded-lg border p-3 sm:p-4 overflow-hidden">
+          <div>
+            <h3 className="text-sm font-medium">{t("detail.general.adminReplyCooldown.title")}</h3>
+            <p className="mt-1 text-xs text-muted-foreground">{t("detail.general.adminReplyCooldown.description")}</p>
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="cd-admin-reply-cooldown">{t("detail.general.adminReplyCooldown.label")}</Label>
+            <Input
+              id="cd-admin-reply-cooldown"
+              type="number"
+              min={1}
+              max={1440}
+              step={1}
+              value={adminReplyCooldown}
+              onChange={(event) => setAdminReplyCooldown(event.target.value)}
+              className="text-base md:text-sm"
+              aria-invalid={!!cooldownError}
+            />
+            <p className="text-xs text-muted-foreground">{t("detail.general.adminReplyCooldown.hint")}</p>
+            {cooldownError && <p className="text-xs text-destructive">{cooldownError}</p>}
+          </div>
         </section>
       )}
 
