@@ -10,17 +10,17 @@ import (
 // AdminHandoff records the exact customer route for an Admin-owned support case.
 // Its ID is the public reference used by Telegram commands and callbacks.
 type AdminHandoff struct {
-	ID            uuid.UUID
-	TenantID      uuid.UUID
-	AgentID       uuid.UUID
-	AdminChannel  string
-	AdminChatID   string
-	SourceChannel string
-	SourceChatID  string
-	Summary       string
-	Status        string
-	CreatedAt     time.Time
-	CompletedAt   *time.Time
+	ID                uuid.UUID
+	TenantID          uuid.UUID
+	AgentID           uuid.UUID
+	AdminChannel      string
+	AdminChatID       string
+	SourceChannel     string
+	SourceChatID      string
+	Summary           string
+	Status            string
+	CreatedAt         time.Time
+	CompletedAt       *time.Time
 	CompletionMessage string
 }
 

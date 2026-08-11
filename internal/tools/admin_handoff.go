@@ -47,7 +47,9 @@ type AdminHandoffTool struct {
 	store         store.AdminHandoffStore
 }
 
-func NewAdminHandoffTool(handoffStore store.AdminHandoffStore) *AdminHandoffTool { return &AdminHandoffTool{store: handoffStore} }
+func NewAdminHandoffTool(handoffStore store.AdminHandoffStore) *AdminHandoffTool {
+	return &AdminHandoffTool{store: handoffStore}
+}
 
 func (t *AdminHandoffTool) SetChannelSender(sender ChannelSender) { t.sender = sender }
 func (t *AdminHandoffTool) SetChannelTenantChecker(checker ChannelTenantChecker) {
