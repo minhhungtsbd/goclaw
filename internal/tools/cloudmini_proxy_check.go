@@ -36,7 +36,7 @@ func NewCloudminiProxyCheckTool(secrets store.ConfigSecretsStore) *CloudminiProx
 func (t *CloudminiProxyCheckTool) Name() string { return "cloudmini_proxy_check" }
 
 func (t *CloudminiProxyCheckTool) Description() string {
-	return "Check Cloudmini Proxy or VPS service details, expiry, plan, account email, or live GeoIP for one IP. Use only for customer support after the customer provides the IP or it is already present in the conversation."
+	return "Check Cloudmini Proxy or VPS service details, expiry, plan, account email, or live GeoIP for one IP. REQUIRED before replying or escalating when a customer provides an IP for a fault, recovery, renewal, cancellation, replacement, refund, or configuration request: call service_info first to identify the plan and expiry. For a Proxy connection fault, call live_check after service_info unless the service is deleted. Use only for customer support after the customer provides the IP or it is already present in the conversation."
 }
 
 func (t *CloudminiProxyCheckTool) Parameters() map[string]any {

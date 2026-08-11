@@ -270,18 +270,22 @@ func cloneAdminHandoffMetadata(source map[string]string) map[string]string {
 
 func (c *Channel) adminHandoffAuthorized(ctx context.Context, chatID, senderID string, isGroup bool) bool {
 	if !isGroup || c.adminHandoffStore == nil || c.agentStore == nil {
+		slog.Warn("telegram admin handoff denied", "reason", "group or dependency unavailable", "chat_id", chatID, "sender_id", senderID)
 		return false
 	}
 	agentID, err := c.resolveAgentUUID(ctx)
 	if err != nil {
+		slog.Warn("telegram admin handoff denied", "reason", "resolve agent", "chat_id", chatID, "sender_id", senderID, "error", err)
 		return false
 	}
 	agent, err := c.agentStore.GetByID(ctx, agentID)
 	if err != nil {
+		slog.Warn("telegram admin handoff denied", "reason", "load agent", "chat_id", chatID, "sender_id", senderID, "error", err)
 		return false
 	}
 	config, ok := tools.ParseAdminHandoffConfig(agent.OtherConfig)
 	if !ok || config.Channel != c.Name() || config.ChatID != chatID || len(config.AdminUserIDs) == 0 {
+		slog.Warn("telegram admin handoff denied", "reason", "configuration mismatch", "chat_id", chatID, "sender_id", senderID, "configured_channel", config.Channel, "configured_chat_id", config.ChatID, "configured_admin_count", len(config.AdminUserIDs))
 		return false
 	}
 	numericSenderID := strings.SplitN(senderID, "|", 2)[0]
@@ -290,6 +294,7 @@ func (c *Channel) adminHandoffAuthorized(ctx context.Context, chatID, senderID s
 			return true
 		}
 	}
+	slog.Warn("telegram admin handoff denied", "reason", "sender not allow-listed", "chat_id", chatID, "sender_id", numericSenderID, "configured_admin_count", len(config.AdminUserIDs))
 	return false
 }
 
