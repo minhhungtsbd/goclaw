@@ -104,13 +104,9 @@ func (h *SkillsHandler) handleGrantAgent(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Grants follow the current shared managed skill by default. Versioned
-	// directories are rollback history, not per-agent copies. A caller must
-	// explicitly send pinned_version to opt into a temporary pinned rollout.
+	// Skills are shared within a tenant. Versioned directories retain rollback
+	// history only; they do not create per-agent copies at runtime.
 	req.Version = 0
-	if req.PinnedVersion > 0 {
-		req.Version = req.PinnedVersion
-	}
 
 	var grantErr error
 	if req.CanManage == nil {
