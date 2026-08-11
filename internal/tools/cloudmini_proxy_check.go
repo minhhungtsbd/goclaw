@@ -43,10 +43,10 @@ func (t *CloudminiProxyCheckTool) Parameters() map[string]any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"ip": {
+			"ip": map[string]any{
 				"type": "string", "description": "The IPv4 or IPv6 proxy address to check.",
 			},
-			"operation": {
+			"operation": map[string]any{
 				"type": "string", "enum": []string{"service_info", "live_check"},
 				"description": "service_info checks Cloudmini service/plan/expiry. live_check checks live GeoIP details.",
 			},

@@ -22,8 +22,8 @@ type facebookInstanceConfig struct {
 		MaxThreadDepth     int  `json:"max_thread_depth"`
 	} `json:"comment_reply_options"`
 	MessengerOptions struct {
-		SessionTimeout                  string `json:"session_timeout"`
-		AdminReplyCooldownMinutes       int    `json:"admin_reply_cooldown_minutes"`
+		SessionTimeout            string `json:"session_timeout"`
+		AdminReplyCooldownMinutes int    `json:"admin_reply_cooldown_minutes"`
 	} `json:"messenger_options"`
 	PostContextCacheTTL string `json:"post_context_cache_ttl"`
 	// FirstInboxMessage is the DM text sent to commenters (first-inbox feature).

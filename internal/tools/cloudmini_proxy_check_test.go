@@ -11,10 +11,20 @@ import (
 
 type cloudminiTestSecretsStore struct{ data map[string]string }
 
-func (s *cloudminiTestSecretsStore) Get(_ context.Context, key string) (string, error) { return s.data[key], nil }
-func (s *cloudminiTestSecretsStore) Set(_ context.Context, key, value string) error { s.data[key] = value; return nil }
-func (s *cloudminiTestSecretsStore) Delete(_ context.Context, key string) error { delete(s.data, key); return nil }
-func (s *cloudminiTestSecretsStore) GetAll(_ context.Context) (map[string]string, error) { return s.data, nil }
+func (s *cloudminiTestSecretsStore) Get(_ context.Context, key string) (string, error) {
+	return s.data[key], nil
+}
+func (s *cloudminiTestSecretsStore) Set(_ context.Context, key, value string) error {
+	s.data[key] = value
+	return nil
+}
+func (s *cloudminiTestSecretsStore) Delete(_ context.Context, key string) error {
+	delete(s.data, key)
+	return nil
+}
+func (s *cloudminiTestSecretsStore) GetAll(_ context.Context) (map[string]string, error) {
+	return s.data, nil
+}
 
 func TestCloudminiProxyCheckSanitizesServiceEmail(t *testing.T) {
 	got, err := sanitizeCloudminiProxyResponse("service_info", "191.101.251.120", []byte(`{"error":false,"msg":"Success","data":[{"id":1,"ip":"191.101.251.120","expire":"2026-08-12","plan":"PrivateV4","user_email":"private@example.com"}]}`))

@@ -22,12 +22,12 @@ var (
 )
 
 const (
-	webhookPath        = "/v1/channels/facebook/webhook"
-	dedupTTL           = 24 * time.Hour  // matches Facebook's max retry window
-	dedupCleanEvery    = 5 * time.Minute // how often to evict stale dedup entries
+	webhookPath               = "/v1/channels/facebook/webhook"
+	dedupTTL                  = 24 * time.Hour  // matches Facebook's max retry window
+	dedupCleanEvery           = 5 * time.Minute // how often to evict stale dedup entries
 	defaultAdminReplyCooldown = 5 * time.Minute
 	maxAdminReplyCooldown     = 24 * time.Hour
-	botEchoWindow      = 15 * time.Second
+	botEchoWindow             = 15 * time.Second
 )
 
 // Channel implements channels.Channel and channels.WebhookChannel for Facebook Fanpage.
