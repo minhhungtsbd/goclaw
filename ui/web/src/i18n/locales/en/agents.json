@@ -182,6 +182,13 @@
     "modelBudget": "Model & Budget",
     "skills": "Skills",
     "capabilities": "Capabilities",
+    "adminHandoff": {
+      "title": "Admin Handoff",
+      "hint": "Send verified manual-support cases to one fixed internal channel. The agent cannot choose a different destination.",
+      "enabled": "Enable admin handoff",
+      "channel": "Channel name",
+      "chatId": "Group or chat ID"
+    },
     "llmSeesAs": "LLM sees this as",
     "v3": {
       "title": "V3 Features",

@@ -63,6 +63,9 @@ func wireExtraTools(
 
 	// Message tool (send to channels)
 	toolsReg.Register(tools.NewMessageTool(workspace, agentCfg.RestrictToWorkspace))
+	// Admin handoffs use a per-agent fixed destination. Unlike message, the
+	// model cannot choose an arbitrary chat or channel.
+	toolsReg.Register(tools.NewAdminHandoffTool())
 	// Send file tool (deliver existing workspace file as attachment)
 	toolsReg.Register(tools.NewSendFileTool(workspace, agentCfg.RestrictToWorkspace))
 	// Group members tool (list members in group chats)
@@ -73,7 +76,7 @@ func wireExtraTools(
 	// create_forum_topic is kept as a backward-compatible wrapper for topic.create.
 	toolsReg.Register(tools.NewCreateForumTopicTool(nil))
 	toolsReg.Register(tools.NewTelegramManagerTool())
-	slog.Info("session + message + send_file + telegram_manager tools registered")
+	slog.Info("session + message + admin_handoff + send_file + telegram_manager tools registered")
 
 	// Register legacy tool aliases (backward-compat names from policy.go).
 	for alias, canonical := range tools.LegacyToolAliases() {

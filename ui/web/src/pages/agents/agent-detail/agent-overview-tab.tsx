@@ -10,6 +10,7 @@ import { SkillsSection } from "./overview-sections/skills-section";
 import { EvolutionSection } from "./overview-sections/evolution-section";
 import { PromptSettingsSection } from "./overview-sections/prompt-settings-section";
 import { PinnedSkillsSection } from "./overview-sections/pinned-skills-section";
+import { AdminHandoffSection } from "./overview-sections/admin-handoff-section";
 import { OrchestrationSection } from "./overview-sections/orchestration-section";
 import { CapabilitiesSection } from "./overview-sections/capabilities-section";
 import { ChatGPTOAuthRoutingSummarySection } from "./overview-sections/chatgpt-oauth-routing-summary-section";
@@ -180,6 +181,7 @@ export function AgentOverviewTab({ agent, onUpdate, heartbeat, onManageCodexPool
 
       <SkillsSection agentId={agent.id} />
       <PinnedSkillsSection agent={agent} onUpdate={onUpdate} />
+      <AdminHandoffSection agent={agent} onUpdate={onUpdate} />
 
       <OrchestrationSection agentId={agent.id} />
 

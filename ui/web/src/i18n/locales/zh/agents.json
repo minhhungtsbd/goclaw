@@ -224,6 +224,13 @@
       "tooltipQueries": "{{count}} 次查询，得分 {{score}}"
     },
     "capabilities": "能力",
+    "adminHandoff": {
+      "title": "转交管理员",
+      "hint": "将需要人工处理的已确认事项发送到一个固定内部频道。Agent 无法选择其他目标。",
+      "enabled": "启用管理员转交",
+      "channel": "频道名称",
+      "chatId": "群组或聊天 ID"
+    },
     "llmSeesAs": "LLM会看到这个为",
     "prompt": {
       "title": "系统提示模式",

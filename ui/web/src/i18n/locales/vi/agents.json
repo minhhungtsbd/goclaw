@@ -224,6 +224,13 @@
       "tooltipQueries": "{{count}} truy vấn, điểm {{score}}"
     },
     "capabilities": "Khả năng",
+    "adminHandoff": {
+      "title": "Chuyển Admin",
+      "hint": "Gửi case cần xử lý thủ công đến một kênh nội bộ cố định. Agent không thể tự chọn đích gửi khác.",
+      "enabled": "Bật chuyển Admin",
+      "channel": "Tên channel",
+      "chatId": "ID nhóm hoặc chat"
+    },
     "llmSeesAs": "LLM nhìn thấy đây là",
     "prompt": {
       "title": "Chế độ System Prompt",

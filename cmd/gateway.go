@@ -823,7 +823,7 @@ func runGateway() {
 		})
 	}
 
-	// Wire channel sender + tenant checker on message tool (now that channelMgr exists)
+	// Wire channel sender + tenant checker on messaging tools (now that channelMgr exists).
 	if t, ok := toolsReg.Get("message"); ok {
 		if cs, ok := t.(tools.ChannelSenderAware); ok {
 			cs.SetChannelSender(channelMgr.SendToChannel)
@@ -859,6 +859,14 @@ func runGateway() {
 		}
 		if tp, ok := t.(tools.TopicPosterAware); ok {
 			tp.SetTopicPoster(channelMgr.PostToTopic)
+		}
+		if tc, ok := t.(tools.ChannelTenantCheckerAware); ok {
+			tc.SetChannelTenantChecker(channelMgr.ChannelTenantID)
+		}
+	}
+	if t, ok := toolsReg.Get("escalate_to_admin"); ok {
+		if cs, ok := t.(tools.ChannelSenderAware); ok {
+			cs.SetChannelSender(channelMgr.SendToChannel)
 		}
 		if tc, ok := t.(tools.ChannelTenantCheckerAware); ok {
 			tc.SetChannelTenantChecker(channelMgr.ChannelTenantID)
