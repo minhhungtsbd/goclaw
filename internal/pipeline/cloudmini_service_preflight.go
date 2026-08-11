@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/netip"
 	"regexp"
@@ -59,8 +60,55 @@ func (s *CloudminiServicePreflightStage) Execute(ctx context.Context, state *Run
 			state.Messages.AppendPending(message)
 		}
 		state.Tool.TotalToolCalls++
+
+		if requiresCloudminiLiveCheck(state.Input.Message) && !cloudminiServiceDeleted(messages) {
+			liveCheck := providers.ToolCall{
+				ID:   fmt.Sprintf("cloudmini-live-preflight-%d", index+1),
+				Name: cloudminiProxyCheckToolName,
+				Arguments: map[string]any{
+					"ip":        ip,
+					"operation": "live_check",
+				},
+			}
+			state.Messages.AppendPending(providers.Message{Role: "assistant", ToolCalls: []providers.ToolCall{liveCheck}})
+			liveMessages, err := s.deps.ExecuteToolCall(ctx, state, liveCheck)
+			if err != nil {
+				return fmt.Errorf("execute %s: %w", cloudminiProxyCheckToolName, err)
+			}
+			for _, message := range liveMessages {
+				state.Messages.AppendPending(message)
+			}
+			state.Tool.TotalToolCalls++
+		}
 	}
 	return nil
+}
+
+func requiresCloudminiLiveCheck(message string) bool {
+	message = strings.ToLower(message)
+	return containsAny(message, "lỗi", "không kết nối", "check live", "die")
+}
+
+func cloudminiServiceDeleted(messages []providers.Message) bool {
+	for _, message := range messages {
+		if message.Role != "tool" {
+			continue
+		}
+		var response struct {
+			Services []struct {
+				ServiceStatus string `json:"service_status"`
+			} `json:"services"`
+		}
+		if json.Unmarshal([]byte(message.Content), &response) != nil {
+			continue
+		}
+		for _, service := range response.Services {
+			if service.ServiceStatus == "deleted" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func requiresCloudminiServiceLookup(state *RunState) bool {
