@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -24,5 +25,12 @@ func TestHandoffReference(t *testing.T) {
 	id := uuid.MustParse("12345678-abcd-4abc-8abc-123456789012")
 	if got, want := handoffReference(id), "CMH-12345678"; got != want {
 		t.Fatalf("handoffReference() = %q, want %q", got, want)
+	}
+}
+
+func TestAdminHandoffUnauthorizedMessageIncludesSenderID(t *testing.T) {
+	got := adminHandoffUnauthorizedMessage("987654321|username")
+	if !strings.Contains(got, "987654321") {
+		t.Fatalf("unauthorized message = %q, want sender ID", got)
 	}
 }

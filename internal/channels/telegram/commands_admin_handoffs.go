@@ -29,7 +29,7 @@ func (c *Channel) handleAdminHandoffsList(ctx context.Context, chatID int64, cha
 	}
 
 	if !c.adminHandoffAuthorized(ctx, chatIDStr, senderID, isGroup) {
-		send("Bạn không được phép quản lý Admin handoff trong nhóm này.")
+		send(adminHandoffUnauthorizedMessage(senderID))
 		return
 	}
 
@@ -73,7 +73,7 @@ func (c *Channel) handleAdminHandoffDismiss(ctx context.Context, chatID int64, c
 		}
 	}
 	if !c.adminHandoffAuthorized(ctx, chatIDStr, senderID, isGroup) {
-		send("Bạn không được phép quản lý Admin handoff trong nhóm này.")
+		send(adminHandoffUnauthorizedMessage(senderID))
 		return
 	}
 	caseID, _, ok := parseAdminHandoffCommand(text)
@@ -103,7 +103,7 @@ func (c *Channel) handleAdminHandoffDone(ctx context.Context, chatID int64, chat
 		}
 	}
 	if !c.adminHandoffAuthorized(ctx, chatIDStr, senderID, isGroup) {
-		send("Bạn không được phép quản lý Admin handoff trong nhóm này.")
+		send(adminHandoffUnauthorizedMessage(senderID))
 		return
 	}
 	caseID, customerMessage, ok := parseAdminHandoffCommand(text)
@@ -148,7 +148,7 @@ func (c *Channel) handleAdminHandoffNeedInfo(ctx context.Context, chatID int64, 
 		}
 	}
 	if !c.adminHandoffAuthorized(ctx, chatIDStr, senderID, isGroup) {
-		send("Bạn không được phép quản lý Admin handoff trong nhóm này.")
+		send(adminHandoffUnauthorizedMessage(senderID))
 		return
 	}
 	caseID, customerMessage, ok := parseAdminHandoffCommand(text)
@@ -177,7 +177,7 @@ func (c *Channel) handleAdminHandoffCallback(ctx context.Context, query *telego.
 	chatIDStr := fmt.Sprintf("%d", chatID)
 	senderID := fmt.Sprintf("%d", query.From.ID)
 	if !c.adminHandoffAuthorized(ctx, chatIDStr, senderID, true) {
-		c.sendAdminCallbackReply(ctx, chatID, "Bạn không được phép quản lý Admin handoff trong nhóm này.")
+		c.sendAdminCallbackReply(ctx, chatID, adminHandoffUnauthorizedMessage(senderID))
 		return
 	}
 	caseID, err := uuid.Parse(parts[2])
@@ -331,6 +331,14 @@ func parseAdminHandoffCommand(text string) (caseID, customerMessage string, ok b
 		customerMessage = strings.TrimSpace(parts[2])
 	}
 	return caseID, customerMessage, caseID != ""
+}
+
+func adminHandoffUnauthorizedMessage(senderID string) string {
+	numericSenderID := strings.SplitN(senderID, "|", 2)[0]
+	if numericSenderID == "" {
+		return "Bạn không được phép quản lý Admin handoff trong nhóm này."
+	}
+	return fmt.Sprintf("Tài khoản Telegram ID %s chưa nằm trong allow-list Admin của nhóm này.", numericSenderID)
 }
 
 func handoffReference(id uuid.UUID) string {
