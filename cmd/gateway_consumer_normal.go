@@ -490,6 +490,7 @@ func processNormalMessage(
 		ForwardMedia: fwdMedia,
 		Channel:      msg.Channel,
 		ChannelType:  resolveChannelType(deps.ChannelMgr, msg.Channel),
+		OutboundMetadata: outMeta,
 		// Forward Bitrix24 portal domain from channel metadata so the
 		// system prompt can teach the LLM the correct entity URL host.
 		// Empty for non-bitrix24 channels — section is skipped downstream.

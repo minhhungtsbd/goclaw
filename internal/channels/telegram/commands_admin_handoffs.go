@@ -16,7 +16,6 @@ import (
 )
 
 const (
-	adminHandoffDefaultDone = "Da, yeu cau cua anh da duoc xu ly xong a. Anh vui long kiem tra lai giup em."
 	adminHandoffDefaultInfo = "Da, bo phan ky thuat can anh cung cap them thong tin de tiep tuc kiem tra. Anh gui giup em ma don hang hoac anh loi hien tai nhe a."
 )
 
@@ -78,7 +77,7 @@ func (c *Channel) handleAdminHandoffDone(ctx context.Context, chatID int64, chat
 	}
 	caseID, customerMessage, ok := parseAdminHandoffCommand(text)
 	if !ok {
-		send("Cu phap: /handoff_done <CMH-XXXXXXXX> <noi dung gui khach>")
+		send("Cu phap: /handoff_done <CMH-XXXXXXXX>. Co the them noi dung gui khach neu can.")
 		return
 	}
 	handoff, err := c.findPendingAdminHandoff(ctx, chatIDStr, caseID)
@@ -86,14 +85,27 @@ func (c *Channel) handleAdminHandoffDone(ctx context.Context, chatID int64, chat
 		send(err.Error())
 		return
 	}
-	completed, err := c.adminHandoffStore.MarkCompleted(ctx, handoff.ID, customerMessage)
+	completionMessage := customerMessage
+	if completionMessage == "" {
+		completionMessage = "[agent-generated]"
+	}
+	completed, err := c.adminHandoffStore.MarkCompleted(ctx, handoff.ID, completionMessage)
 	if err != nil {
 		slog.Warn("telegram admin handoff completion failed", "error", err, "case", handoff.ID)
 		send("Khong the hoan tat case. Co the case da duoc xu ly truoc do.")
 		return
 	}
-	c.sendAdminHandoffCustomerMessage(completed, customerMessage)
-	send(fmt.Sprintf("%s da hoan tat va da gui thong bao ve %s/%s.", handoffReference(completed.ID), completed.SourceChannel, completed.SourceChatID))
+	if customerMessage != "" {
+		c.sendAdminHandoffCustomerMessage(completed, customerMessage)
+		send(fmt.Sprintf("%s da hoan tat va da gui thong bao ve %s/%s.", handoffReference(completed.ID), completed.SourceChannel, completed.SourceChatID))
+		return
+	}
+	if err := c.queueAdminHandoffCompletion(ctx, completed); err != nil {
+		slog.Error("telegram admin handoff agent completion queue failed", "error", err, "case", completed.ID)
+		send("Case da duoc danh dau hoan tat nhung khong the dua vao hang doi phan hoi cua Linh Nhi. Vui long lien he ky thuat.")
+		return
+	}
+	send(fmt.Sprintf("%s da hoan tat. Linh Nhi dang soan thong bao va gui ve dung cuoc tro chuyen cua khach.", handoffReference(completed.ID)))
 }
 
 func (c *Channel) handleAdminHandoffNeedInfo(ctx context.Context, chatID int64, chatIDStr, senderID, text string, isGroup bool, setThread func(*telego.SendMessageParams)) {
@@ -151,13 +163,17 @@ func (c *Channel) handleAdminHandoffCallback(ctx context.Context, query *telego.
 		c.sendAdminCallbackReply(ctx, chatID, handoffReference(handoff.ID)+" da gui yeu cau bo sung thong tin. Case van dang cho xu ly.")
 		return
 	}
-	completed, err := c.adminHandoffStore.MarkCompleted(ctx, handoff.ID, adminHandoffDefaultDone)
+	completed, err := c.adminHandoffStore.MarkCompleted(ctx, handoff.ID, "[agent-generated]")
 	if err != nil {
 		c.sendAdminCallbackReply(ctx, chatID, "Khong the hoan tat case. Co the case da duoc xu ly truoc do.")
 		return
 	}
-	c.sendAdminHandoffCustomerMessage(completed, adminHandoffDefaultDone)
-	c.sendAdminCallbackReply(ctx, chatID, handoffReference(completed.ID)+" da hoan tat va da gui thong bao cho khach.")
+	if err := c.queueAdminHandoffCompletion(ctx, completed); err != nil {
+		slog.Error("telegram admin handoff callback completion queue failed", "error", err, "case", completed.ID)
+		c.sendAdminCallbackReply(ctx, chatID, "Case da duoc danh dau hoan tat nhung khong the dua vao hang doi phan hoi cua Linh Nhi.")
+		return
+	}
+	c.sendAdminCallbackReply(ctx, chatID, handoffReference(completed.ID)+" da hoan tat. Linh Nhi dang soan thong bao cho khach.")
 }
 
 func (c *Channel) sendAdminCallbackReply(ctx context.Context, chatID int64, text string) {
@@ -171,9 +187,46 @@ func (c *Channel) sendAdminHandoffCustomerMessage(handoff *store.AdminHandoff, c
 		Channel:  handoff.SourceChannel,
 		ChatID:   handoff.SourceChatID,
 		Content:  content,
+		Metadata: cloneAdminHandoffMetadata(handoff.SourceMetadata),
 		TenantID: handoff.TenantID,
 		AgentID:  handoff.AgentID,
 	})
+}
+
+func (c *Channel) queueAdminHandoffCompletion(ctx context.Context, handoff *store.AdminHandoff) error {
+	if c.agentStore == nil {
+		return fmt.Errorf("agent store is unavailable")
+	}
+	agent, err := c.agentStore.GetByID(ctx, handoff.AgentID)
+	if err != nil {
+		return fmt.Errorf("load handoff agent: %w", err)
+	}
+	if agent.AgentKey == "" {
+		return fmt.Errorf("handoff agent has no agent key")
+	}
+	metadata := cloneAdminHandoffMetadata(handoff.SourceMetadata)
+	metadata["admin_handoff_case_id"] = handoffReference(handoff.ID)
+	metadata["admin_handoff_completed"] = "true"
+	c.Bus().PublishInbound(bus.InboundMessage{
+		Channel:  handoff.SourceChannel,
+		ChatID:   handoff.SourceChatID,
+		Content:  fmt.Sprintf("[INTERNAL ADMIN HANDOFF COMPLETED]\nCase: %s\nAdmin has completed the requested manual action. Send a concise, natural Vietnamese update to the customer now. Do not mention this internal event, Telegram, tools, or the case ID. Do not call escalate_to_admin again.\n\nOriginal request:\n%s", handoffReference(handoff.ID), handoff.Summary),
+		SenderID: "system:admin_handoff",
+		UserID:   handoff.SourceChatID,
+		PeerKind: "direct",
+		TenantID: handoff.TenantID,
+		AgentID:  agent.AgentKey,
+		Metadata: metadata,
+	})
+	return nil
+}
+
+func cloneAdminHandoffMetadata(source map[string]string) map[string]string {
+	metadata := make(map[string]string, len(source)+2)
+	for key, value := range source {
+		metadata[key] = value
+	}
+	return metadata
 }
 
 func (c *Channel) adminHandoffAuthorized(ctx context.Context, chatID, senderID string, isGroup bool) bool {
@@ -226,12 +279,14 @@ func (c *Channel) findPendingAdminHandoff(ctx context.Context, chatID, reference
 
 func parseAdminHandoffCommand(text string) (caseID, customerMessage string, ok bool) {
 	parts := strings.SplitN(strings.TrimSpace(text), " ", 3)
-	if len(parts) != 3 {
+	if len(parts) < 2 {
 		return "", "", false
 	}
 	caseID = strings.TrimSpace(parts[1])
-	customerMessage = strings.TrimSpace(parts[2])
-	return caseID, customerMessage, caseID != "" && customerMessage != ""
+	if len(parts) == 3 {
+		customerMessage = strings.TrimSpace(parts[2])
+	}
+	return caseID, customerMessage, caseID != ""
 }
 
 func handoffReference(id uuid.UUID) string {

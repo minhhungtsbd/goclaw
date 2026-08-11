@@ -3,6 +3,7 @@ package pg
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -17,16 +18,20 @@ func NewPGAdminHandoffStore(db *sql.DB) *PGAdminHandoffStore {
 }
 
 const adminHandoffColumns = `id, tenant_id, agent_id, admin_channel, admin_chat_id,
-source_channel, source_chat_id, summary, status, created_at, completed_at, completion_message`
+source_channel, source_chat_id, source_metadata, summary, status, created_at, completed_at, completion_message`
 
 func (s *PGAdminHandoffStore) Create(ctx context.Context, h *store.AdminHandoff) error {
-	_, err := s.db.ExecContext(ctx, `
+	metadata, err := json.Marshal(h.SourceMetadata)
+	if err != nil {
+		return fmt.Errorf("marshal source metadata: %w", err)
+	}
+	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO admin_handoffs (
 			id, tenant_id, agent_id, admin_channel, admin_chat_id,
-			source_channel, source_chat_id, summary, status, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9)`,
+			source_channel, source_chat_id, source_metadata, summary, status, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', $10)`,
 		h.ID, h.TenantID, h.AgentID, h.AdminChannel, h.AdminChatID,
-		h.SourceChannel, h.SourceChatID, h.Summary, h.CreatedAt,
+		h.SourceChannel, h.SourceChatID, metadata, h.Summary, h.CreatedAt,
 	)
 	return err
 }
@@ -95,9 +100,10 @@ type adminHandoffScanner interface {
 
 func scanAdminHandoff(row adminHandoffScanner) (*store.AdminHandoff, error) {
 	handoff := &store.AdminHandoff{}
+	var metadata json.RawMessage
 	err := row.Scan(
 		&handoff.ID, &handoff.TenantID, &handoff.AgentID, &handoff.AdminChannel, &handoff.AdminChatID,
-		&handoff.SourceChannel, &handoff.SourceChatID, &handoff.Summary, &handoff.Status,
+		&handoff.SourceChannel, &handoff.SourceChatID, &metadata, &handoff.Summary, &handoff.Status,
 		&handoff.CreatedAt, &handoff.CompletedAt, &handoff.CompletionMessage,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -105,6 +111,12 @@ func scanAdminHandoff(row adminHandoffScanner) (*store.AdminHandoff, error) {
 	}
 	if err != nil {
 		return nil, err
+	}
+	if err := json.Unmarshal(metadata, &handoff.SourceMetadata); err != nil {
+		return nil, fmt.Errorf("decode source metadata: %w", err)
+	}
+	if handoff.SourceMetadata == nil {
+		handoff.SourceMetadata = map[string]string{}
 	}
 	return handoff, nil
 }

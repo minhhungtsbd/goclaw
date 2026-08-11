@@ -14,8 +14,9 @@ func TestParseAdminHandoffCommand(t *testing.T) {
 	if caseID != "CMH-1234ABCD" || message != "Da xu ly xong" {
 		t.Fatalf("parseAdminHandoffCommand() = %q, %q", caseID, message)
 	}
-	if _, _, ok := parseAdminHandoffCommand("/handoff_done CMH-1234ABCD"); ok {
-		t.Fatal("parseAdminHandoffCommand() accepted missing customer message")
+	caseID, message, ok = parseAdminHandoffCommand("/handoff_done CMH-1234ABCD")
+	if !ok || caseID != "CMH-1234ABCD" || message != "" {
+		t.Fatalf("parseAdminHandoffCommand() without custom message = %q, %q, %t", caseID, message, ok)
 	}
 }
 

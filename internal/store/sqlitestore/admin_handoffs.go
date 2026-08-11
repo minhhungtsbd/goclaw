@@ -5,6 +5,7 @@ package sqlitestore
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -20,16 +21,20 @@ func NewSQLiteAdminHandoffStore(db *sql.DB) *SQLiteAdminHandoffStore {
 }
 
 const adminHandoffColumns = `id, tenant_id, agent_id, admin_channel, admin_chat_id,
-source_channel, source_chat_id, summary, status, created_at, completed_at, completion_message`
+source_channel, source_chat_id, source_metadata, summary, status, created_at, completed_at, completion_message`
 
 func (s *SQLiteAdminHandoffStore) Create(ctx context.Context, h *store.AdminHandoff) error {
-	_, err := s.db.ExecContext(ctx, `
+	metadata, err := json.Marshal(h.SourceMetadata)
+	if err != nil {
+		return fmt.Errorf("marshal source metadata: %w", err)
+	}
+	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO admin_handoffs (
 			id, tenant_id, agent_id, admin_channel, admin_chat_id,
-			source_channel, source_chat_id, summary, status, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+			source_channel, source_chat_id, source_metadata, summary, status, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
 		h.ID.String(), h.TenantID.String(), h.AgentID.String(), h.AdminChannel, h.AdminChatID,
-		h.SourceChannel, h.SourceChatID, h.Summary, h.CreatedAt,
+		h.SourceChannel, h.SourceChatID, metadata, h.Summary, h.CreatedAt,
 	)
 	return err
 }
@@ -109,10 +114,11 @@ type adminHandoffScanner interface {
 
 func scanAdminHandoff(row adminHandoffScanner) (*store.AdminHandoff, error) {
 	var id, tenantID, agentID string
+	var metadata json.RawMessage
 	handoff := &store.AdminHandoff{}
 	err := row.Scan(
 		&id, &tenantID, &agentID, &handoff.AdminChannel, &handoff.AdminChatID,
-		&handoff.SourceChannel, &handoff.SourceChatID, &handoff.Summary, &handoff.Status,
+		&handoff.SourceChannel, &handoff.SourceChatID, &metadata, &handoff.Summary, &handoff.Status,
 		&handoff.CreatedAt, &handoff.CompletedAt, &handoff.CompletionMessage,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -130,6 +136,12 @@ func scanAdminHandoff(row adminHandoffScanner) (*store.AdminHandoff, error) {
 	}
 	if handoff.AgentID, parseErr = uuid.Parse(agentID); parseErr != nil {
 		return nil, parseErr
+	}
+	if err := json.Unmarshal(metadata, &handoff.SourceMetadata); err != nil {
+		return nil, fmt.Errorf("decode source metadata: %w", err)
+	}
+	if handoff.SourceMetadata == nil {
+		handoff.SourceMetadata = map[string]string{}
 	}
 	return handoff, nil
 }

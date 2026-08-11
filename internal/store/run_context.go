@@ -43,6 +43,7 @@ type RunContext struct {
 	BuiltinToolSettings map[string][]byte
 	Channel             string
 	ChannelType         string
+	OutboundMetadata    map[string]string // routing metadata required to send a later case update to the same customer
 	ChannelContextScope ChannelContextScope
 	SubagentsCfg        *config.SubagentsConfig
 	ParentModel         string

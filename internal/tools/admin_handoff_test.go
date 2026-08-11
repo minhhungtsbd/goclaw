@@ -11,9 +11,12 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
-type testAdminHandoffStore struct{}
+type testAdminHandoffStore struct{ created *store.AdminHandoff }
 
-func (*testAdminHandoffStore) Create(context.Context, *store.AdminHandoff) error { return nil }
+func (s *testAdminHandoffStore) Create(_ context.Context, handoff *store.AdminHandoff) error {
+	s.created = handoff
+	return nil
+}
 func (*testAdminHandoffStore) Get(context.Context, uuid.UUID) (*store.AdminHandoff, error) { return nil, nil }
 func (*testAdminHandoffStore) ListPending(context.Context, uuid.UUID, string, string, int) ([]store.AdminHandoff, error) { return nil, nil }
 func (*testAdminHandoffStore) MarkCompleted(context.Context, uuid.UUID, string) (*store.AdminHandoff, error) { return nil, nil }
@@ -36,7 +39,8 @@ func TestParseAdminHandoffConfig(t *testing.T) {
 }
 
 func TestAdminHandoffToolSendsOnlyConfiguredDestination(t *testing.T) {
-	tool := NewAdminHandoffTool(&testAdminHandoffStore{})
+	handoffStore := &testAdminHandoffStore{}
+	tool := NewAdminHandoffTool(handoffStore)
 	var channel, chatID, content string
 	tool.SetChannelSender(func(_ context.Context, gotChannel, gotChatID, gotContent string) error {
 		channel, chatID, content = gotChannel, gotChatID, gotContent
@@ -52,6 +56,7 @@ func TestAdminHandoffToolSendsOnlyConfiguredDestination(t *testing.T) {
 	})
 	ctx = WithToolChannel(ctx, "facebook")
 	ctx = WithToolChatID(ctx, "customer-1")
+	ctx = store.WithRunContext(ctx, &store.RunContext{OutboundMetadata: map[string]string{"fb_mode": "messenger"}})
 
 	result := tool.Execute(ctx, map[string]any{
 		"summary":     "Check order processing",
@@ -67,5 +72,8 @@ func TestAdminHandoffToolSendsOnlyConfiguredDestination(t *testing.T) {
 	}
 	if !strings.Contains(content, "#449329") || !strings.Contains(content, "facebook / customer-1") || !strings.Contains(content, "Case: CMH-") {
 		t.Fatalf("handoff content missing expected context: %s", content)
+	}
+	if handoffStore.created == nil || handoffStore.created.SourceMetadata["fb_mode"] != "messenger" {
+		t.Fatalf("source metadata = %#v", handoffStore.created)
 	}
 }

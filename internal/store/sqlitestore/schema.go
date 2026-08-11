@@ -16,7 +16,7 @@ var schemaSQL string
 
 // SchemaVersion is the current SQLite schema version.
 // Bump this when adding new migration steps below.
-const SchemaVersion = 60
+const SchemaVersion = 61
 
 // migrations maps version → SQL to apply when upgrading FROM that version.
 // schema.sql always represents the LATEST full schema (for fresh DBs).
@@ -95,15 +95,16 @@ BEGIN
 END;`
 
 var migrations = map[int]string{
+	60: `ALTER TABLE admin_handoffs ADD COLUMN source_metadata TEXT NOT NULL DEFAULT '{}';`,
 	59: `CREATE TABLE IF NOT EXISTS admin_handoffs (
     id TEXT PRIMARY KEY,
     tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-    admin_channel TEXT NOT NULL,
-    admin_chat_id TEXT NOT NULL,
-    source_channel TEXT NOT NULL,
-    source_chat_id TEXT NOT NULL,
-    summary TEXT NOT NULL,
+	admin_channel TEXT NOT NULL,
+	admin_chat_id TEXT NOT NULL,
+	source_channel TEXT NOT NULL,
+	source_chat_id TEXT NOT NULL,
+	summary TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'delivery_failed')),
     created_at TEXT NOT NULL,
     completed_at TEXT,

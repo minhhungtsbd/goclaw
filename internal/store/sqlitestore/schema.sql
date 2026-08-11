@@ -2376,6 +2376,7 @@ CREATE TABLE IF NOT EXISTS admin_handoffs (
     admin_chat_id TEXT NOT NULL,
     source_channel TEXT NOT NULL,
     source_chat_id TEXT NOT NULL,
+    source_metadata TEXT NOT NULL DEFAULT '{}',
     summary TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'delivery_failed')),
     created_at TEXT NOT NULL,

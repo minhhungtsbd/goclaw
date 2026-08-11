@@ -126,7 +126,19 @@ func (t *AdminHandoffTool) Execute(ctx context.Context, args map[string]any) *Re
 		return ErrorResult("priority must be normal, high, or urgent")
 	}
 
-	handoff := &store.AdminHandoff{ID: uuid.New(), TenantID: store.TenantIDFromContext(ctx), AgentID: snap.AgentID, AdminChannel: cfg.Channel, AdminChatID: cfg.ChatID, SourceChannel: ToolChannelFromCtx(ctx), SourceChatID: ToolChatIDFromCtx(ctx), Summary: summary, Status: "pending", CreatedAt: time.Now().UTC()}
+	handoff := &store.AdminHandoff{
+		ID:             uuid.New(),
+		TenantID:       store.TenantIDFromContext(ctx),
+		AgentID:        snap.AgentID,
+		AdminChannel:   cfg.Channel,
+		AdminChatID:    cfg.ChatID,
+		SourceChannel:  ToolChannelFromCtx(ctx),
+		SourceChatID:   ToolChatIDFromCtx(ctx),
+		SourceMetadata: adminHandoffSourceMetadata(ctx),
+		Summary:        summary,
+		Status:         "pending",
+		CreatedAt:      time.Now().UTC(),
+	}
 	if handoff.TenantID == uuid.Nil || handoff.SourceChannel == "" || handoff.SourceChatID == "" {
 		return ErrorResult("admin handoff is unavailable: source route is missing")
 	}
@@ -158,6 +170,18 @@ func normalizedAdminUserIDs(ids []string) []string {
 		result = append(result, id)
 	}
 	return result
+}
+
+func adminHandoffSourceMetadata(ctx context.Context) map[string]string {
+	run := store.RunContextFromCtx(ctx)
+	if run == nil || len(run.OutboundMetadata) == 0 {
+		return map[string]string{}
+	}
+	metadata := make(map[string]string, len(run.OutboundMetadata))
+	for key, value := range run.OutboundMetadata {
+		metadata[key] = value
+	}
+	return metadata
 }
 
 func formatAdminHandoff(ctx context.Context, id uuid.UUID, priority, service, summary string, identifiers []string) string {

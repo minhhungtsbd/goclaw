@@ -456,6 +456,7 @@ func (l *Loop) injectContext(ctx context.Context, req *RunRequest) (contextSetup
 		BuiltinToolSettings: l.builtinToolSettings,
 		Channel:             req.Channel,
 		ChannelType:         req.ChannelType,
+		OutboundMetadata:    req.OutboundMetadata,
 		SubagentsCfg:        l.subagentsCfg,
 		ParentModel:         l.model,
 		ParentProvider:      providerName,
