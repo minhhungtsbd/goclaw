@@ -25,7 +25,8 @@ const (
 	webhookPath        = "/v1/channels/facebook/webhook"
 	dedupTTL           = 24 * time.Hour  // matches Facebook's max retry window
 	dedupCleanEvery    = 5 * time.Minute // how often to evict stale dedup entries
-	adminReplyCooldown = 5 * time.Minute
+	defaultAdminReplyCooldown = 5 * time.Minute
+	maxAdminReplyCooldown     = 24 * time.Hour
 	botEchoWindow      = 15 * time.Second
 )
 
@@ -208,11 +209,23 @@ func (ch *Channel) adminRepliedRecently(chatID string, now time.Time) bool {
 		ch.adminReplied.Delete(chatID)
 		return false
 	}
-	if now.Sub(repliedAt) < adminReplyCooldown {
+	if now.Sub(repliedAt) < ch.adminReplyCooldown() {
 		return true
 	}
 	ch.adminReplied.Delete(chatID)
 	return false
+}
+
+func (ch *Channel) adminReplyCooldown() time.Duration {
+	minutes := ch.config.MessengerOptions.AdminReplyCooldownMinutes
+	if minutes <= 0 {
+		return defaultAdminReplyCooldown
+	}
+	cooldown := time.Duration(minutes) * time.Minute
+	if cooldown > maxAdminReplyCooldown {
+		return maxAdminReplyCooldown
+	}
+	return cooldown
 }
 
 func (ch *Channel) isBotEcho(chatID string, eventAt time.Time) bool {
@@ -344,7 +357,7 @@ func (ch *Channel) runDedupCleaner() {
 				return true
 			})
 			ch.adminReplied.Range(func(k, v any) bool {
-				if t, ok := v.(time.Time); ok && now.Sub(t) > adminReplyCooldown {
+				if t, ok := v.(time.Time); ok && now.Sub(t) > ch.adminReplyCooldown() {
 					ch.adminReplied.Delete(k)
 				}
 				return true

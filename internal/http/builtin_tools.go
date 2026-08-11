@@ -41,6 +41,9 @@ var toolSecretKeys = map[string]map[string]string{
 		"tavily.api_key": "tools.web.tavily.api_key",
 		"brave.api_key":  "tools.web.brave.api_key",
 	},
+	"cloudmini_proxy_check": {
+		"auth.api_token": "tools.cloudmini_proxy.api_token",
+	},
 }
 
 // RegisterRoutes registers all built-in tool routes on the given mux.

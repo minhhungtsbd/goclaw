@@ -37,6 +37,9 @@ func wireExtraTools(
 	// web_search: tenant-scoped resolve requires stores + msgBus — register here.
 	toolsReg.Register(tools.NewWebSearchTool(pgStores.ConfigSecrets, msgBus))
 	slog.Info("web_search tool registered (tenant-scoped resolve)")
+	// Cloudmini support lookup uses fixed endpoints and an encrypted API token.
+	toolsReg.Register(tools.NewCloudminiProxyCheckTool(pgStores.ConfigSecrets))
+	slog.Info("cloudmini_proxy_check tool registered")
 
 	// DateTime tool (precise time for cron scheduling, memory timestamps, etc.)
 	toolsReg.Register(tools.NewDateTimeTool())

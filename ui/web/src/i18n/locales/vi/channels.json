@@ -394,6 +394,10 @@
     "reaction_level": {
       "label": "Mức độ reaction"
     },
+    "messenger_options.admin_reply_cooldown_minutes": {
+      "label": "Thời gian nhường Admin (phút)",
+      "help": "Tạm ngưng AI trả lời sau khi Admin của Page nhắn trong cùng cuộc trò chuyện Messenger. Phạm vi: 1–1440 phút."
+    },
     "activity_indicator": {
       "label": "Chỉ báo hoạt động",
       "help": "Hiển thị chỉ báo \"agent đang làm việc\" (đang nghĩ/tìm/tạo…) trong lúc agent xử lý. Tạm thời, không phải tin nhắn."

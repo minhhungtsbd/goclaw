@@ -41,6 +41,9 @@ func builtinToolSeedData() []store.BuiltinToolDef {
 		{Name: "web_fetch", DisplayName: "Web Fetch", Description: "Fetch a web page or API endpoint and extract its text content", Category: "web", Enabled: true,
 			Settings: json.RawMessage(`{"extractors":[{"name":"defuddle","enabled":true,"base_url":"https://fetch.goclaw.sh/","max_retries":2},{"name":"html-to-markdown","enabled":true}]}`),
 		},
+		{Name: "cloudmini_proxy_check", DisplayName: "Cloudmini Proxy Check", Description: "Check Cloudmini proxy service details or live GeoIP details for one IP", Category: "web", Enabled: true,
+			Settings: json.RawMessage(`{"timeout_seconds":15,"allowed_agent_keys":["linh-nhi-support-lead"]}`),
+		},
 
 		// memory
 		{Name: "memory_search", DisplayName: "Memory Search", Description: "Search through the agent's long-term memory using semantic similarity", Category: "memory", Enabled: true,

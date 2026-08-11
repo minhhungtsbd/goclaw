@@ -18,6 +18,7 @@ import type { BuiltinToolData } from "./hooks/use-builtin-tools";
 const TOOLS_WITH_DEDICATED_FORM = new Set([
   "web_search", "web_fetch", "tts", "knowledge_graph_search",
   "create_image", "create_audio", "create_video",
+  "cloudmini_proxy_check",
 ]);
 
 export function hasEditableSettings(tool: BuiltinToolData): boolean {

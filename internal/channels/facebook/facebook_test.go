@@ -45,6 +45,22 @@ func TestVerifySignature(t *testing.T) {
 	}
 }
 
+func TestAdminReplyCooldown(t *testing.T) {
+	ch := &Channel{}
+
+	if got := ch.adminReplyCooldown(); got != 5*time.Minute {
+		t.Fatalf("default cooldown = %s, want %s", got, 5*time.Minute)
+	}
+	ch.config.MessengerOptions.AdminReplyCooldownMinutes = 12
+	if got := ch.adminReplyCooldown(); got != 12*time.Minute {
+		t.Fatalf("configured cooldown = %s, want %s", got, 12*time.Minute)
+	}
+	ch.config.MessengerOptions.AdminReplyCooldownMinutes = 1441
+	if got := ch.adminReplyCooldown(); got != 24*time.Hour {
+		t.Fatalf("capped cooldown = %s, want %s", got, 24*time.Hour)
+	}
+}
+
 // --- WebhookHandler GET verification ---
 
 func TestWebhookHandlerVerification(t *testing.T) {

@@ -19,12 +19,14 @@ import { WebFetchExtractorChainForm } from "./web-fetch-extractor-chain-form";
 import { WebSearchChainForm } from "./web-search-chain-form";
 import { SttProviderForm } from "./stt-provider-form";
 import { ExecSettingsForm } from "./exec-settings-form";
+import { CloudminiProxyCheckSettingsForm } from "./cloudmini-proxy-check-settings-form";
 
 const EXEC_TOOL = "exec";
 const KG_TOOL = "knowledge_graph_search";
 const WEB_FETCH_TOOL = "web_fetch";
 const WEB_SEARCH_TOOL = "web_search";
 const STT_TOOL = "stt";
+const CLOUDMINI_PROXY_CHECK_TOOL = "cloudmini_proxy_check";
 
 interface Props {
   tool: BuiltinToolData | null;
@@ -64,6 +66,7 @@ export function BuiltinToolSettingsDialog({
   const isWebSearch = tool?.name === WEB_SEARCH_TOOL;
   const isStt = tool?.name === STT_TOOL;
   const isExec = tool?.name === EXEC_TOOL;
+  const isCloudminiProxyCheck = tool?.name === CLOUDMINI_PROXY_CHECK_TOOL;
   const wide = isMedia || isKG || isWebFetch || isWebSearch;
 
   // Tenant-scope overlay: prefer the tenant override when present; fall back
@@ -89,6 +92,13 @@ export function BuiltinToolSettingsDialog({
         {isExec && tool ? (
           <ExecSettingsForm
             initialSettings={initialSettings}
+            onSave={(settings) => onSave(tool.name, settings).then(() => onOpenChange(false))}
+            onCancel={() => onOpenChange(false)}
+          />
+        ) : isCloudminiProxyCheck && tool ? (
+          <CloudminiProxyCheckSettingsForm
+            initialSettings={initialSettings}
+            secretsSet={tool.secrets_set}
             onSave={(settings) => onSave(tool.name, settings).then(() => onOpenChange(false))}
             onCancel={() => onOpenChange(false)}
           />

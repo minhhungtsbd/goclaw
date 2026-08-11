@@ -58,6 +58,21 @@
       "saving": "保存中...",
       "title": "知识图谱设置"
     },
+    "cloudminiProxyCheck": {
+      "title": "Cloudmini Proxy Check",
+      "description": "Configure the secure Cloudmini support lookup for Linh Nhi.",
+      "apiToken": "Cloudmini API token",
+      "apiTokenPlaceholder": "Enter API token",
+      "apiTokenReplace": "Enter a new token to replace the existing token",
+      "apiTokenHint": "The token is stored encrypted and is never sent to the agent or shown again.",
+      "apiTokenConfigured": "A token is already stored. Leave this field empty to keep it unchanged.",
+      "timeoutSeconds": "Timeout (seconds)",
+      "timeoutHint": "Allowed range: {{min}}-{{max}} seconds.",
+      "scopeHint": "The tool only calls Cloudmini's fixed check_services and check_live_proxy endpoints, and only Linh Nhi can execute it.",
+      "cancel": "Cancel",
+      "save": "Save",
+      "saving": "Saving..."
+    },
     "execSettings": {
       "title": "Exec 设置",
       "description": "配置内置 exec 工具的主机命令超时。",

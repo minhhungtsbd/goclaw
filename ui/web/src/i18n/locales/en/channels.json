@@ -395,6 +395,10 @@
     "reaction_level": {
       "label": "Reaction Level"
     },
+    "messenger_options.admin_reply_cooldown_minutes": {
+      "label": "Admin Reply Cooldown (minutes)",
+      "help": "Pause AI replies after a human Page Admin replies in the same Messenger conversation. Range: 1–1440 minutes."
+    },
     "activity_indicator": {
       "label": "Activity Indicator",
       "help": "Show a native \"agent is working\" indicator (thinking/searching/generating…) while the agent processes. Ephemeral, not a chat message."

@@ -144,6 +144,21 @@
       "save": "Lưu",
       "saving": "Đang lưu..."
     },
+    "cloudminiProxyCheck": {
+      "title": "Kiểm tra Proxy Cloudmini",
+      "description": "Cấu hình công cụ tra cứu hỗ trợ Cloudmini an toàn cho Linh Nhi.",
+      "apiToken": "API token Cloudmini",
+      "apiTokenPlaceholder": "Nhập API token",
+      "apiTokenReplace": "Nhập token mới để thay token hiện tại",
+      "apiTokenHint": "Token được mã hóa khi lưu và không bao giờ gửi cho agent hoặc hiển thị lại.",
+      "apiTokenConfigured": "Đã có token được lưu. Để trống trường này nếu muốn giữ nguyên token hiện tại.",
+      "timeoutSeconds": "Thời gian chờ (giây)",
+      "timeoutHint": "Phạm vi cho phép: {{min}}-{{max}} giây.",
+      "scopeHint": "Tool chỉ gọi hai endpoint cố định check_services và check_live_proxy của Cloudmini; chỉ Linh Nhi được chạy tool này.",
+      "cancel": "Hủy",
+      "save": "Lưu",
+      "saving": "Đang lưu..."
+    },
     "execSettings": {
       "title": "Cài đặt Exec",
       "description": "Cấu hình thời gian chờ lệnh host cho công cụ exec tích hợp.",
