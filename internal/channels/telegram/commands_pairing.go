@@ -178,5 +178,6 @@ func DefaultMenuCommands() []telego.BotCommand {
 		{Command: "croners", Description: "List cron managers for this group"},
 		{Command: "addcron", Description: "Add a cron manager (reply to their message)"},
 		{Command: "removecron", Description: "Remove a cron manager (reply to their message)"},
+		{Command: "handoffs", Description: "List pending Admin handoffs"},
 	}
 }
