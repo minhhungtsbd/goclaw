@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"regexp"
 	"strings"
@@ -29,7 +30,22 @@ func NewCloudminiServicePreflightStage(deps *PipelineDeps) *CloudminiServicePref
 func (s *CloudminiServicePreflightStage) Name() string { return "cloudmini_service_preflight" }
 
 func (s *CloudminiServicePreflightStage) Execute(ctx context.Context, state *RunState) error {
-	if !requiresCloudminiServiceLookup(state) || s.deps.ExecuteToolCall == nil {
+	if !isCloudminiServiceRequest(state) || s.deps.ExecuteToolCall == nil {
+		return nil
+	}
+	// ContextStage intentionally treats its initial tool snapshot as best effort
+	// for token accounting. A transient filter error must not silently disable a
+	// mandatory support check, so refresh the list before deciding to skip.
+	if !hasCloudminiProxyCheckTool(state.Think.Tools) && s.deps.BuildFilteredTools != nil {
+		toolDefs, err := s.deps.BuildFilteredTools(state)
+		if err != nil {
+			slog.Warn("cloudmini service preflight tool refresh failed", "error", err)
+		} else {
+			state.Think.Tools = toolDefs
+		}
+	}
+	if !hasCloudminiProxyCheckTool(state.Think.Tools) {
+		slog.Warn("cloudmini service preflight skipped: tool not available", "ip_count", len(cloudminiIPs(state.Input.Message)))
 		return nil
 	}
 
@@ -111,8 +127,8 @@ func cloudminiServiceDeleted(messages []providers.Message) bool {
 	return false
 }
 
-func requiresCloudminiServiceLookup(state *RunState) bool {
-	if state == nil || state.Input == nil || state.Input.SenderID == "system:admin_handoff" || !hasCloudminiProxyCheckTool(state.Think.Tools) {
+func isCloudminiServiceRequest(state *RunState) bool {
+	if state == nil || state.Input == nil || state.Input.SenderID == "system:admin_handoff" {
 		return false
 	}
 	message := strings.ToLower(state.Input.Message)
