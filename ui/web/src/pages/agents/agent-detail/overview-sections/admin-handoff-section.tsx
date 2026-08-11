@@ -7,12 +7,17 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import type { AgentData } from "@/types/agent";
 
-type AdminHandoff = { enabled: boolean; channel: string; chat_id: string };
+type AdminHandoff = { enabled: boolean; channel: string; chat_id: string; admin_user_ids: string[] };
 
 function readConfig(agent: AgentData): AdminHandoff {
   const bag = (agent.other_config ?? {}) as Record<string, unknown>;
   const raw = (bag.admin_handoff ?? {}) as Partial<AdminHandoff>;
-  return { enabled: raw.enabled === true, channel: raw.channel ?? "", chat_id: raw.chat_id ?? "" };
+  return {
+    enabled: raw.enabled === true,
+    channel: raw.channel ?? "",
+    chat_id: raw.chat_id ?? "",
+    admin_user_ids: Array.isArray(raw.admin_user_ids) ? raw.admin_user_ids.filter((value): value is string => typeof value === "string") : [],
+  };
 }
 
 interface Props {
@@ -36,7 +41,12 @@ export function AdminHandoffSection({ agent, onUpdate }: Props) {
     try {
       const bag = { ...((agent.other_config ?? {}) as Record<string, unknown>) };
       if (config.enabled) {
-        bag.admin_handoff = { enabled: true, channel: config.channel.trim(), chat_id: config.chat_id.trim() };
+        bag.admin_handoff = {
+          enabled: true,
+          channel: config.channel.trim(),
+          chat_id: config.chat_id.trim(),
+          admin_user_ids: config.admin_user_ids.map((id) => id.trim()).filter(Boolean),
+        };
       } else {
         delete bag.admin_handoff;
       }
@@ -69,6 +79,11 @@ export function AdminHandoffSection({ agent, onUpdate }: Props) {
           <div className="space-y-1.5">
             <Label htmlFor="admin-handoff-chat">{t("detail.adminHandoff.chatId", "Group or chat ID")}</Label>
             <Input id="admin-handoff-chat" className="text-base md:text-sm" value={config.chat_id} onChange={(event) => setConfig((current) => ({ ...current, chat_id: event.target.value }))} placeholder="-100..." />
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="admin-handoff-admins">{t("detail.adminHandoff.adminUserIds", "Allowed Telegram Admin IDs")}</Label>
+            <Input id="admin-handoff-admins" className="text-base md:text-sm" value={config.admin_user_ids.join(", ")} onChange={(event) => setConfig((current) => ({ ...current, admin_user_ids: event.target.value.split(",").map((id) => id.trim()).filter(Boolean) }))} placeholder="1602998514, 123456789" />
+            <p className="text-xs text-muted-foreground">{t("detail.adminHandoff.adminUserIdsHint", "Only these Telegram user IDs can complete or update a handoff.")}</p>
           </div>
         </div>
       )}

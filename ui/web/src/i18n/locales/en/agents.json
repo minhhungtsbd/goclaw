@@ -187,7 +187,9 @@
       "hint": "Send verified manual-support cases to one fixed internal channel. The agent cannot choose a different destination.",
       "enabled": "Enable admin handoff",
       "channel": "Channel name",
-      "chatId": "Group or chat ID"
+      "chatId": "Group or chat ID",
+      "adminUserIds": "Allowed Telegram Admin IDs",
+      "adminUserIdsHint": "Only these Telegram user IDs can complete or update a handoff."
     },
     "llmSeesAs": "LLM sees this as",
     "v3": {

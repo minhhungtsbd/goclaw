@@ -229,7 +229,9 @@
       "hint": "将需要人工处理的已确认事项发送到一个固定内部频道。Agent 无法选择其他目标。",
       "enabled": "启用管理员转交",
       "channel": "频道名称",
-      "chatId": "群组或聊天 ID"
+      "chatId": "群组或聊天 ID",
+      "adminUserIds": "允许的 Telegram 管理员 ID",
+      "adminUserIdsHint": "只有这些 Telegram 用户 ID 可以完成或更新转交事项。"
     },
     "llmSeesAs": "LLM会看到这个为",
     "prompt": {

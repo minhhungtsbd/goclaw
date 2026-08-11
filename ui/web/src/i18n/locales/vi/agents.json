@@ -229,7 +229,9 @@
       "hint": "Gửi case cần xử lý thủ công đến một kênh nội bộ cố định. Agent không thể tự chọn đích gửi khác.",
       "enabled": "Bật chuyển Admin",
       "channel": "Tên channel",
-      "chatId": "ID nhóm hoặc chat"
+      "chatId": "ID nhóm hoặc chat",
+      "adminUserIds": "ID Telegram Admin được phép",
+      "adminUserIdsHint": "Chỉ các ID Telegram này được hoàn tất hoặc cập nhật handoff."
     },
     "llmSeesAs": "LLM nhìn thấy đây là",
     "prompt": {
