@@ -907,7 +907,7 @@ func runGateway() {
 		instanceLoader.RegisterFactory(channels.TypeZaloPersonal, zalopersonal.FactoryWithPendingStore(pgStores.PendingMessages))
 		instanceLoader.RegisterFactory(channels.TypeWhatsApp, whatsapp.FactoryWithDBAudio(pgStores.DB, pgStores.PendingMessages, "pgx", audioMgr, pgStores.BuiltinTools))
 		instanceLoader.RegisterFactory(channels.TypeSlack, slackchannel.FactoryWithPendingStore(pgStores.PendingMessages))
-		instanceLoader.RegisterFactory(channels.TypeFacebook, facebook.Factory)
+		instanceLoader.RegisterFactory(channels.TypeFacebook, facebook.FactoryWithSessionStore(pgStores.Sessions))
 		instanceLoader.RegisterFactory(channels.TypePancake, pancake.Factory)
 		// Bitrix24: factory needs the portal store + encKey injected so each
 		// Channel can resolve its portal on Start(). The encKey here mirrors

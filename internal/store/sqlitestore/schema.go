@@ -16,7 +16,7 @@ var schemaSQL string
 
 // SchemaVersion is the current SQLite schema version.
 // Bump this when adding new migration steps below.
-const SchemaVersion = 61
+const SchemaVersion = 62
 
 // migrations maps version → SQL to apply when upgrading FROM that version.
 // schema.sql always represents the LATEST full schema (for fresh DBs).
@@ -95,6 +95,33 @@ BEGIN
 END;`
 
 var migrations = map[int]string{
+	61: `CREATE TABLE admin_handoffs_new (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    admin_channel TEXT NOT NULL,
+    admin_chat_id TEXT NOT NULL,
+    source_channel TEXT NOT NULL,
+    source_chat_id TEXT NOT NULL,
+    source_metadata TEXT NOT NULL DEFAULT '{}',
+    dedupe_key TEXT NOT NULL DEFAULT '',
+    summary TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'delivery_failed', 'dismissed')),
+    created_at TEXT NOT NULL,
+    completed_at TEXT,
+    completion_message TEXT NOT NULL DEFAULT ''
+);
+INSERT INTO admin_handoffs_new (
+    id, tenant_id, agent_id, admin_channel, admin_chat_id, source_channel, source_chat_id,
+    source_metadata, dedupe_key, summary, status, created_at, completed_at, completion_message
+)
+SELECT id, tenant_id, agent_id, admin_channel, admin_chat_id, source_channel, source_chat_id,
+    source_metadata, '', summary, status, created_at, completed_at, completion_message
+FROM admin_handoffs;
+DROP TABLE admin_handoffs;
+ALTER TABLE admin_handoffs_new RENAME TO admin_handoffs;
+CREATE INDEX IF NOT EXISTS idx_admin_handoffs_pending ON admin_handoffs(tenant_id, admin_channel, admin_chat_id, created_at DESC) WHERE status = 'pending';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_handoffs_pending_dedupe ON admin_handoffs(tenant_id, dedupe_key) WHERE status = 'pending' AND dedupe_key <> '';`,
 	60: `ALTER TABLE admin_handoffs ADD COLUMN source_metadata TEXT NOT NULL DEFAULT '{}';`,
 	59: `CREATE TABLE IF NOT EXISTS admin_handoffs (
     id TEXT PRIMARY KEY,

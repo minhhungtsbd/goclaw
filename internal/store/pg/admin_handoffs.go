@@ -28,12 +28,37 @@ func (s *PGAdminHandoffStore) Create(ctx context.Context, h *store.AdminHandoff)
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO admin_handoffs (
 			id, tenant_id, agent_id, admin_channel, admin_chat_id,
-			source_channel, source_chat_id, source_metadata, summary, status, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', $10)`,
+			source_channel, source_chat_id, source_metadata, dedupe_key, summary, status, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending', $11)`,
 		h.ID, h.TenantID, h.AgentID, h.AdminChannel, h.AdminChatID,
-		h.SourceChannel, h.SourceChatID, metadata, h.Summary, h.CreatedAt,
+		h.SourceChannel, h.SourceChatID, metadata, h.DedupeKey, h.Summary, h.CreatedAt,
 	)
 	return err
+}
+
+func (s *PGAdminHandoffStore) CreateOrMerge(ctx context.Context, h *store.AdminHandoff) (*store.AdminHandoff, error) {
+	if h.DedupeKey == "" {
+		if err := s.Create(ctx, h); err != nil {
+			return nil, err
+		}
+		return h, nil
+	}
+	metadata, err := json.Marshal(h.SourceMetadata)
+	if err != nil {
+		return nil, fmt.Errorf("marshal source metadata: %w", err)
+	}
+	row := s.db.QueryRowContext(ctx, `
+		INSERT INTO admin_handoffs (
+			id, tenant_id, agent_id, admin_channel, admin_chat_id,
+			source_channel, source_chat_id, source_metadata, dedupe_key, summary, status, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending', $11)
+		ON CONFLICT (tenant_id, dedupe_key) WHERE status = 'pending' AND dedupe_key <> ''
+		DO UPDATE SET summary = admin_handoffs.summary || E'\n\n[Customer update]\n' || EXCLUDED.summary
+		RETURNING `+adminHandoffColumns,
+		h.ID, h.TenantID, h.AgentID, h.AdminChannel, h.AdminChatID,
+		h.SourceChannel, h.SourceChatID, metadata, h.DedupeKey, h.Summary, h.CreatedAt,
+	)
+	return scanAdminHandoff(row)
 }
 
 func (s *PGAdminHandoffStore) Get(ctx context.Context, id uuid.UUID) (*store.AdminHandoff, error) {
@@ -73,6 +98,15 @@ func (s *PGAdminHandoffStore) MarkCompleted(ctx context.Context, id uuid.UUID, m
 		SET status = 'completed', completed_at = now(), completion_message = $1
 		WHERE id = $2 AND tenant_id = $3 AND status = 'pending'
 		RETURNING `+adminHandoffColumns, message, id, store.TenantIDFromContext(ctx))
+	return scanAdminHandoff(row)
+}
+
+func (s *PGAdminHandoffStore) MarkDismissed(ctx context.Context, id uuid.UUID) (*store.AdminHandoff, error) {
+	row := s.db.QueryRowContext(ctx, `
+		UPDATE admin_handoffs
+		SET status = 'dismissed', completed_at = now(), completion_message = '[dismissed by Admin]'
+		WHERE id = $1 AND tenant_id = $2 AND status = 'pending'
+		RETURNING `+adminHandoffColumns, id, store.TenantIDFromContext(ctx))
 	return scanAdminHandoff(row)
 }
 

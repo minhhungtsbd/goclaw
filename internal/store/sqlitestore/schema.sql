@@ -2377,10 +2377,12 @@ CREATE TABLE IF NOT EXISTS admin_handoffs (
     source_channel TEXT NOT NULL,
     source_chat_id TEXT NOT NULL,
     source_metadata TEXT NOT NULL DEFAULT '{}',
+    dedupe_key TEXT NOT NULL DEFAULT '',
     summary TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'delivery_failed')),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'delivery_failed', 'dismissed')),
     created_at TEXT NOT NULL,
     completed_at TEXT,
     completion_message TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_admin_handoffs_pending ON admin_handoffs(tenant_id, admin_channel, admin_chat_id, created_at DESC) WHERE status = 'pending';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_handoffs_pending_dedupe ON admin_handoffs(tenant_id, dedupe_key) WHERE status = 'pending' AND dedupe_key <> '';

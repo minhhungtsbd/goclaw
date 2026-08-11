@@ -46,21 +46,52 @@ func (c *Channel) handleAdminHandoffsList(ctx context.Context, chatID int64, cha
 
 	var text strings.Builder
 	text.WriteString("ADMIN HANDOFF ĐANG CHỜ XỬ LÝ\n\n")
-	rows := make([][]telego.InlineKeyboardButton, 0, len(handoffs)*2)
+	rows := make([][]telego.InlineKeyboardButton, 0, len(handoffs)*3)
 	for _, handoff := range handoffs {
 		text.WriteString(fmt.Sprintf("%s | %s\n%s\n\n", handoffReference(handoff.ID), handoff.SourceChannel+"/"+handoff.SourceChatID, truncateStr(handoff.Summary, 180)))
 		rows = append(rows, []telego.InlineKeyboardButton{
 			{Text: handoffReference(handoff.ID) + " Hoàn tất", CallbackData: "ah:done:" + handoff.ID.String()},
 			{Text: "Cần bổ sung", CallbackData: "ah:info:" + handoff.ID.String()},
+			{Text: "Đóng, không trả lời", CallbackData: "ah:dismiss:" + handoff.ID.String()},
 		})
 	}
-	text.WriteString("Dùng nút để gửi mẫu. Hoặc dùng /handoff_done <case> <nội dung gửi khách>.")
+	text.WriteString("Dùng nút để xử lý case. Hoặc dùng /handoff_done <case> hay /handoff_dismiss <case>.")
 	msg := tu.Message(tu.ID(chatID), text.String())
 	setThread(msg)
 	msg.ReplyMarkup = &telego.InlineKeyboardMarkup{InlineKeyboard: rows}
 	if _, err := c.bot.SendMessage(ctx, msg); err != nil {
 		slog.Warn("telegram admin handoff list send failed", "error", err)
 	}
+}
+
+func (c *Channel) handleAdminHandoffDismiss(ctx context.Context, chatID int64, chatIDStr, senderID, text string, isGroup bool, setThread func(*telego.SendMessageParams)) {
+	send := func(reply string) {
+		msg := tu.Message(tu.ID(chatID), reply)
+		setThread(msg)
+		if _, err := c.bot.SendMessage(ctx, msg); err != nil {
+			slog.Warn("telegram admin handoff dismissal reply failed", "error", err)
+		}
+	}
+	if !c.adminHandoffAuthorized(ctx, chatIDStr, senderID, isGroup) {
+		send("Bạn không được phép quản lý Admin handoff trong nhóm này.")
+		return
+	}
+	caseID, _, ok := parseAdminHandoffCommand(text)
+	if !ok {
+		send("Cú pháp: /handoff_dismiss <CMH-XXXXXXXX>")
+		return
+	}
+	handoff, err := c.findPendingAdminHandoff(ctx, chatIDStr, caseID)
+	if err != nil {
+		send(err.Error())
+		return
+	}
+	if _, err := c.adminHandoffStore.MarkDismissed(ctx, handoff.ID); err != nil {
+		slog.Warn("telegram admin handoff dismissal failed", "error", err, "case", handoff.ID)
+		send("Không thể đóng case. Có thể case đã được xử lý trước đó.")
+		return
+	}
+	send(handoffReference(handoff.ID) + " đã đóng. Hệ thống sẽ không gửi phản hồi tự động cho khách.")
 }
 
 func (c *Channel) handleAdminHandoffDone(ctx context.Context, chatID int64, chatIDStr, senderID, text string, isGroup bool, setThread func(*telego.SendMessageParams)) {
@@ -139,7 +170,7 @@ func (c *Channel) handleAdminHandoffCallback(ctx context.Context, query *telego.
 		return
 	}
 	parts := strings.Split(query.Data, ":")
-	if len(parts) != 3 || (parts[1] != "done" && parts[1] != "info") {
+	if len(parts) != 3 || (parts[1] != "done" && parts[1] != "info" && parts[1] != "dismiss") {
 		return
 	}
 	chatID := query.Message.GetChat().ID
@@ -161,6 +192,14 @@ func (c *Channel) handleAdminHandoffCallback(ctx context.Context, query *telego.
 	if parts[1] == "info" {
 		c.sendAdminHandoffCustomerMessage(handoff, adminHandoffDefaultInfo)
 		c.sendAdminCallbackReply(ctx, chatID, handoffReference(handoff.ID)+" đã gửi yêu cầu bổ sung thông tin. Case vẫn đang chờ xử lý.")
+		return
+	}
+	if parts[1] == "dismiss" {
+		if _, err := c.adminHandoffStore.MarkDismissed(ctx, handoff.ID); err != nil {
+			c.sendAdminCallbackReply(ctx, chatID, "Không thể đóng case. Có thể case đã được xử lý trước đó.")
+			return
+		}
+		c.sendAdminCallbackReply(ctx, chatID, handoffReference(handoff.ID)+" đã đóng. Hệ thống sẽ không gửi phản hồi tự động cho khách.")
 		return
 	}
 	completed, err := c.adminHandoffStore.MarkCompleted(ctx, handoff.ID, "[agent-generated]")

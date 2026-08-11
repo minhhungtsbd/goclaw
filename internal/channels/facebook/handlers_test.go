@@ -8,7 +8,20 @@ import (
 	"time"
 
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
+	"github.com/nextlevelbuilder/goclaw/internal/providers"
+	"github.com/nextlevelbuilder/goclaw/internal/sessions"
 )
+
+type recordedSessionMessage struct {
+	key string
+	msg providers.Message
+}
+
+type recordingSessionMessages struct{ messages []recordedSessionMessage }
+
+func (s *recordingSessionMessages) AddMessage(_ context.Context, key string, msg providers.Message) {
+	s.messages = append(s.messages, recordedSessionMessage{key: key, msg: msg})
+}
 
 // newTestChannel wires a facebook Channel to a mock Graph API server with
 // reasonable defaults for handler/post-fetcher tests. Returns the channel +
@@ -357,6 +370,34 @@ func TestHandleMessagingEvent_PageEchoDoesNotTrackAdminReply(t *testing.T) {
 
 	if _, ok := ch.adminReplied.Load("user-1"); ok {
 		t.Fatal("bot echo should not be tracked as admin reply")
+	}
+}
+
+func TestHandleMessagingEvent_HumanPageReplyPersistsSessionContext(t *testing.T) {
+	cfg := facebookInstanceConfig{}
+	cfg.Features.MessengerAutoReply = true
+	recorded := &recordingSessionMessages{}
+	ch := newTestChannel(t, "111", cfg)
+	ch.SetName("cloudmini-net-page")
+	ch.SetAgentID("linh-nhi-support-lead")
+	ch.sessionMessages = recorded
+
+	ch.handleMessagingEvent(context.Background(), WebhookEntry{ID: "111"}, MessagingEvent{
+		Sender:    FBUser{ID: "111"},
+		Recipient: FBUser{ID: "user-1"},
+		Timestamp: time.Now().UnixMilli(),
+		Message:   &IncomingMessage{MID: "admin-1", Text: "Admin đã kiểm tra và khôi phục xong."},
+	})
+
+	if len(recorded.messages) != 1 {
+		t.Fatalf("persisted messages = %d, want 1", len(recorded.messages))
+	}
+	got := recorded.messages[0]
+	if got.key != sessions.BuildSessionKey("linh-nhi-support-lead", "cloudmini-net-page", sessions.PeerDirect, "user-1") {
+		t.Fatalf("session key = %q", got.key)
+	}
+	if got.msg.Role != "assistant" || got.msg.Content != "[Tin nhắn do nhân viên Admin Cloudmini gửi cho khách]\nAdmin đã kiểm tra và khôi phục xong." {
+		t.Fatalf("stored message = %#v", got.msg)
 	}
 }
 

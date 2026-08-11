@@ -7,8 +7,11 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/nextlevelbuilder/goclaw/internal/providers"
+	"github.com/nextlevelbuilder/goclaw/internal/sessions"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
@@ -36,6 +39,7 @@ func (ch *Channel) handleMessagingEvent(ctx context.Context, entry WebhookEntry,
 				return
 			}
 			ch.adminReplied.Store(event.Recipient.ID, eventAt)
+			ch.persistAdminMessage(ctx, event.Recipient.ID, event.Message)
 			slog.Debug("facebook: admin reply tracked", "chat_id", event.Recipient.ID)
 		}
 		return
@@ -107,6 +111,18 @@ func (ch *Channel) handleMessagingEvent(ctx context.Context, entry WebhookEntry,
 	ch.HandleMessage(senderID, chatID, content, media, metadata, "direct")
 }
 
+// persistAdminMessage records a human Page reply as assistant context only.
+// It deliberately bypasses HandleMessage, so it cannot trigger an LLM turn or
+// emit an outbound reply.
+func (ch *Channel) persistAdminMessage(ctx context.Context, customerID string, message *IncomingMessage) {
+	if ch.sessionMessages == nil || message == nil || strings.TrimSpace(message.Text) == "" || ch.AgentID() == "" {
+		return
+	}
+	key := sessions.BuildSessionKey(ch.AgentID(), ch.Name(), sessions.PeerDirect, customerID)
+	content := "[Tin nhắn do nhân viên Admin Cloudmini gửi cho khách]\n" + strings.TrimSpace(message.Text)
+	ch.sessionMessages.AddMessage(ctx, key, providers.Message{Role: "assistant", Content: content})
+}
+
 func messagingEventTime(ts int64) time.Time {
 	switch {
 	case ts > 1_000_000_000_000:
@@ -117,7 +133,6 @@ func messagingEventTime(ts int64) time.Time {
 		return time.Now()
 	}
 }
-
 
 func (ch *Channel) downloadMedia(ctx context.Context, url string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)

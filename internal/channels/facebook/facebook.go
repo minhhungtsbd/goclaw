@@ -11,6 +11,7 @@ import (
 
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
+	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
@@ -60,11 +61,26 @@ type Channel struct {
 	stopCh  chan struct{}
 	stopCtx context.Context
 	stopFn  context.CancelFunc
+
+	// sessionMessages persists Page-admin messages without routing them to an LLM.
+	sessionMessages sessionMessageStore
+}
+
+type sessionMessageStore interface {
+	AddMessage(context.Context, string, providers.Message)
+}
+
+// Option configures optional channel dependencies.
+type Option func(*Channel)
+
+// WithSessionStore retains human Page replies in the original customer session.
+func WithSessionStore(s sessionMessageStore) Option {
+	return func(ch *Channel) { ch.sessionMessages = s }
 }
 
 // New creates a Facebook channel from parsed credentials and config.
 func New(cfg facebookInstanceConfig, creds facebookCreds,
-	msgBus *bus.MessageBus, _ store.PairingStore) (*Channel, error) {
+	msgBus *bus.MessageBus, _ store.PairingStore, opts ...Option) (*Channel, error) {
 
 	if creds.PageAccessToken == "" {
 		return nil, fmt.Errorf("facebook: page_access_token is required")
@@ -96,6 +112,9 @@ func New(cfg facebookInstanceConfig, creds facebookCreds,
 		stopCtx:     stopCtx,
 		stopFn:      stopFn,
 	}
+	for _, opt := range opts {
+		opt(ch)
+	}
 
 	wh := NewWebhookHandler(creds.AppSecret, creds.VerifyToken)
 	wh.onComment = ch.handleCommentEvent
@@ -109,6 +128,19 @@ func New(cfg facebookInstanceConfig, creds facebookCreds,
 // Implements channels.ChannelFactory.
 func Factory(name string, creds json.RawMessage, cfg json.RawMessage,
 	msgBus *bus.MessageBus, pairingSvc store.PairingStore) (channels.Channel, error) {
+	return buildChannel(name, creds, cfg, msgBus, pairingSvc)
+}
+
+// FactoryWithSessionStore wires persistent session history for Page-admin echoes.
+func FactoryWithSessionStore(sessionStore store.SessionStore) channels.ChannelFactory {
+	return func(name string, creds json.RawMessage, cfg json.RawMessage,
+		msgBus *bus.MessageBus, pairingSvc store.PairingStore) (channels.Channel, error) {
+		return buildChannel(name, creds, cfg, msgBus, pairingSvc, WithSessionStore(sessionStore))
+	}
+}
+
+func buildChannel(name string, creds json.RawMessage, cfg json.RawMessage,
+	msgBus *bus.MessageBus, pairingSvc store.PairingStore, opts ...Option) (channels.Channel, error) {
 
 	var c facebookCreds
 	if err := json.Unmarshal(creds, &c); err != nil {
@@ -122,7 +154,7 @@ func Factory(name string, creds json.RawMessage, cfg json.RawMessage,
 		}
 	}
 
-	ch, err := New(ic, c, msgBus, pairingSvc)
+	ch, err := New(ic, c, msgBus, pairingSvc, opts...)
 	if err != nil {
 		return nil, err
 	}

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/netip"
+	"regexp"
 	"strings"
 	"time"
 
@@ -126,6 +128,7 @@ func (t *AdminHandoffTool) Execute(ctx context.Context, args map[string]any) *Re
 		return ErrorResult("priority must be normal, high, or urgent")
 	}
 
+	identifiers := stringSlice(args["identifiers"])
 	handoff := &store.AdminHandoff{
 		ID:             uuid.New(),
 		TenantID:       store.TenantIDFromContext(ctx),
@@ -135,6 +138,7 @@ func (t *AdminHandoffTool) Execute(ctx context.Context, args map[string]any) *Re
 		SourceChannel:  ToolChannelFromCtx(ctx),
 		SourceChatID:   ToolChatIDFromCtx(ctx),
 		SourceMetadata: adminHandoffSourceMetadata(ctx),
+		DedupeKey:      adminHandoffDedupeKey(ToolChannelFromCtx(ctx), ToolChatIDFromCtx(ctx), summary, identifiers),
 		Summary:        summary,
 		Status:         "pending",
 		CreatedAt:      time.Now().UTC(),
@@ -142,17 +146,39 @@ func (t *AdminHandoffTool) Execute(ctx context.Context, args map[string]any) *Re
 	if handoff.TenantID == uuid.Nil || handoff.SourceChannel == "" || handoff.SourceChatID == "" {
 		return ErrorResult("admin handoff is unavailable: source route is missing")
 	}
-	if err := t.store.Create(ctx, handoff); err != nil {
+	newCaseID := handoff.ID
+	stored, err := t.store.CreateOrMerge(ctx, handoff)
+	if err != nil {
 		return ErrorResult(fmt.Sprintf("admin handoff case creation failed: %v", err))
 	}
-	message := formatAdminHandoff(ctx, handoff.ID, priority, strings.TrimSpace(argString(args, "service")), summary, stringSlice(args["identifiers"]))
+	handoff = stored
+	message := formatAdminHandoff(ctx, handoff.ID, priority, strings.TrimSpace(argString(args, "service")), summary, identifiers)
 	if err := t.sender(ctx, cfg.Channel, cfg.ChatID, message); err != nil {
-		if markErr := t.store.MarkDeliveryFailed(ctx, handoff.ID); markErr != nil {
-			return ErrorResult(fmt.Sprintf("admin handoff delivery failed: %v (also failed to mark case delivery failure: %v)", err, markErr))
+		// A failed update notification must not close the existing pending case.
+		if handoff.ID == newCaseID {
+			if markErr := t.store.MarkDeliveryFailed(ctx, handoff.ID); markErr != nil {
+				return ErrorResult(fmt.Sprintf("admin handoff delivery failed: %v (also failed to mark case delivery failure: %v)", err, markErr))
+			}
 		}
 		return ErrorResult(fmt.Sprintf("admin handoff delivery failed: %v", err))
 	}
 	return SilentResult(fmt.Sprintf(`{"status":"sent","destination":"admin_handoff","case_id":"CMH-%s"}`, strings.ToUpper(handoff.ID.String()[:8])))
+}
+
+var adminHandoffIPPattern = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
+
+// adminHandoffDedupeKey groups pending manual work for the same customer IP.
+// Non-IP requests intentionally remain separate because their relationship is ambiguous.
+func adminHandoffDedupeKey(sourceChannel, sourceChatID, summary string, identifiers []string) string {
+	for _, candidate := range append(append([]string{}, identifiers...), summary) {
+		for _, rawIP := range adminHandoffIPPattern.FindAllString(candidate, -1) {
+			ip, err := netip.ParseAddr(rawIP)
+			if err == nil {
+				return sourceChannel + "\x1f" + sourceChatID + "\x1f" + ip.String()
+			}
+		}
+	}
+	return ""
 }
 
 func normalizedAdminUserIDs(ids []string) []string {

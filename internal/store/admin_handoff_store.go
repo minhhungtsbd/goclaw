@@ -18,6 +18,7 @@ type AdminHandoff struct {
 	SourceChannel     string
 	SourceChatID      string
 	SourceMetadata    map[string]string
+	DedupeKey         string
 	Summary           string
 	Status            string
 	CreatedAt         time.Time
@@ -27,8 +28,12 @@ type AdminHandoff struct {
 
 type AdminHandoffStore interface {
 	Create(context.Context, *AdminHandoff) error
+	// CreateOrMerge reuses a pending handoff with the same dedupe key. It
+	// preserves one customer case while appending later related requests.
+	CreateOrMerge(context.Context, *AdminHandoff) (*AdminHandoff, error)
 	Get(context.Context, uuid.UUID) (*AdminHandoff, error)
 	ListPending(context.Context, uuid.UUID, string, string, int) ([]AdminHandoff, error)
 	MarkCompleted(context.Context, uuid.UUID, string) (*AdminHandoff, error)
+	MarkDismissed(context.Context, uuid.UUID) (*AdminHandoff, error)
 	MarkDeliveryFailed(context.Context, uuid.UUID) error
 }

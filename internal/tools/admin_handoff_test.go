@@ -17,9 +17,22 @@ func (s *testAdminHandoffStore) Create(_ context.Context, handoff *store.AdminHa
 	s.created = handoff
 	return nil
 }
-func (*testAdminHandoffStore) Get(context.Context, uuid.UUID) (*store.AdminHandoff, error) { return nil, nil }
-func (*testAdminHandoffStore) ListPending(context.Context, uuid.UUID, string, string, int) ([]store.AdminHandoff, error) { return nil, nil }
-func (*testAdminHandoffStore) MarkCompleted(context.Context, uuid.UUID, string) (*store.AdminHandoff, error) { return nil, nil }
+func (s *testAdminHandoffStore) CreateOrMerge(_ context.Context, handoff *store.AdminHandoff) (*store.AdminHandoff, error) {
+	s.created = handoff
+	return handoff, nil
+}
+func (*testAdminHandoffStore) Get(context.Context, uuid.UUID) (*store.AdminHandoff, error) {
+	return nil, nil
+}
+func (*testAdminHandoffStore) ListPending(context.Context, uuid.UUID, string, string, int) ([]store.AdminHandoff, error) {
+	return nil, nil
+}
+func (*testAdminHandoffStore) MarkCompleted(context.Context, uuid.UUID, string) (*store.AdminHandoff, error) {
+	return nil, nil
+}
+func (*testAdminHandoffStore) MarkDismissed(context.Context, uuid.UUID) (*store.AdminHandoff, error) {
+	return nil, nil
+}
 func (*testAdminHandoffStore) MarkDeliveryFailed(context.Context, uuid.UUID) error { return nil }
 
 func TestParseAdminHandoffConfig(t *testing.T) {
@@ -38,6 +51,16 @@ func TestParseAdminHandoffConfig(t *testing.T) {
 	}
 }
 
+func TestAdminHandoffDedupeKey(t *testing.T) {
+	got := adminHandoffDedupeKey("facebook", "customer-1", "Need restore 191.101.251.120", []string{"order #1"})
+	if got != "facebook\x1fcustomer-1\x1f191.101.251.120" {
+		t.Fatalf("dedupe key = %q", got)
+	}
+	if got := adminHandoffDedupeKey("facebook", "customer-1", "Need a package upgrade", nil); got != "" {
+		t.Fatalf("dedupe key without IP = %q, want empty", got)
+	}
+}
+
 func TestAdminHandoffToolSendsOnlyConfiguredDestination(t *testing.T) {
 	handoffStore := &testAdminHandoffStore{}
 	tool := NewAdminHandoffTool(handoffStore)
@@ -51,7 +74,7 @@ func TestAdminHandoffToolSendsOnlyConfiguredDestination(t *testing.T) {
 	})
 	ctx := store.WithTenantID(context.Background(), store.MasterTenantID)
 	ctx = store.WithAgentAudio(ctx, store.AgentAudioSnapshot{
-		AgentID: uuid.New(),
+		AgentID:     uuid.New(),
 		OtherConfig: json.RawMessage(`{"admin_handoff":{"enabled":true,"channel":"telegram","chat_id":"-5570031702"}}`),
 	})
 	ctx = WithToolChannel(ctx, "facebook")

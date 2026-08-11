@@ -98,6 +98,7 @@ func (c *Channel) handleBotCommand(ctx context.Context, message *telego.Message,
 			"/removecron — Remove a cron manager (reply to their message)\n" +
 			"/handoffs - List pending Admin handoffs (authorized Admins only)\n" +
 			"/handoff_done <case> <customer message> - Complete a handoff and notify the customer\n" +
+			"/handoff_dismiss <case> - Close a handoff without sending the customer a reply\n" +
 			"/handoff_need_info <case> <customer message> - Ask the customer for more information\n" +
 			"\nJust send a message to chat with the AI."
 		msg := tu.Message(chatIDObj, helpText)
@@ -252,6 +253,10 @@ func (c *Channel) handleBotCommand(ctx context.Context, message *telego.Message,
 
 	case "/handoff_done":
 		c.handleAdminHandoffDone(ctx, chatID, chatIDStr, senderID, text, isGroup, setThread)
+		return true
+
+	case "/handoff_dismiss":
+		c.handleAdminHandoffDismiss(ctx, chatID, chatIDStr, senderID, text, isGroup, setThread)
 		return true
 
 	case "/handoff_need_info":

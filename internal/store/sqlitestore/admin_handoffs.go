@@ -31,12 +31,37 @@ func (s *SQLiteAdminHandoffStore) Create(ctx context.Context, h *store.AdminHand
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO admin_handoffs (
 			id, tenant_id, agent_id, admin_channel, admin_chat_id,
-			source_channel, source_chat_id, source_metadata, summary, status, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+			source_channel, source_chat_id, source_metadata, dedupe_key, summary, status, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
 		h.ID.String(), h.TenantID.String(), h.AgentID.String(), h.AdminChannel, h.AdminChatID,
-		h.SourceChannel, h.SourceChatID, metadata, h.Summary, h.CreatedAt,
+		h.SourceChannel, h.SourceChatID, metadata, h.DedupeKey, h.Summary, h.CreatedAt,
 	)
 	return err
+}
+
+func (s *SQLiteAdminHandoffStore) CreateOrMerge(ctx context.Context, h *store.AdminHandoff) (*store.AdminHandoff, error) {
+	if h.DedupeKey == "" {
+		if err := s.Create(ctx, h); err != nil {
+			return nil, err
+		}
+		return h, nil
+	}
+	metadata, err := json.Marshal(h.SourceMetadata)
+	if err != nil {
+		return nil, fmt.Errorf("marshal source metadata: %w", err)
+	}
+	row := s.db.QueryRowContext(ctx, `
+		INSERT INTO admin_handoffs (
+			id, tenant_id, agent_id, admin_channel, admin_chat_id,
+			source_channel, source_chat_id, source_metadata, dedupe_key, summary, status, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+		ON CONFLICT (tenant_id, dedupe_key) WHERE status = 'pending' AND dedupe_key <> ''
+		DO UPDATE SET summary = admin_handoffs.summary || char(10) || char(10) || '[Customer update]' || char(10) || excluded.summary
+		RETURNING `+adminHandoffColumns,
+		h.ID.String(), h.TenantID.String(), h.AgentID.String(), h.AdminChannel, h.AdminChatID,
+		h.SourceChannel, h.SourceChatID, metadata, h.DedupeKey, h.Summary, h.CreatedAt,
+	)
+	return scanAdminHandoff(row)
 }
 
 func (s *SQLiteAdminHandoffStore) Get(ctx context.Context, id uuid.UUID) (*store.AdminHandoff, error) {
@@ -76,6 +101,25 @@ func (s *SQLiteAdminHandoffStore) MarkCompleted(ctx context.Context, id uuid.UUI
 		SET status = 'completed', completed_at = ?, completion_message = ?
 		WHERE id = ? AND tenant_id = ? AND status = 'pending'`,
 		time.Now().UTC(), message, id.String(), store.TenantIDFromContext(ctx).String())
+	if err != nil {
+		return nil, err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+	if count != 1 {
+		return nil, fmt.Errorf("admin handoff not found or is no longer pending")
+	}
+	return s.Get(ctx, id)
+}
+
+func (s *SQLiteAdminHandoffStore) MarkDismissed(ctx context.Context, id uuid.UUID) (*store.AdminHandoff, error) {
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE admin_handoffs
+		SET status = 'dismissed', completed_at = ?, completion_message = '[dismissed by Admin]'
+		WHERE id = ? AND tenant_id = ? AND status = 'pending'`,
+		time.Now().UTC(), id.String(), store.TenantIDFromContext(ctx).String())
 	if err != nil {
 		return nil, err
 	}
