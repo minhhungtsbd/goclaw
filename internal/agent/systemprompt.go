@@ -203,6 +203,7 @@ var coreToolSummaries = map[string]string{
 	"tts":                    "Convert text to speech audio",
 	"edit":                   "Edit a file by replacing exact text matches",
 	"message":                "Send a PROACTIVE message to another channel/chat — do NOT use this to reply to the user, just respond directly",
+	"escalate_to_admin":      "Send a support handoff to the fixed Admin destination configured for this agent. Use it before saying a manual case was transferred",
 	"sessions_list":          "List sessions for this agent",
 	"session_status":         "Show session status (model, tokens, compaction count)",
 	"sessions_history":       "Fetch message history for a session",
