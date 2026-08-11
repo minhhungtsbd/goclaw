@@ -61,7 +61,7 @@ func (s *CloudminiServicePreflightStage) Execute(ctx context.Context, state *Run
 		}
 		state.Tool.TotalToolCalls++
 
-		if requiresCloudminiLiveCheck(state.Input.Message) && !cloudminiServiceDeleted(messages) {
+		if requiresCloudminiProxyLiveCheck(state.Input.Message) && !cloudminiServiceDeleted(messages) {
 			liveCheck := providers.ToolCall{
 				ID:   fmt.Sprintf("cloudmini-live-preflight-%d", index+1),
 				Name: cloudminiProxyCheckToolName,
@@ -84,9 +84,9 @@ func (s *CloudminiServicePreflightStage) Execute(ctx context.Context, state *Run
 	return nil
 }
 
-func requiresCloudminiLiveCheck(message string) bool {
+func requiresCloudminiProxyLiveCheck(message string) bool {
 	message = strings.ToLower(message)
-	return containsAny(message, "lỗi", "không kết nối", "check live", "die")
+	return strings.Contains(message, "proxy") && containsAny(message, "lỗi", "không kết nối", "check live", "die")
 }
 
 func cloudminiServiceDeleted(messages []providers.Message) bool {
@@ -119,7 +119,7 @@ func requiresCloudminiServiceLookup(state *RunState) bool {
 	if len(cloudminiIPs(message)) == 0 {
 		return false
 	}
-	return strings.Contains(message, "proxy") && containsAny(message,
+	return containsAny(message,
 		"lỗi", "không kết nối", "check live", "khôi phục", "gia hạn", "hủy", "đổi", "hoàn", "thay thế", "refund", "renew", "cancel", "replace")
 }
 

@@ -59,3 +59,21 @@ func TestCloudminiServicePreflightSkipsNonSupportMessage(t *testing.T) {
 		t.Fatalf("preflight: %v", err)
 	}
 }
+
+func TestCloudminiServicePreflightChecksVPSWithoutLiveCheck(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "Gia hạn VPS IP 203.0.113.10 giúp anh"}, nil, "", nil)
+	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
+	var calls []providers.ToolCall
+	stage := NewCloudminiServicePreflightStage(&PipelineDeps{
+		ExecuteToolCall: func(_ context.Context, _ *RunState, tc providers.ToolCall) ([]providers.Message, error) {
+			calls = append(calls, tc)
+			return []providers.Message{{Role: "tool", ToolCallID: tc.ID, Content: `{"services":[{"service_status":"linked","plan":"VPS-Custom"}]}`}}, nil
+		},
+	})
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	if len(calls) != 1 || calls[0].Arguments["operation"] != "service_info" {
+		t.Fatalf("calls = %#v", calls)
+	}
+}
