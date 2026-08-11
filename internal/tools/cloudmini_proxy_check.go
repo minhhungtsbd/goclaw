@@ -198,7 +198,7 @@ func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, body []b
 // tool result: support needs it for matching a customer-provided email and an
 // Admin handoff. Agent instructions prohibit disclosing it to the customer.
 type cloudminiServiceInfo struct {
-	ID                  any   `json:"id"`
+	ID                  any    `json:"id"`
 	IP                  string `json:"ip"`
 	Expire              string `json:"expire"`
 	Plan                string `json:"plan"`
