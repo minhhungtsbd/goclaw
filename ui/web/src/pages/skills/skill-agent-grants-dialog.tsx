@@ -21,6 +21,8 @@ import {
 import { useAgents } from "@/pages/agents/hooks/use-agents";
 import type { SkillAgentGrant, SkillInfo } from "@/types/skill";
 
+const FOLLOW_LATEST_SHARED = 0;
+
 interface SkillAgentGrantsDialogProps {
   skill: SkillInfo;
   onClose: () => void;
@@ -73,11 +75,11 @@ export function SkillAgentGrantsDialog({
     setLoading(true);
     setError("");
     try {
-      await onGrant(skill.id, agentId, skill.version ?? 1, canManage);
+      await onGrant(skill.id, agentId, FOLLOW_LATEST_SHARED, canManage);
       setGrants((current) => {
         const next: SkillAgentGrant = {
           agent_id: agentId,
-          pinned_version: skill.version ?? 1,
+          pinned_version: FOLLOW_LATEST_SHARED,
           granted_by: "",
           can_manage: canManage,
         };
@@ -100,12 +102,12 @@ export function SkillAgentGrantsDialog({
     setLoading(true);
     setError("");
     try {
-      await onGrantAll(skill.id, agents.map((agent) => agent.id), skill.version ?? 1, canManage);
+      await onGrantAll(skill.id, agents.map((agent) => agent.id), FOLLOW_LATEST_SHARED, canManage);
       setGrants(agents.map((agent) => ({
         agent_id: agent.id,
         agent_key: agent.agent_key,
         display_name: agent.display_name,
-        pinned_version: skill.version ?? 1,
+        pinned_version: FOLLOW_LATEST_SHARED,
         granted_by: "",
         can_manage: canManage,
       })));
@@ -137,6 +139,7 @@ export function SkillAgentGrantsDialog({
       <DialogContent className="max-h-[85vh] flex flex-col sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{t("grants.title", { name: skill.name })}</DialogTitle>
+          <p className="text-sm text-muted-foreground">{t("grants.sharedLatestHint")}</p>
         </DialogHeader>
 
         <div className="space-y-4 overflow-y-auto min-h-0 pr-1">
@@ -151,7 +154,7 @@ export function SkillAgentGrantsDialog({
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">{grant.display_name || grant.agent_key || agentNames.get(grant.agent_id) || grant.agent_id}</p>
                       <div className="mt-1 flex items-center gap-1.5">
-                        <Badge variant="secondary" className="text-2xs">v{grant.pinned_version}</Badge>
+                        <Badge variant="secondary" className="text-2xs">{t("grants.sharedLatest")}</Badge>
                         {grant.can_manage && (
                           <Badge variant="outline" className="text-2xs border-emerald-500 text-emerald-600">
                             {t("grants.canManage")}

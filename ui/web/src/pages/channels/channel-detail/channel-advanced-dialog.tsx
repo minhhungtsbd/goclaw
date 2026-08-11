@@ -36,13 +36,28 @@ const TELEGRAM_MANAGEMENT_KEYS = new Set(["telegram_manager.enabled", "telegram_
 export function getAdvancedFields(channelType: string) {
   const allFields = configSchema[channelType] ?? [];
   const advanced = allFields.filter((f) => !ESSENTIAL_CONFIG_KEYS.has(f.key));
+  const network = advanced.filter((f) => NETWORK_KEYS.has(f.key));
+  const limits = advanced.filter((f) => LIMITS_KEYS.has(f.key));
+  const streaming = advanced.filter((f) => STREAMING_KEYS.has(f.key));
+  const behavior = advanced.filter((f) => BEHAVIOR_KEYS.has(f.key) || f.key.startsWith("chat_behavior."));
+  const access = advanced.filter((f) => ACCESS_KEYS.has(f.key));
+  const telegramManagement = advanced.filter((f) => TELEGRAM_MANAGEMENT_KEYS.has(f.key));
+  const groupedKeys = new Set([
+    ...network,
+    ...limits,
+    ...streaming,
+    ...behavior,
+    ...access,
+    ...telegramManagement,
+  ].map((field) => field.key));
   return {
-    network: advanced.filter((f) => NETWORK_KEYS.has(f.key)),
-    limits: advanced.filter((f) => LIMITS_KEYS.has(f.key)),
-    streaming: advanced.filter((f) => STREAMING_KEYS.has(f.key)),
-    behavior: advanced.filter((f) => BEHAVIOR_KEYS.has(f.key) || f.key.startsWith("chat_behavior.")),
-    access: advanced.filter((f) => ACCESS_KEYS.has(f.key)),
-    telegramManagement: advanced.filter((f) => TELEGRAM_MANAGEMENT_KEYS.has(f.key)),
+    network,
+    limits,
+    streaming,
+    behavior,
+    access,
+    telegramManagement,
+    channelSpecific: advanced.filter((field) => !groupedKeys.has(field.key)),
   };
 }
 
@@ -188,6 +203,22 @@ export function ChannelAdvancedDialog({
                 values={values}
                 onChange={handleChange}
                 idPrefix="adv-beh"
+              />
+            </>
+          )}
+
+          {groups.channelSpecific.length > 0 && (
+            <>
+              <ConfigGroupHeader
+                title={t("detail.channelSpecific")}
+                description={t("detail.channelSpecificDesc")}
+              />
+              <ChannelFields
+                fields={groups.channelSpecific}
+                values={values}
+                onChange={handleChange}
+                idPrefix="adv-channel"
+                contextValues={values}
               />
             </>
           )}

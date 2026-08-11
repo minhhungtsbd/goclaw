@@ -107,6 +107,8 @@
     "streamingDesc": "实时消息流选项",
     "behavior": "行为",
     "behaviorDesc": "响应行为配置",
+    "channelSpecific": "Channel-specific settings",
+    "channelSpecificDesc": "Settings supported by this channel type.",
     "accessControl": "访问控制",
     "accessControlDesc": "用户访问限制",
     "telegramManagement": "Telegram 管理",

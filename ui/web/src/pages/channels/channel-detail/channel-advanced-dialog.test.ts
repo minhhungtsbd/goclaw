@@ -71,4 +71,12 @@ describe("channel advanced config payload", () => {
       "telegram_manager.allowed_actions",
     ]);
   });
+
+  it("shows Facebook-specific settings that do not belong to a generic group", () => {
+    const groups = getAdvancedFields("facebook");
+
+    expect(groups.channelSpecific.map((field) => field.key)).toContain(
+      "messenger_options.admin_reply_cooldown_minutes",
+    );
+  });
 });

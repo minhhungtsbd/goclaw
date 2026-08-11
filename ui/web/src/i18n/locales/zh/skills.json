@@ -232,6 +232,8 @@
     "selectAgent": "选择 Agent",
     "allowManage": "允许此 Agent 编辑或删除 Skill",
     "canManage": "可编辑",
+    "sharedLatest": "Shared latest",
+    "sharedLatestHint": "All granted agents use the current shared skill version. Historical versions are retained only for rollback.",
     "grantAllAgents": "授权所有 Agent",
     "grantAllPartial": "{{count}} 个 Agent 授权失败",
     "loadFailed": "无法加载授权",

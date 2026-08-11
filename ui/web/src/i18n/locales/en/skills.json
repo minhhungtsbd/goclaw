@@ -62,6 +62,8 @@
     "selectAgent": "Select agent",
     "allowManage": "Allow this agent to edit or delete the skill",
     "canManage": "Can edit",
+    "sharedLatest": "Shared latest",
+    "sharedLatestHint": "All granted agents use the current shared skill version. Historical versions are retained only for rollback.",
     "grantAllAgents": "Grant all agents",
     "grantAllPartial": "{{count}} agent grant(s) failed",
     "loadFailed": "Failed to load grants",

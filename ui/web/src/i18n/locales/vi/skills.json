@@ -232,6 +232,8 @@
     "selectAgent": "Chọn agent",
     "allowManage": "Cho phép agent này sửa hoặc xóa skill",
     "canManage": "Được sửa",
+    "sharedLatest": "Bản dùng chung mới nhất",
+    "sharedLatestHint": "Tất cả agent được cấp quyền sẽ dùng bản skill chung hiện hành. Các bản cũ chỉ được giữ để rollback.",
     "grantAllAgents": "Grant tất cả agents",
     "grantAllPartial": "{{count}} grant agent thất bại",
     "loadFailed": "Không thể tải grant",

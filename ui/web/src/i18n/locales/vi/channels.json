@@ -107,6 +107,8 @@
     "streamingDesc": "Tùy chọn streaming tin nhắn thời gian thực",
     "behavior": "Hành vi",
     "behaviorDesc": "Cấu hình hành vi phản hồi",
+    "channelSpecific": "Cài đặt riêng của Channel",
+    "channelSpecificDesc": "Các cài đặt được hỗ trợ riêng cho loại Channel này.",
     "accessControl": "Kiểm soát truy cập",
     "accessControlDesc": "Giới hạn truy cập người dùng",
     "telegramManagement": "Quản trị Telegram",

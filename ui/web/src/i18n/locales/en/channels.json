@@ -108,6 +108,8 @@
     "streamingDesc": "Real-time message streaming options",
     "behavior": "Behavior",
     "behaviorDesc": "Response behavior configuration",
+    "channelSpecific": "Channel-specific settings",
+    "channelSpecificDesc": "Settings supported by this channel type.",
     "accessControl": "Access Control",
     "accessControlDesc": "User access restrictions",
     "telegramManagement": "Telegram Management",

@@ -235,7 +235,7 @@ export function SkillsPage() {
     const agentIds = agents.map((agent) => agent.id).filter(Boolean);
     runBulkAction(async () => {
       for (const skill of selectedCustomSkills) {
-        if (skill.id) await grantSkillToAgents(skill.id, agentIds, skill.version ?? 1, true);
+        if (skill.id) await grantSkillToAgents(skill.id, agentIds, 0, true);
       }
     }, "bulk.grantedAllAgents", selectedCustomSkills.length);
   };
