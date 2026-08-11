@@ -31,6 +31,12 @@ function resolveTimeoutSeconds(settings: Record<string, unknown>): number {
   return Math.min(Math.max(Math.trunc(value), MIN_TIMEOUT_SECONDS), MAX_TIMEOUT_SECONDS);
 }
 
+function resolveAllowedAgentKeys(settings: Record<string, unknown>): string[] {
+  const value = settings.allowed_agent_keys;
+  if (!Array.isArray(value)) return ["linh-nhi-support-lead"];
+  return value.filter((item): item is string => typeof item === "string" && item.trim() !== "");
+}
+
 export function CloudminiProxyCheckSettingsForm({
   initialSettings,
   secretsSet,
@@ -39,12 +45,14 @@ export function CloudminiProxyCheckSettingsForm({
 }: Props) {
   const { t } = useTranslation("tools");
   const [timeoutSeconds, setTimeoutSeconds] = useState(() => resolveTimeoutSeconds(initialSettings));
+  const [allowedAgentKeys, setAllowedAgentKeys] = useState(() => resolveAllowedAgentKeys(initialSettings));
   const [apiToken, setApiToken] = useState("");
   const [saving, setSaving] = useState(false);
   const tokenConfigured = secretsSet?.[TOKEN_SECRET_KEY] === true;
 
   useEffect(() => {
     setTimeoutSeconds(resolveTimeoutSeconds(initialSettings));
+    setAllowedAgentKeys(resolveAllowedAgentKeys(initialSettings));
     setApiToken("");
   }, [initialSettings]);
 
@@ -55,7 +63,7 @@ export function CloudminiProxyCheckSettingsForm({
     );
     const settings: Record<string, unknown> = {
       timeout_seconds: timeout,
-      allowed_agent_keys: ["linh-nhi-support-lead"],
+      allowed_agent_keys: allowedAgentKeys,
     };
     if (apiToken.trim()) {
       settings.auth = { api_token: apiToken.trim() };
@@ -120,6 +128,24 @@ export function CloudminiProxyCheckSettingsForm({
               min: MIN_TIMEOUT_SECONDS,
               max: MAX_TIMEOUT_SECONDS,
             })}
+          </p>
+        </div>
+
+        <div className="grid gap-1.5">
+          <Label htmlFor="cloudmini-allowed-agents" className="text-sm">
+            {t("builtin.cloudminiProxyCheck.allowedAgents")}
+          </Label>
+          <Input
+            id="cloudmini-allowed-agents"
+            value={allowedAgentKeys.join(", ")}
+            onChange={(event) => setAllowedAgentKeys(
+              event.target.value.split(",").map((key) => key.trim()).filter(Boolean),
+            )}
+            placeholder="linh-nhi-support-lead"
+            className="text-base md:text-sm"
+          />
+          <p className="text-xs text-muted-foreground">
+            {t("builtin.cloudminiProxyCheck.allowedAgentsHint")}
           </p>
         </div>
 

@@ -26,16 +26,19 @@ func (s *cloudminiTestSecretsStore) GetAll(_ context.Context) (map[string]string
 	return s.data, nil
 }
 
-func TestCloudminiProxyCheckSanitizesServiceEmail(t *testing.T) {
-	got, err := sanitizeCloudminiProxyResponse("service_info", "191.101.251.120", []byte(`{"error":false,"msg":"Success","data":[{"id":1,"ip":"191.101.251.120","expire":"2026-08-12","plan":"PrivateV4","user_email":"private@example.com"}]}`))
+func TestCloudminiProxyCheckReturnsServiceEmailForInternalMatching(t *testing.T) {
+	got, err := sanitizeCloudminiProxyResponse("service_info", "191.101.251.120", "private@example.com", []byte(`{"error":false,"msg":"Success","data":[{"id":1,"ip":"191.101.251.120","expire":"2026-08-12","plan":"PrivateV4","user_email":"private@example.com"}]}`))
 	if err != nil {
 		t.Fatalf("sanitizeCloudminiProxyResponse: %v", err)
 	}
 	if contains := string(got); contains == "" || !json.Valid([]byte(got)) {
 		t.Fatalf("result = %q", got)
 	}
-	if strings.Contains(got, "private@example.com") {
-		t.Fatalf("email was not redacted: %s", got)
+	if !strings.Contains(got, "private@example.com") {
+		t.Fatalf("service email missing: %s", got)
+	}
+	if !strings.Contains(got, `"account_email_matches":true`) {
+		t.Fatalf("email match missing: %s", got)
 	}
 }
 
@@ -60,5 +63,15 @@ func TestCloudminiProxyCheckCallsFixedEndpoint(t *testing.T) {
 	result := tool.Execute(ctx, map[string]any{"ip": "51.194.203.22", "operation": "live_check"})
 	if result.IsError || !strings.Contains(result.ForLLM, "New Zealand") {
 		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestCloudminiProxyCheckAllowsAgentWhenNoToolRestrictionConfigured(t *testing.T) {
+	tool := NewCloudminiProxyCheckTool(nil)
+	ctx := WithToolAgentKey(context.Background(), "another-support-agent")
+	ctx = WithBuiltinToolSettings(ctx, BuiltinToolSettings{"cloudmini_proxy_check": []byte(`{"timeout_seconds":15}`)})
+
+	if !tool.allowedForAgent(ctx) {
+		t.Fatal("tool should defer to the agent-specific allow-list when allowed_agent_keys is empty")
 	}
 }

@@ -154,7 +154,9 @@
       "apiTokenConfigured": "A token is already stored. Leave this field empty to keep it unchanged.",
       "timeoutSeconds": "Timeout (seconds)",
       "timeoutHint": "Allowed range: {{min}}-{{max}} seconds.",
-      "scopeHint": "The tool only calls Cloudmini's fixed check_services and check_live_proxy endpoints, and only Linh Nhi can execute it.",
+      "allowedAgents": "Allowed agent keys",
+      "allowedAgentsHint": "Comma-separated agent keys. Leave empty to rely only on each agent's own tool allow-list.",
+      "scopeHint": "The tool only calls Cloudmini's fixed check_services and check_live_proxy endpoints. Each listed agent must also have this tool in its own allow-list.",
       "cancel": "Cancel",
       "save": "Save",
       "saving": "Saving..."

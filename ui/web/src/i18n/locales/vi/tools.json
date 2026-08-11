@@ -154,7 +154,9 @@
       "apiTokenConfigured": "Đã có token được lưu. Để trống trường này nếu muốn giữ nguyên token hiện tại.",
       "timeoutSeconds": "Thời gian chờ (giây)",
       "timeoutHint": "Phạm vi cho phép: {{min}}-{{max}} giây.",
-      "scopeHint": "Tool chỉ gọi hai endpoint cố định check_services và check_live_proxy của Cloudmini; chỉ Linh Nhi được chạy tool này.",
+      "allowedAgents": "Agent key được phép",
+      "allowedAgentsHint": "Nhập các agent key, cách nhau bằng dấu phẩy. Để trống nếu chỉ muốn dùng allow-list tool riêng của từng agent.",
+      "scopeHint": "Tool chỉ gọi hai endpoint cố định check_services và check_live_proxy của Cloudmini. Mỗi agent trong danh sách vẫn phải được bật tool này ở allow-list riêng.",
       "cancel": "Hủy",
       "save": "Lưu",
       "saving": "Đang lưu..."

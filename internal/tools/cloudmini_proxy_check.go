@@ -36,7 +36,7 @@ func NewCloudminiProxyCheckTool(secrets store.ConfigSecretsStore) *CloudminiProx
 func (t *CloudminiProxyCheckTool) Name() string { return "cloudmini_proxy_check" }
 
 func (t *CloudminiProxyCheckTool) Description() string {
-	return "Check Cloudmini proxy service details or live GeoIP details for one IP. Use only for customer support after the customer provides the IP or it is already present in the conversation."
+	return "Check Cloudmini Proxy or VPS service details, expiry, plan, account email, or live GeoIP for one IP. Use only for customer support after the customer provides the IP or it is already present in the conversation."
 }
 
 func (t *CloudminiProxyCheckTool) Parameters() map[string]any {
@@ -49,6 +49,9 @@ func (t *CloudminiProxyCheckTool) Parameters() map[string]any {
 			"operation": map[string]any{
 				"type": "string", "enum": []string{"service_info", "live_check"},
 				"description": "service_info checks Cloudmini service/plan/expiry. live_check checks live GeoIP details.",
+			},
+			"account_email": map[string]any{
+				"type": "string", "description": "Optional Cloudmini account email already supplied by the customer. service_info compares it with the service record.",
 			},
 		},
 		"required": []string{"ip", "operation"},
@@ -106,7 +109,7 @@ func (t *CloudminiProxyCheckTool) Execute(ctx context.Context, args map[string]a
 		return ErrorResult(fmt.Sprintf("Cloudmini proxy check returned HTTP %d", resp.StatusCode))
 	}
 
-	result, err := sanitizeCloudminiProxyResponse(operation, ip.String(), body)
+	result, err := sanitizeCloudminiProxyResponse(operation, ip.String(), argString(args, "account_email"), body)
 	if err != nil {
 		return ErrorResult("Cloudmini proxy check returned an invalid response")
 	}
@@ -119,6 +122,10 @@ func (t *CloudminiProxyCheckTool) allowedForAgent(ctx context.Context) bool {
 	}
 	if raw := BuiltinToolSettingsFromCtx(ctx)[t.Name()]; len(raw) > 0 {
 		_ = json.Unmarshal(raw, &settings)
+	}
+	if len(settings.AllowedAgentKeys) == 0 {
+		// Agent-specific tool policy still controls visibility and invocation.
+		return true
 	}
 	agentKey := ToolAgentKeyFromCtx(ctx)
 	for _, allowed := range settings.AllowedAgentKeys {
@@ -142,7 +149,7 @@ func (t *CloudminiProxyCheckTool) timeout(ctx context.Context) time.Duration {
 	return time.Duration(settings.TimeoutSeconds) * time.Second
 }
 
-func sanitizeCloudminiProxyResponse(operation, ip string, body []byte) (string, error) {
+func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, body []byte) (string, error) {
 	var response struct {
 		Error bool            `json:"error"`
 		Msg   string          `json:"msg"`
@@ -157,14 +164,17 @@ func sanitizeCloudminiProxyResponse(operation, ip string, body []byte) (string, 
 		return string(encoded), err
 	}
 	if operation == "service_info" {
-		var items []struct {
-			ID     any    `json:"id"`
-			IP     string `json:"ip"`
-			Expire string `json:"expire"`
-			Plan   string `json:"plan"`
-		}
+		var items []cloudminiServiceInfo
 		if err := json.Unmarshal(response.Data, &items); err != nil {
 			return "", err
+		}
+		expectedEmail := strings.TrimSpace(accountEmail)
+		for i := range items {
+			if expectedEmail == "" || strings.TrimSpace(items[i].UserEmail) == "" {
+				continue
+			}
+			matches := strings.EqualFold(strings.TrimSpace(items[i].UserEmail), expectedEmail)
+			items[i].AccountEmailMatches = &matches
 		}
 		result["services"] = items
 	} else {
@@ -182,4 +192,16 @@ func sanitizeCloudminiProxyResponse(operation, ip string, body []byte) (string, 
 	}
 	encoded, err := json.Marshal(result)
 	return string(encoded), err
+}
+
+// cloudminiServiceInfo intentionally keeps the account email in the internal
+// tool result: support needs it for matching a customer-provided email and an
+// Admin handoff. Agent instructions prohibit disclosing it to the customer.
+type cloudminiServiceInfo struct {
+	ID                  any   `json:"id"`
+	IP                  string `json:"ip"`
+	Expire              string `json:"expire"`
+	Plan                string `json:"plan"`
+	UserEmail           string `json:"user_email,omitempty"`
+	AccountEmailMatches *bool  `json:"account_email_matches,omitempty"`
 }
