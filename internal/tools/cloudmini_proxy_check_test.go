@@ -26,24 +26,34 @@ func (s *cloudminiTestSecretsStore) GetAll(_ context.Context) (map[string]string
 	return s.data, nil
 }
 
-func TestCloudminiProxyCheckReturnsServiceEmailForInternalMatching(t *testing.T) {
-	got, err := sanitizeCloudminiProxyResponse("service_info", "191.101.251.120", "private@example.com", []byte(`{"error":false,"msg":"Success","data":[{"id":1,"ip":"191.101.251.120","expire":"2026-08-12","plan":"PrivateV4","user_email":"private@example.com"}]}`))
+func TestCloudminiProxyCheckReturnsMatchForMatchingAccountEmail(t *testing.T) {
+	got, err := sanitizeCloudminiProxyResponse("service_info", "191.101.251.120", "private@example.com", nil, []byte(`{"error":false,"msg":"Success","data":[{"id":1,"ip":"191.101.251.120","expire":"2026-08-12","plan":"PrivateV4","user_email":"private@example.com"}]}`))
 	if err != nil {
 		t.Fatalf("sanitizeCloudminiProxyResponse: %v", err)
 	}
 	if contains := string(got); contains == "" || !json.Valid([]byte(got)) {
 		t.Fatalf("result = %q", got)
 	}
-	if !strings.Contains(got, "private@example.com") {
-		t.Fatalf("service email missing: %s", got)
-	}
 	if !strings.Contains(got, `"account_email_matches":true`) {
 		t.Fatalf("email match missing: %s", got)
+	}
+	if !strings.Contains(got, `"2026-08-12"`) {
+		t.Fatalf("expire date should be visible when email matches: %s", got)
+	}
+}
+
+func TestCloudminiProxyCheckHandlesSingleObjectData(t *testing.T) {
+	got, err := sanitizeCloudminiProxyResponse("service_info", "31.57.203.176", "lamithan@gmail.com", nil, []byte(`{"error":false,"msg":"Success","data":{"ip":"31.57.203.176","expire":"2026-09-11T03:59:16.106083Z","plan":"PrivateV4","user_email":"lamithan@gmail.com","region":"Illinois"}}`))
+	if err != nil {
+		t.Fatalf("sanitizeCloudminiProxyResponse single object: %v", err)
+	}
+	if !strings.Contains(got, "PrivateV4") || !strings.Contains(got, "Illinois") {
+		t.Fatalf("result missing expected fields: %s", got)
 	}
 }
 
 func TestCloudminiProxyCheckMarksNullExpiryAsDeleted(t *testing.T) {
-	got, err := sanitizeCloudminiProxyResponse("service_info", "191.101.251.120", "", []byte(`{"error":false,"msg":"Success","data":[{"id":1,"ip":"191.101.251.120","expire":null,"plan":"PrivateV4","user_email":"private@example.com"}]}`))
+	got, err := sanitizeCloudminiProxyResponse("service_info", "191.101.251.120", "", nil, []byte(`{"error":false,"msg":"Success","data":[{"id":1,"ip":"191.101.251.120","expire":null,"plan":"PrivateV4","user_email":"private@example.com"}]}`))
 	if err != nil {
 		t.Fatalf("sanitizeCloudminiProxyResponse: %v", err)
 	}
@@ -52,6 +62,44 @@ func TestCloudminiProxyCheckMarksNullExpiryAsDeleted(t *testing.T) {
 	}
 	if !strings.Contains(got, `"service_status":"deleted"`) {
 		t.Fatalf("deleted service status missing: %s", got)
+	}
+}
+
+func TestCloudminiProxyCheckRedactsExpiryAndEmailWhenNoAccountEmail(t *testing.T) {
+	got, err := sanitizeCloudminiProxyResponse("service_info", "46.203.160.119", "", nil, []byte(`{"error":false,"msg":"Success","data":[{"id":1,"ip":"46.203.160.119","expire":"2026-08-17","plan":"Residential Static","user_email":"mtanh97@gmail.com"}]}`))
+	if err != nil {
+		t.Fatalf("sanitizeCloudminiProxyResponse: %v", err)
+	}
+	if strings.Contains(got, "mtanh97@gmail.com") {
+		t.Fatalf("user_email must be redacted: %s", got)
+	}
+	if strings.Contains(got, "2026-08-17") {
+		t.Fatalf("expiry must be redacted when no account_email supplied: %s", got)
+	}
+	if !strings.Contains(got, "BẮT BUỘC phải hỏi xin email") {
+		t.Fatalf("status_note must prompt for email: %s", got)
+	}
+}
+
+func TestCloudminiProxyCheckRedactsUnmatchedAccountEmail(t *testing.T) {
+	got, err := sanitizeCloudminiProxyResponse("service_info", "191.101.251.120", "userA@example.com", nil, []byte(`{"error":false,"msg":"Success","data":[{"id":1,"ip":"191.101.251.120","expire":"2026-09-11","plan":"PrivateV4","user_email":"userB@example.com"}]}`))
+	if err != nil {
+		t.Fatalf("sanitizeCloudminiProxyResponse: %v", err)
+	}
+	if strings.Contains(got, "userB@example.com") {
+		t.Fatalf("unmatched user_email must be redacted: %s", got)
+	}
+	if strings.Contains(got, "2026-09-11") {
+		t.Fatalf("unmatched expire date must be redacted: %s", got)
+	}
+	if !strings.Contains(got, `"account_email_matches":false`) {
+		t.Fatalf("account_email_matches false missing: %s", got)
+	}
+	if !strings.Contains(got, `"service_status":"unavailable"`) {
+		t.Fatalf("service_status unavailable missing: %s", got)
+	}
+	if !strings.Contains(got, "IP hiện không còn khả dụng.") {
+		t.Fatalf("status_note missing: %s", got)
 	}
 }
 
@@ -65,7 +113,7 @@ func TestCloudminiProxyCheckCallsFixedEndpoint(t *testing.T) {
 		if r.Header.Get("Authorization") != "Token secret" {
 			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
 		}
-		_, _ = w.Write([]byte(`{"error":false,"msg":"Success","data":{"ip":"51.194.203.22","country":"New Zealand","state_prov":"Auckland","city":"Auckland","zipcode":"1010"}}`))
+		_, _ = w.Write([]byte(`{"error":false,"msg":"Success","data":{"ip":"51.194.203.22","live":true}}`))
 	}))
 	defer server.Close()
 	tool.client = server.Client()
@@ -74,17 +122,25 @@ func TestCloudminiProxyCheckCallsFixedEndpoint(t *testing.T) {
 	ctx = WithBuiltinToolSettings(ctx, BuiltinToolSettings{"cloudmini_proxy_check": []byte(`{"allowed_agent_keys":["linh-nhi-support-lead"]}`)})
 
 	result := tool.Execute(ctx, map[string]any{"ip": "51.194.203.22", "operation": "live_check"})
-	if result.IsError || !strings.Contains(result.ForLLM, "New Zealand") {
+	if result.IsError || !strings.Contains(result.ForLLM, `"live":true`) {
 		t.Fatalf("result = %#v", result)
 	}
 }
 
-func TestCloudminiProxyCheckAllowsAgentWhenNoToolRestrictionConfigured(t *testing.T) {
-	tool := NewCloudminiProxyCheckTool(nil)
-	ctx := WithToolAgentKey(context.Background(), "another-support-agent")
-	ctx = WithBuiltinToolSettings(ctx, BuiltinToolSettings{"cloudmini_proxy_check": []byte(`{"timeout_seconds":15}`)})
+func TestCloudminiProxyCheckFlagsConfiguredResellerOnlyAfterEmailMatch(t *testing.T) {
+	got, err := sanitizeCloudminiProxyResponse("service_info", "191.101.251.120", "reseller@example.com", []string{"reseller@example.com"}, []byte(`{"error":false,"msg":"Success","data":[{"ip":"191.101.251.120","expire":"2026-08-12","plan":"PrivateV4","user_email":"reseller@example.com"}]}`))
+	if err != nil {
+		t.Fatalf("sanitizeCloudminiProxyResponse: %v", err)
+	}
+	if !strings.Contains(got, `"is_reseller_vip":true`) {
+		t.Fatalf("configured reseller flag missing: %s", got)
+	}
 
-	if !tool.allowedForAgent(ctx) {
-		t.Fatal("tool should defer to the agent-specific allow-list when allowed_agent_keys is empty")
+	got, err = sanitizeCloudminiProxyResponse("service_info", "191.101.251.120", "reseller@example.com", []string{"reseller@example.com"}, []byte(`{"error":false,"msg":"Success","data":[{"ip":"191.101.251.120","expire":"2026-08-12","plan":"PrivateV4","user_email":"other@example.com"}]}`))
+	if err != nil {
+		t.Fatalf("sanitizeCloudminiProxyResponse: %v", err)
+	}
+	if strings.Contains(got, `"is_reseller_vip":true`) {
+		t.Fatalf("unmatched account must not receive reseller privileges: %s", got)
 	}
 }

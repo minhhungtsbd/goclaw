@@ -47,7 +47,7 @@ func TestCloudminiServicePreflightSkipsLiveCheckForDeletedService(t *testing.T) 
 }
 
 func TestCloudminiServicePreflightSkipsNonSupportMessage(t *testing.T) {
-	state := NewRunState(&RunInput{Message: "Proxy 94.103.56.231 ở quốc gia nào?"}, nil, "", nil)
+	state := NewRunState(&RunInput{Message: "Proxy ở quốc gia nào?"}, nil, "", nil)
 	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
 	stage := NewCloudminiServicePreflightStage(&PipelineDeps{
 		ExecuteToolCall: func(_ context.Context, _ *RunState, _ providers.ToolCall) ([]providers.Message, error) {

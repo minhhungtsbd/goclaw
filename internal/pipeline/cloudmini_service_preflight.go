@@ -132,11 +132,7 @@ func isCloudminiServiceRequest(state *RunState) bool {
 		return false
 	}
 	message := strings.ToLower(state.Input.Message)
-	if len(cloudminiIPs(message)) == 0 {
-		return false
-	}
-	return containsAny(message,
-		"lỗi", "không kết nối", "check live", "khôi phục", "gia hạn", "hủy", "đổi", "hoàn", "thay thế", "refund", "renew", "cancel", "replace")
+	return len(cloudminiIPs(message)) > 0
 }
 
 func hasCloudminiProxyCheckTool(tools []providers.ToolDefinition) bool {

@@ -109,7 +109,7 @@ func (t *CloudminiProxyCheckTool) Execute(ctx context.Context, args map[string]a
 		return ErrorResult(fmt.Sprintf("Cloudmini proxy check returned HTTP %d", resp.StatusCode))
 	}
 
-	result, err := sanitizeCloudminiProxyResponse(operation, ip.String(), argString(args, "account_email"), body)
+	result, err := sanitizeCloudminiProxyResponse(operation, ip.String(), argString(args, "account_email"), t.settings(ctx).ResellerEmails, body)
 	if err != nil {
 		return ErrorResult("Cloudmini proxy check returned an invalid response")
 	}
@@ -117,14 +117,8 @@ func (t *CloudminiProxyCheckTool) Execute(ctx context.Context, args map[string]a
 }
 
 func (t *CloudminiProxyCheckTool) allowedForAgent(ctx context.Context) bool {
-	var settings struct {
-		AllowedAgentKeys []string `json:"allowed_agent_keys"`
-	}
-	if raw := BuiltinToolSettingsFromCtx(ctx)[t.Name()]; len(raw) > 0 {
-		_ = json.Unmarshal(raw, &settings)
-	}
+	settings := t.settings(ctx)
 	if len(settings.AllowedAgentKeys) == 0 {
-		// Agent-specific tool policy still controls visibility and invocation.
 		return true
 	}
 	agentKey := ToolAgentKeyFromCtx(ctx)
@@ -137,19 +131,64 @@ func (t *CloudminiProxyCheckTool) allowedForAgent(ctx context.Context) bool {
 }
 
 func (t *CloudminiProxyCheckTool) timeout(ctx context.Context) time.Duration {
-	var settings struct {
-		TimeoutSeconds int `json:"timeout_seconds"`
-	}
-	if raw := BuiltinToolSettingsFromCtx(ctx)[t.Name()]; len(raw) > 0 {
-		_ = json.Unmarshal(raw, &settings)
-	}
+	settings := t.settings(ctx)
 	if settings.TimeoutSeconds < 3 || settings.TimeoutSeconds > 60 {
 		return defaultCloudminiTimeout
 	}
 	return time.Duration(settings.TimeoutSeconds) * time.Second
 }
 
-func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, body []byte) (string, error) {
+type cloudminiProxyCheckSettings struct {
+	AllowedAgentKeys []string `json:"allowed_agent_keys"`
+	TimeoutSeconds   int      `json:"timeout_seconds"`
+	ResellerEmails   []string `json:"reseller_emails"`
+}
+
+func (t *CloudminiProxyCheckTool) settings(ctx context.Context) cloudminiProxyCheckSettings {
+	var settings cloudminiProxyCheckSettings
+	if raw := BuiltinToolSettingsFromCtx(ctx)[t.Name()]; len(raw) > 0 {
+		_ = json.Unmarshal(raw, &settings)
+	}
+	return settings
+}
+
+func isResellerEmail(email string, allowed []string) bool {
+	email = strings.ToLower(strings.TrimSpace(email))
+	for _, candidate := range allowed {
+		if email != "" && email == strings.ToLower(strings.TrimSpace(candidate)) {
+			return true
+		}
+	}
+	return false
+}
+
+func isResidentialStaticPlan(plan string) bool {
+	p := strings.ToLower(strings.TrimSpace(plan))
+	return strings.Contains(p, "residential static")
+}
+
+func isVPSPlan(plan string) bool {
+	p := strings.ToLower(strings.TrimSpace(plan))
+	vpsKeywords := []string{"vps", "custom", "mini", "promo", "yt", "server", "dedicated"}
+	for _, kw := range vpsKeywords {
+		if strings.Contains(p, kw) {
+			return true
+		}
+	}
+	if strings.HasPrefix(p, "nn") {
+		return true
+	}
+	return false
+}
+
+func getServiceClassificationNote(plan string) string {
+	if isVPSPlan(plan) {
+		return " [PHÂN LOẠI: DỊCH VỤ VPS (Gói: " + plan + "). BẮT BUỘC xử lý theo Nhánh 2 (VPS). TUYỆT ĐỐI KHÔNG gọi tool live_check.]"
+	}
+	return " [PHÂN LOẠI: DỊCH VỤ PROXY (Gói: " + plan + "). Xử lý theo Nhánh 1 (Proxy).]"
+}
+
+func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, resellerEmails []string, body []byte) (string, error) {
 	var response struct {
 		Error bool            `json:"error"`
 		Msg   string          `json:"msg"`
@@ -166,47 +205,121 @@ func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, body []b
 	if operation == "service_info" {
 		var items []cloudminiServiceInfo
 		if err := json.Unmarshal(response.Data, &items); err != nil {
-			return "", err
+			var single cloudminiServiceInfo
+			if errSingle := json.Unmarshal(response.Data, &single); errSingle == nil {
+				items = []cloudminiServiceInfo{single}
+			} else {
+				return "", err
+			}
 		}
 		expectedEmail := strings.TrimSpace(accountEmail)
 		for i := range items {
 			items[i].setServiceStatus()
-			if expectedEmail == "" || strings.TrimSpace(items[i].UserEmail) == "" {
-				continue
+			rawUserEmail := strings.TrimSpace(items[i].UserEmail)
+			items[i].UserEmail = "" // Redact system account email from LLM view
+
+			classNote := getServiceClassificationNote(items[i].Plan)
+			isResStatic := isResidentialStaticPlan(items[i].Plan)
+
+			if expectedEmail != "" {
+				if rawUserEmail != "" {
+					matches := strings.EqualFold(rawUserEmail, expectedEmail)
+					items[i].AccountEmailMatches = &matches
+
+					if matches {
+						isReseller := isResellerEmail(rawUserEmail, resellerEmails)
+						if isReseller {
+							items[i].IsReseller = &isReseller
+							items[i].IsResellerVIP = &isReseller
+						}
+						if isReseller {
+							items[i].StatusNote = "IP thuộc tài khoản Reseller của khách hàng." + classNote + " Được phép ưu tiên hỗ trợ và chuyển Admin theo yêu cầu."
+						} else if items[i].ServiceStatus == "deleted" {
+							if isResStatic {
+								items[i].StatusNote = "IP đã bị xóa đúng tài khoản của khách hàng." + classNote + " [QUY TẮC KHÔI PHỤC GÓI RESIDENTIAL STATIC]: BẮT BUỘC thông báo khách phí khôi phục IP cũ là 25.000đ/IP (nếu còn tài nguyên IP cũ) và YÊU CẦU KHÁCH NẠP ĐỦ SỐ DƯ TÀI KHOẢN CLOUDMINI = TỔNG (GIÁ CƯỚC PROXY + PHÍ KHÔI PHỤC 25.000đ/IP) để Admin tiến hành khôi phục thủ công."
+							} else {
+								items[i].StatusNote = "IP đã bị xóa đúng tài khoản của khách hàng." + classNote + " Thông báo dịch vụ đã bị xóa/hết hạn và chuyển Admin kiểm tra khả năng khôi phục."
+							}
+						} else {
+							items[i].StatusNote = "IP đang hoạt động đúng tài khoản của khách hàng." + classNote
+						}
+					} else {
+						if items[i].ServiceStatus == "linked" || items[i].ServiceStatus == "active" {
+							items[i].ServiceStatus = "unavailable"
+							items[i].StatusNote = "IP hiện không còn khả dụng." + classNote
+							items[i].Expire = nil // Redact expiry when email does not match
+						}
+					}
+				}
+			} else {
+				if items[i].ServiceStatus == "linked" || items[i].ServiceStatus == "active" {
+					items[i].ServiceStatus = "active"
+					items[i].StatusNote = "IP đang có thông tin dịch vụ." + classNote + " YÊU CẦU BẮT BUỘC BƯỚC 2: Nếu trong toàn bộ cuộc trò chuyện CHƯA CÓ email của khách hàng, BẮT BUỘC phải hỏi xin email tài khoản Cloudmini của khách trước hết. KHÔNG ĐƯỢC đưa ra hướng dẫn kỹ thuật chuyên sâu hay kết luận hỗ trợ khi chưa có email."
+					items[i].Expire = nil // Redact expiry until email is supplied & verified
+				} else if items[i].ServiceStatus == "deleted" {
+					if isResStatic {
+						items[i].StatusNote = "IP đã bị xóa." + classNote + " [QUY TẮC KHÔI PHỤC GÓI RESIDENTIAL STATIC]: BẮT BUỘC thông báo khách phí khôi phục IP cũ là 25.000đ/IP (nếu còn tài nguyên IP cũ) và YÊU CẦU KHÁCH NẠP ĐỦ SỐ DƯ TÀI KHOẢN CLOUDMINI = TỔNG (GIÁ CƯỚC PROXY + PHÍ KHÔI PHỤC 25.000đ/IP) để Admin tiến hành khôi phục thủ công."
+					} else {
+						items[i].StatusNote = "IP đã bị xóa." + classNote + " Thông báo dịch vụ đã bị xóa/hết hạn và chuyển Admin kiểm tra khả năng khôi phục."
+					}
+				}
 			}
-			matches := strings.EqualFold(strings.TrimSpace(items[i].UserEmail), expectedEmail)
-			items[i].AccountEmailMatches = &matches
 		}
 		result["services"] = items
 	} else {
-		var live struct {
-			IP        string `json:"ip"`
-			Country   string `json:"country"`
-			StateProv string `json:"state_prov"`
-			City      string `json:"city"`
-			Zipcode   string `json:"zipcode"`
+		isLive := !response.Error
+		if len(response.Data) > 0 {
+			var rawMap map[string]any
+			if err := json.Unmarshal(response.Data, &rawMap); err == nil {
+				if l, ok := rawMap["live"].(bool); ok {
+					isLive = l
+				} else if s, ok := rawMap["status"].(string); ok {
+					sLower := strings.ToLower(s)
+					if sLower == "die" || sLower == "dead" || sLower == "failed" || sLower == "error" {
+						isLive = false
+					} else if sLower == "live" || sLower == "ok" || sLower == "active" {
+						isLive = true
+					}
+				} else if lStr, ok := rawMap["live"].(string); ok {
+					if strings.ToLower(lStr) == "false" || strings.ToLower(lStr) == "die" {
+						isLive = false
+					}
+				}
+			}
 		}
-		if err := json.Unmarshal(response.Data, &live); err != nil {
-			return "", err
+
+		statusText := "LIVE (Proxy đang kết nối hoạt động bình thường)"
+		if !isLive {
+			statusText = "DIE (Proxy gián đoạn hoặc không kết nối được)"
 		}
-		result["live"] = live
+
+		result["live_check"] = map[string]any{
+			"ip":     ip,
+			"live":   isLive,
+			"status": statusText,
+		}
 	}
 	encoded, err := json.Marshal(result)
 	return string(encoded), err
 }
 
-// cloudminiServiceInfo intentionally keeps the account email in the internal
-// tool result: support needs it for matching a customer-provided email and an
-// Admin handoff. Agent instructions prohibit disclosing it to the customer.
 type cloudminiServiceInfo struct {
-	ID                  any    `json:"id"`
-	IP                  string `json:"ip"`
+	IP                  string  `json:"ip"`
+	Plan                string  `json:"plan"`
+	UserEmail           string  `json:"user_email,omitempty"`
 	Expire              *string `json:"expire"`
-	Plan                string `json:"plan"`
-	UserEmail           string `json:"user_email,omitempty"`
-	AccountEmailMatches *bool  `json:"account_email_matches,omitempty"`
-	ServiceStatus       string `json:"service_status"`
-	StatusNote          string `json:"status_note"`
+	Region              string  `json:"region"`
+	ServiceStatus       string  `json:"service_status"`
+	StatusNote          string  `json:"status_note,omitempty"`
+	AccountEmailMatches *bool   `json:"account_email_matches,omitempty"`
+	IsReseller          *bool   `json:"is_reseller,omitempty"`
+	IsResellerVIP       *bool   `json:"is_reseller_vip,omitempty"`
+}
+
+type cloudminiLiveCheck struct {
+	IP       string `json:"ip"`
+	Live     bool   `json:"live"`
+	HttpCode int    `json:"http_code"`
 }
 
 func (s *cloudminiServiceInfo) setServiceStatus() {
@@ -215,6 +328,6 @@ func (s *cloudminiServiceInfo) setServiceStatus() {
 		s.StatusNote = "IP đã bị xóa và không còn gắn với dịch vụ nào."
 		return
 	}
-	s.ServiceStatus = "linked"
-	s.StatusNote = "IP vẫn đang gắn với dịch vụ."
+	s.ServiceStatus = "active"
+	s.StatusNote = "IP đang có thông tin dịch vụ."
 }
