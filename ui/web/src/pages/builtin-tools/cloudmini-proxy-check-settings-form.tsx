@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 const DEFAULT_TIMEOUT_SECONDS = 15;
 const MIN_TIMEOUT_SECONDS = 3;
@@ -37,6 +38,20 @@ function resolveAllowedAgentKeys(settings: Record<string, unknown>): string[] {
   return value.filter((item): item is string => typeof item === "string" && item.trim() !== "");
 }
 
+function resolveResellerEmails(settings: Record<string, unknown>): string[] {
+  const value = settings.reseller_emails;
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && item.trim() !== "");
+}
+
+function normalizeEmails(value: string): string[] {
+  const seen = new Set<string>();
+  return value
+    .split(/[\n,;]/)
+    .map((email) => email.trim().toLowerCase())
+    .filter((email) => email !== "" && !seen.has(email) && (seen.add(email), true));
+}
+
 export function CloudminiProxyCheckSettingsForm({
   initialSettings,
   secretsSet,
@@ -46,6 +61,7 @@ export function CloudminiProxyCheckSettingsForm({
   const { t } = useTranslation("tools");
   const [timeoutSeconds, setTimeoutSeconds] = useState(() => resolveTimeoutSeconds(initialSettings));
   const [allowedAgentKeys, setAllowedAgentKeys] = useState(() => resolveAllowedAgentKeys(initialSettings));
+  const [resellerEmails, setResellerEmails] = useState(() => resolveResellerEmails(initialSettings).join("\n"));
   const [apiToken, setApiToken] = useState("");
   const [saving, setSaving] = useState(false);
   const tokenConfigured = secretsSet?.[TOKEN_SECRET_KEY] === true;
@@ -53,6 +69,7 @@ export function CloudminiProxyCheckSettingsForm({
   useEffect(() => {
     setTimeoutSeconds(resolveTimeoutSeconds(initialSettings));
     setAllowedAgentKeys(resolveAllowedAgentKeys(initialSettings));
+    setResellerEmails(resolveResellerEmails(initialSettings).join("\n"));
     setApiToken("");
   }, [initialSettings]);
 
@@ -64,6 +81,7 @@ export function CloudminiProxyCheckSettingsForm({
     const settings: Record<string, unknown> = {
       timeout_seconds: timeout,
       allowed_agent_keys: allowedAgentKeys,
+      reseller_emails: normalizeEmails(resellerEmails),
     };
     if (apiToken.trim()) {
       settings.auth = { api_token: apiToken.trim() };
@@ -146,6 +164,23 @@ export function CloudminiProxyCheckSettingsForm({
           />
           <p className="text-xs text-muted-foreground">
             {t("builtin.cloudminiProxyCheck.allowedAgentsHint")}
+          </p>
+        </div>
+
+        <div className="grid gap-1.5">
+          <Label htmlFor="cloudmini-reseller-emails" className="text-sm">
+            {t("builtin.cloudminiProxyCheck.resellerEmails")}
+          </Label>
+          <Textarea
+            id="cloudmini-reseller-emails"
+            value={resellerEmails}
+            onChange={(event) => setResellerEmails(event.target.value)}
+            placeholder="reseller@example.com"
+            rows={5}
+            className="font-mono text-base md:text-sm"
+          />
+          <p className="text-xs text-muted-foreground">
+            {t("builtin.cloudminiProxyCheck.resellerEmailsHint")}
           </p>
         </div>
 

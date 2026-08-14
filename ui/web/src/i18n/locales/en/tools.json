@@ -156,6 +156,8 @@
       "timeoutHint": "Allowed range: {{min}}-{{max}} seconds.",
       "allowedAgents": "Allowed agent keys",
       "allowedAgentsHint": "Comma-separated agent keys. Leave empty to rely only on each agent's own tool allow-list.",
+      "resellerEmails": "Reseller account emails",
+      "resellerEmailsHint": "One email per line, or separate with commas. Duplicates are removed automatically. Reseller priority applies only after the service API confirms the customer email.",
       "scopeHint": "The tool only calls Cloudmini's fixed check_services and check_live_proxy endpoints. Each listed agent must also have this tool in its own allow-list.",
       "cancel": "Cancel",
       "save": "Save",
