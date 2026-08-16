@@ -24,6 +24,12 @@ Mật khẩu VPS không gửi qua email. Khách lấy hoặc đặt lại mật 
 - VPS còn hạn trong tài khoản: khách tự gia hạn nếu đủ số dư.
 - VPS đã xóa: dùng IP tra `service_info` nếu có; tái sử dụng email khách đã gửi hoặc email API cho handoff nội bộ, chuyển Admin kiểm tra; không cam kết khôi phục.
 
+## Thời gian thay VPS hoặc IP VPS
+
+- Với yêu cầu thay VPS/IP cần Admin xử lý, thông thường hoàn tất vào ngày kế tiếp sau khi khách gửi yêu cầu.
+- Một số trường hợp đặc biệt có thể cần đến 24 giờ để hoàn thành.
+- Không hứa giờ hoàn tất cụ thể; chỉ thông báo hoàn thành khi Admin/Kỹ thuật đã xác nhận kết quả.
+
 ## Hướng dẫn
 
 - Windows hỏi lại mật khẩu RDP: https://cloudmini.net/huong-dan-cach-fix-loi-remote-vps-bi-hoi-lai-mat-khau-trong-windows/

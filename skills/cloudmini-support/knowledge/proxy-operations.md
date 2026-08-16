@@ -4,6 +4,12 @@
 
 Tại Quản lý Proxy, khách xem IP, Port, Username, Password; thao tác nhiều Proxy; tự Transfer Proxy sang tài khoản khác. Khuyến nghị chủ sở hữu tự chuyển để giảm tranh chấp. Lịch sử thao tác nằm tại Log History.
 
+## Thời gian thay IP Proxy
+
+- Với yêu cầu thay IP cần Admin xử lý, thông thường hoàn tất vào ngày kế tiếp sau khi khách gửi yêu cầu.
+- Một số trường hợp đặc biệt có thể cần đến 24 giờ để hoàn thành.
+- Không cam kết giờ hoàn tất cụ thể khi chưa có kết quả Admin/Kỹ thuật. Chỉ cập nhật “đã xong” sau khi nhận được kết quả xử lý thực tế.
+
 ## Hết hạn, gia hạn và giữ dữ liệu
 
 - Gói 5k và 50k: giữ khoảng 3–5 ngày sau hết hạn.
@@ -21,7 +27,7 @@ Khi khách yêu cầu khôi phục hoặc gia hạn lại Proxy hết hạn đã
    - **Trường hợp 1 — IP KHÔNG có liên kết dịch vụ active nào (`service_status == "deleted"` hoặc không gắn dịch vụ)**:
      - Thông báo cho khách rằng IP có khả năng khôi phục/gia hạn được.
      - Gọi `escalate_to_admin` để tạo case chuyển Admin xử lý.
-     - **Thông báo chắc nịch**: *"Dạ em đã chuyển case sang cho bộ phận Admin/Kỹ thuật chờ xử lý rồi ạ. Thời gian xử lý có thể mất từ vài phút đến 1 giờ, anh/chị vui lòng chờ giúp em nhé!"*
+     - Chỉ xác nhận đã chuyển case sau khi `escalate_to_admin` thành công; áp dụng mốc thời gian ở mục **Thời gian thay IP Proxy**, không hứa hoàn tất sớm hơn.
    - **Trường hợp 2 — IP ĐANG gắn với 1 dịch vụ đang hoạt động (`service_status == "active"`)**:
      - **Định danh & Đối chiếu email nội bộ**: So sánh email dịch vụ `user_email` (từ kết quả tool) với email tài khoản khách hàng đã cung cấp:
        - **CÙNG EMAIL**: Báo cho khách biết Proxy IP đó vẫn nằm trong tài khoản của khách và đang ở trạng thái hoạt động (nêu hạn sử dụng). Hướng dẫn khách: *"Anh/chị có thể tự gia hạn trực tiếp tại trang Quản lý Proxy trên trang web Cloudmini nhé!"*
@@ -33,7 +39,7 @@ Khi khách yêu cầu khôi phục hoặc gia hạn lại Proxy hết hạn đã
 - Chỉ Proxy bị xóa trong vòng **3 ngày trở lại** mới có thể yêu cầu khôi phục.
 - Hướng dẫn khách nạp đủ số dư vào tài khoản Cloudmini để Admin tiến hành khôi phục.
 - Sau khi khách cung cấp email, danh sách IP và đã nạp đủ số dư, chuyển Admin kiểm tra và xử lý.
-- Khi chuyển Admin xong, thông báo chắc nịch đã chuyển case cho Admin chờ xử lý (thời gian từ vài phút đến 1 giờ).
+- Khi chuyển Admin xong, chỉ xác nhận case đã được tiếp nhận; áp dụng mốc thời gian ở mục **Thời gian thay IP Proxy** và không hứa hoàn tất sớm hơn.
 
 ### Proxy khác
 
