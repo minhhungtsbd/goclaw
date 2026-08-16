@@ -28,6 +28,10 @@ Nguồn tri thức chuẩn cho agent hỗ trợ khách hàng Cloudmini qua Faceb
 * **`service_status == "deleted"`** (hoặc `expire == null`): IP đã bị xóa khỏi hệ thống hoặc hết hạn.
 * **`service_status == "unavailable"`**: IP đang thuộc tài khoản khác (do `account_email` không khớp). Agent phản hồi: *"IP hiện tại không còn khả dụng để khôi phục hoặc gia hạn."*
 * **`is_reseller == true`**: Tài khoản thuộc danh sách **Reseller**. Bắt buộc kiểm tra danh sách Reseller (`minhchi12@gmail.com`, `proxy@mkt.city`, `lamithan@gmail.com`...). Khách Reseller được ưu tiên hỗ trợ, được phép bỏ qua các hạn chế hủy/hoàn/đổi IP thông thường và ưu tiên chuyển thẳng cho Admin (`escalate_to_admin`) khi có yêu cầu.
+* **`cancellation_policy`**: Chỉ có sau khi `account_email_matches == true`. Đây là kết luận chính sách có cấu trúc cho thao tác hủy:
+  - `not_supported`: không hỗ trợ hủy/hoàn theo nhu cầu. Không tạo Admin handoff chỉ vì trang web báo không hủy được; phải thông báo đúng chính sách gói.
+  - `self_service`: khách được phép tự hủy tại trang quản lý. Chỉ khi đã xác minh email và khách thực sự gặp lỗi hủy trên web mới chuyển Admin kiểm tra thao tác.
+  - `review_required`: chưa có kết luận tự động; đối chiếu tài liệu chính sách trước khi quyết định handoff.
 
 ### 4. Quy tắc Email Tài khoản & Bảo mật Dữ liệu (Mandatory Email & Privacy Rules)
 * **QUY TẮC BẮT BUỘC XÁC MINH EMAIL TÀI KHOẢN CLOUDMINI**:
@@ -66,6 +70,18 @@ Chỉ gọi `escalate_to_admin` khi thuộc 1 trong các trường hợp sau:
 3. Khách đã làm theo các bước hướng dẫn cơ bản (Restart VPS, WARP, 4G...) nhưng vẫn không kết nối được.
 4. Khách hàng chủ động yêu cầu chuyển Admin hoặc yêu cầu thao tác thủ công (đổi Port, đổi thông tin auth, hoàn tiền...).
 5. Tài khoản khách thuộc danh sách **Reseller**.
+
+### 2.1. Trường hợp khách báo nút hủy trên web bị lỗi
+
+Luôn xử lý theo thứ tự sau; **không được tạo Admin handoff ở bước 1 hoặc 2**:
+
+1. Chưa có IP: xin IP cần hủy.
+2. Đã có IP nhưng chưa có email tài khoản Cloudmini: gọi `service_info` để nhận diện IP, sau đó xin email. Không nói “đã ghi nhận”, “đang chờ xử lý” hoặc “đã chuyển Admin”.
+3. Đã có email: gọi lại `service_info` với `account_email`, chỉ tiếp tục khi `account_email_matches == true`.
+4. Dùng `cancellation_policy` và tài liệu `refund-cancellation.md` để trả lời:
+   - `not_supported`: giải thích gói không hỗ trợ hủy/hoàn theo nhu cầu. Lỗi hiển thị “dịch vụ này không thể hủy” phù hợp với chính sách, không phải lỗi cần Admin xử lý.
+   - `self_service`: xác nhận gói được phép hủy. Nếu khách đã báo lỗi hủy thực tế trên web, tạo Admin handoff để kiểm tra thao tác thủ công, kèm IP, gói, email đã xác minh và nội dung/ảnh lỗi.
+   - `review_required`: đọc đúng chính sách gói trước; chỉ handoff khi chính sách hoặc thao tác nội bộ yêu cầu.
 
 ---
 

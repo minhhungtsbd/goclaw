@@ -40,6 +40,22 @@ func TestCloudminiProxyCheckReturnsMatchForMatchingAccountEmail(t *testing.T) {
 	if !strings.Contains(got, `"2026-08-12"`) {
 		t.Fatalf("expire date should be visible when email matches: %s", got)
 	}
+	if !strings.Contains(got, `"cancellation_policy":"self_service"`) {
+		t.Fatalf("PrivateV4 cancellation policy missing: %s", got)
+	}
+}
+
+func TestCloudminiProxyCheckReturnsNoCancellationPolicyForResidentialStatic(t *testing.T) {
+	got, err := sanitizeCloudminiProxyResponse("service_info", "109.166.49.164", "customer@example.com", nil, []byte(`{"error":false,"msg":"Success","data":[{"ip":"109.166.49.164","expire":"2026-09-14","plan":"Residential Static","user_email":"customer@example.com"}]}`))
+	if err != nil {
+		t.Fatalf("sanitizeCloudminiProxyResponse: %v", err)
+	}
+	if !strings.Contains(got, `"cancellation_policy":"not_supported"`) {
+		t.Fatalf("Residential Static policy missing: %s", got)
+	}
+	if !strings.Contains(got, "không hỗ trợ hủy hoặc hoàn tiền") {
+		t.Fatalf("Residential Static instruction missing: %s", got)
+	}
 }
 
 func TestCloudminiProxyCheckHandlesSingleObjectData(t *testing.T) {

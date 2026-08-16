@@ -181,6 +181,34 @@ func isVPSPlan(plan string) bool {
 	return false
 }
 
+// cancellationPolicy is returned only after the customer has verified their
+// account email. It makes the cancellation decision explicit so the agent does
+// not turn a dashboard error into an unnecessary Admin handoff.
+func cancellationPolicy(plan string) (string, string) {
+	p := strings.ToLower(strings.TrimSpace(plan))
+
+	switch {
+	case strings.Contains(p, "budgetv4"),
+		strings.Contains(p, "budget v4"),
+		strings.Contains(p, "privatev6"),
+		strings.Contains(p, "private v6"),
+		strings.Contains(p, "residential static"),
+		strings.Contains(p, "residential vn"),
+		strings.Contains(p, "rotating residential"),
+		strings.HasPrefix(p, "nn"):
+		return "not_supported", "Gói này không hỗ trợ hủy hoặc hoàn tiền theo nhu cầu. Lỗi nút hủy trên web không tạo thành yêu cầu Admin; phải thông báo đúng chính sách gói và không nói yêu cầu đang chờ xử lý."
+	case strings.Contains(p, "privatev4"),
+		strings.Contains(p, "private v4"),
+		strings.Contains(p, "custom"),
+		strings.Contains(p, "mini"),
+		strings.Contains(p, "promo"),
+		strings.Contains(p, "yt"):
+		return "self_service", "Gói này cho phép khách tự hủy trong trang quản lý. Nếu khách đã xác minh đúng email và vẫn có lỗi hủy thực tế trên web, có thể tạo Admin handoff để kiểm tra thao tác; không hứa hoàn tất hoặc mức hoàn trước khi có kết quả."
+	default:
+		return "review_required", "Chưa xác định được chính sách hủy tự động cho gói này. Không tạo Admin handoff chỉ vì lỗi nút hủy; cần đối chiếu chính sách Cloudmini trước."
+	}
+}
+
 func getServiceClassificationNote(plan string) string {
 	if isVPSPlan(plan) {
 		return " [PHÂN LOẠI: DỊCH VỤ VPS (Gói: " + plan + "). BẮT BUỘC xử lý theo Nhánh 2 (VPS). TUYỆT ĐỐI KHÔNG gọi tool live_check.]"
@@ -242,6 +270,7 @@ func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, reseller
 							}
 						} else {
 							items[i].StatusNote = "IP đang hoạt động đúng tài khoản của khách hàng." + classNote
+							items[i].CancellationPolicy, items[i].CancellationInstruction = cancellationPolicy(items[i].Plan)
 						}
 					} else {
 						if items[i].ServiceStatus == "linked" || items[i].ServiceStatus == "active" {
@@ -304,16 +333,18 @@ func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, reseller
 }
 
 type cloudminiServiceInfo struct {
-	IP                  string  `json:"ip"`
-	Plan                string  `json:"plan"`
-	UserEmail           string  `json:"user_email,omitempty"`
-	Expire              *string `json:"expire"`
-	Region              string  `json:"region"`
-	ServiceStatus       string  `json:"service_status"`
-	StatusNote          string  `json:"status_note,omitempty"`
-	AccountEmailMatches *bool   `json:"account_email_matches,omitempty"`
-	IsReseller          *bool   `json:"is_reseller,omitempty"`
-	IsResellerVIP       *bool   `json:"is_reseller_vip,omitempty"`
+	IP                      string  `json:"ip"`
+	Plan                    string  `json:"plan"`
+	UserEmail               string  `json:"user_email,omitempty"`
+	Expire                  *string `json:"expire"`
+	Region                  string  `json:"region"`
+	ServiceStatus           string  `json:"service_status"`
+	StatusNote              string  `json:"status_note,omitempty"`
+	AccountEmailMatches     *bool   `json:"account_email_matches,omitempty"`
+	IsReseller              *bool   `json:"is_reseller,omitempty"`
+	IsResellerVIP           *bool   `json:"is_reseller_vip,omitempty"`
+	CancellationPolicy      string  `json:"cancellation_policy,omitempty"`
+	CancellationInstruction string  `json:"cancellation_instruction,omitempty"`
 }
 
 type cloudminiLiveCheck struct {

@@ -10,6 +10,18 @@ Trước khi xử lý phải xác định:
 
 Khi khách đã gửi IP, dùng `cloudmini_proxy_check` với `service_info` trước để xác định loại dịch vụ, tên gói và hạn. Chỉ xin ảnh/tên gói khi không có IP hoặc API không có kết quả; không hỏi lại dữ liệu API và hội thoại đã xác định.
 
+## Khách báo hủy trên web không thành công
+
+Không chuyển Admin ngay khi chỉ thấy ảnh hoặc thông báo “dịch vụ này không thể hủy”. Xử lý theo thứ tự:
+
+1. Xin IP nếu hội thoại chưa có IP.
+2. Nếu chưa có email Cloudmini, xin email và không nói yêu cầu đang chờ xử lý.
+3. Gọi lại `cloudmini_proxy_check(operation="service_info", account_email="...")`; chỉ dùng dữ liệu chính sách khi `account_email_matches == true`.
+4. Đối chiếu `plan` và `cancellation_policy`:
+   - `not_supported`: trả lời theo chính sách gói, không tạo Admin handoff. Với Residential Static, giải thích rõ không hỗ trợ hủy/hoàn phần thời gian còn lại theo nhu cầu; thông báo web là hành vi phù hợp với chính sách.
+   - `self_service`: gói được phép tự hủy. Nếu khách đã xác minh đúng email nhưng nút hủy vẫn báo lỗi, chuyển Admin kiểm tra thao tác thủ công; không cam kết ETA hoặc mức hoàn.
+   - `review_required`: chỉ chuyển sau khi đối chiếu chính sách hiện hành hoặc khi cần thao tác nội bộ.
+
 Không áp dụng chính sách VPS cho Proxy hoặc ngược lại. “Acc bị die” thường là tài khoản bên thứ ba bị khóa, không đồng nghĩa Proxy lỗi.
 
 - Không yêu cầu Check Live nếu khách chỉ đổi/hủy vì acc bên thứ ba die.
