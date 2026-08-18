@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+
+	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
 func TestParseAdminHandoffCommand(t *testing.T) {
@@ -32,5 +34,30 @@ func TestAdminHandoffUnauthorizedMessageIncludesSenderID(t *testing.T) {
 	got := adminHandoffUnauthorizedMessage("987654321|username")
 	if !strings.Contains(got, "987654321") {
 		t.Fatalf("unauthorized message = %q, want sender ID", got)
+	}
+}
+
+func TestAdminHandoffListPagesSplitsAndKeepsActions(t *testing.T) {
+	handoffs := make([]store.AdminHandoff, adminHandoffsPerMessage+1)
+	for i := range handoffs {
+		handoffs[i] = store.AdminHandoff{
+			ID:            uuid.New(),
+			SourceChannel: "facebook",
+			SourceChatID:  "customer",
+			Summary:       strings.Repeat("nội dung xử lý ", 30),
+		}
+	}
+
+	pages := adminHandoffListPages(handoffs)
+	if len(pages) != 2 {
+		t.Fatalf("page count = %d, want 2", len(pages))
+	}
+	if len(pages[0].rows) != adminHandoffsPerMessage || len(pages[1].rows) != 1 {
+		t.Fatalf("button rows = %d, %d", len(pages[0].rows), len(pages[1].rows))
+	}
+	for _, page := range pages {
+		if len([]rune(page.text)) >= telegramMaxMessageLen {
+			t.Fatalf("page exceeds Telegram limit: %d", len([]rune(page.text)))
+		}
 	}
 }

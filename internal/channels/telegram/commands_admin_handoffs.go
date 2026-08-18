@@ -17,7 +17,13 @@ import (
 
 const (
 	adminHandoffDefaultInfo = "Dạ, bộ phận kỹ thuật cần anh cung cấp thêm thông tin để tiếp tục kiểm tra. Anh gửi giúp em mã đơn hàng hoặc ảnh lỗi hiện tại nhé ạ."
+	adminHandoffsPerMessage = 5
 )
+
+type adminHandoffListPage struct {
+	text string
+	rows [][]telego.InlineKeyboardButton
+}
 
 func (c *Channel) handleAdminHandoffsList(ctx context.Context, chatID int64, chatIDStr, senderID string, isGroup bool, setThread func(*telego.SendMessageParams)) {
 	send := func(text string) {
@@ -44,24 +50,37 @@ func (c *Channel) handleAdminHandoffsList(ctx context.Context, chatID int64, cha
 		return
 	}
 
-	var text strings.Builder
-	text.WriteString("ADMIN HANDOFF ĐANG CHỜ XỬ LÝ\n\n")
-	rows := make([][]telego.InlineKeyboardButton, 0, len(handoffs)*3)
-	for _, handoff := range handoffs {
-		text.WriteString(fmt.Sprintf("%s | %s\n%s\n\n", handoffReference(handoff.ID), handoff.SourceChannel+"/"+handoff.SourceChatID, truncateStr(handoff.Summary, 180)))
-		rows = append(rows, []telego.InlineKeyboardButton{
-			{Text: handoffReference(handoff.ID) + " Hoàn tất", CallbackData: "ah:done:" + handoff.ID.String()},
-			{Text: "Cần bổ sung", CallbackData: "ah:info:" + handoff.ID.String()},
-			{Text: "Đóng, không trả lời", CallbackData: "ah:dismiss:" + handoff.ID.String()},
-		})
+	pages := adminHandoffListPages(handoffs)
+	for index, page := range pages {
+		msg := tu.Message(tu.ID(chatID), fmt.Sprintf("ADMIN HANDOFF ĐANG CHỜ XỬ LÝ (%d/%d)\n\n%s", index+1, len(pages), page.text))
+		setThread(msg)
+		msg.ReplyMarkup = &telego.InlineKeyboardMarkup{InlineKeyboard: page.rows}
+		if _, err := c.bot.SendMessage(ctx, msg); err != nil {
+			slog.Warn("telegram admin handoff list send failed", "error", err, "page", index+1, "pages", len(pages))
+		}
 	}
-	text.WriteString("Dùng nút để xử lý case. Hoặc dùng /handoff_done <case> hay /handoff_dismiss <case>.")
-	msg := tu.Message(tu.ID(chatID), text.String())
-	setThread(msg)
-	msg.ReplyMarkup = &telego.InlineKeyboardMarkup{InlineKeyboard: rows}
-	if _, err := c.bot.SendMessage(ctx, msg); err != nil {
-		slog.Warn("telegram admin handoff list send failed", "error", err)
+}
+
+// adminHandoffListPages keeps both the text and the related action buttons
+// below Telegram's message limit when many pending cases exist.
+func adminHandoffListPages(handoffs []store.AdminHandoff) []adminHandoffListPage {
+	pages := make([]adminHandoffListPage, 0, (len(handoffs)+adminHandoffsPerMessage-1)/adminHandoffsPerMessage)
+	for start := 0; start < len(handoffs); start += adminHandoffsPerMessage {
+		end := min(start+adminHandoffsPerMessage, len(handoffs))
+		var text strings.Builder
+		rows := make([][]telego.InlineKeyboardButton, 0, (end-start)*3)
+		for _, handoff := range handoffs[start:end] {
+			text.WriteString(fmt.Sprintf("%s | %s\n%s\n\n", handoffReference(handoff.ID), handoff.SourceChannel+"/"+handoff.SourceChatID, truncateStr(handoff.Summary, 180)))
+			rows = append(rows, []telego.InlineKeyboardButton{
+				{Text: handoffReference(handoff.ID) + " Hoàn tất", CallbackData: "ah:done:" + handoff.ID.String()},
+				{Text: "Cần bổ sung", CallbackData: "ah:info:" + handoff.ID.String()},
+				{Text: "Đóng, không trả lời", CallbackData: "ah:dismiss:" + handoff.ID.String()},
+			})
+		}
+		text.WriteString("Dùng nút để xử lý case. Hoặc dùng /handoff_done <case> hay /handoff_dismiss <case>.")
+		pages = append(pages, adminHandoffListPage{text: text.String(), rows: rows})
 	}
+	return pages
 }
 
 func (c *Channel) handleAdminHandoffDismiss(ctx context.Context, chatID int64, chatIDStr, senderID, text string, isGroup bool, setThread func(*telego.SendMessageParams)) {
