@@ -262,6 +262,8 @@ func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, reseller
 						}
 						if isReseller {
 							items[i].StatusNote = "IP thuộc tài khoản Reseller của khách hàng." + classNote + " Được phép ưu tiên hỗ trợ và chuyển Admin theo yêu cầu."
+							items[i].CancellationPolicy = "admin_review"
+							items[i].CancellationInstruction = "ƯU TIÊN RESELLER BẮT BUỘC: Không hướng dẫn khách tự hủy, đổi, gia hạn hoặc khôi phục theo chính sách gói thông thường. Phải gọi escalate_to_admin để Admin xử lý thủ công sau khi email đã xác minh khớp."
 						} else if items[i].ServiceStatus == "deleted" {
 							if isResStatic {
 								items[i].StatusNote = "IP đã bị xóa đúng tài khoản của khách hàng." + classNote + " [QUY TẮC KHÔI PHỤC GÓI RESIDENTIAL STATIC]: BẮT BUỘC thông báo khách phí khôi phục IP cũ là 25.000đ/IP (nếu còn tài nguyên IP cũ) và YÊU CẦU KHÁCH NẠP ĐỦ SỐ DƯ TÀI KHOẢN CLOUDMINI = TỔNG (GIÁ CƯỚC PROXY + PHÍ KHÔI PHỤC 25.000đ/IP) để Admin tiến hành khôi phục thủ công."

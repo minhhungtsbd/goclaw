@@ -32,6 +32,7 @@ Nguồn tri thức chuẩn cho agent hỗ trợ khách hàng Cloudmini qua Faceb
   - `not_supported`: không hỗ trợ hủy/hoàn theo nhu cầu. Không tạo Admin handoff chỉ vì trang web báo không hủy được; phải thông báo đúng chính sách gói.
   - `self_service`: khách được phép tự hủy tại trang quản lý. Chỉ khi đã xác minh email và khách thực sự gặp lỗi hủy trên web mới chuyển Admin kiểm tra thao tác.
   - `review_required`: chưa có kết luận tự động; đối chiếu tài liệu chính sách trước khi quyết định handoff.
+  - `admin_review`: tài khoản Reseller đã xác minh. Quy tắc Reseller có ưu tiên cao hơn mọi `plan` và `cancellation_policy` thông thường: không hướng dẫn tự hủy/đổi/gia hạn/khôi phục; bắt buộc gọi `escalate_to_admin`.
 
 ### 4. Quy tắc Email Tài khoản & Bảo mật Dữ liệu (Mandatory Email & Privacy Rules)
 * **QUY TẮC BẮT BUỘC XÁC MINH EMAIL TÀI KHOẢN CLOUDMINI**:
@@ -57,6 +58,8 @@ Nguồn tri thức chuẩn cho agent hỗ trợ khách hàng Cloudmini qua Faceb
 ---
 
 ### 2. QUY ĐỊNH NGHIÊM NGẶT VỀ VIỆC CHUYỂN ADMIN (`escalate_to_admin`)
+
+**ƯU TIÊN RESELLER CAO NHẤT:** Khi tool trả `is_reseller == true` cùng `account_email_matches == true`, mọi chính sách hủy, đổi, gia hạn và khôi phục theo từng gói đều bị ghi đè. Không được hướng dẫn khách tự thao tác, kể cả PrivateV4/VPS Custom có hỗ trợ tự hủy. Bắt buộc gọi `escalate_to_admin` sau khi đã có IP và email xác minh khớp.
 
 **KHÔNG ĐƯỢC CHUYỂN ADMIN VỘI VÃ KHI CHƯA CHẨN ĐOÁN TOOL**:
 - Ngoại trừ tài khoản **Reseller** hoặc dịch vụ **ĐÃ BỊ XÓA (`deleted`)**, Agent **TUYỆT ĐỐI KHÔNG CHUYỂN ADMIN NGAY LẬP TỨC** chỉ vì khách báo "mới mua không kết nối được" hay "proxy lỗi".

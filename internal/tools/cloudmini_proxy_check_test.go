@@ -151,6 +151,12 @@ func TestCloudminiProxyCheckFlagsConfiguredResellerOnlyAfterEmailMatch(t *testin
 	if !strings.Contains(got, `"is_reseller_vip":true`) {
 		t.Fatalf("configured reseller flag missing: %s", got)
 	}
+	if !strings.Contains(got, `"cancellation_policy":"admin_review"`) {
+		t.Fatalf("reseller cancellation policy missing: %s", got)
+	}
+	if !strings.Contains(got, "ƯU TIÊN RESELLER BẮT BUỘC") {
+		t.Fatalf("reseller cancellation instruction missing: %s", got)
+	}
 
 	got, err = sanitizeCloudminiProxyResponse("service_info", "191.101.251.120", "reseller@example.com", []string{"reseller@example.com"}, []byte(`{"error":false,"msg":"Success","data":[{"ip":"191.101.251.120","expire":"2026-08-12","plan":"PrivateV4","user_email":"other@example.com"}]}`))
 	if err != nil {
