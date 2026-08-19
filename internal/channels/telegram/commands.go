@@ -99,7 +99,7 @@ func (c *Channel) handleBotCommand(ctx context.Context, message *telego.Message,
 			"/handoffs - List pending Admin handoffs (authorized Admins only)\n" +
 			"/handoff_done <case> <customer message> - Complete a handoff and notify the customer\n" +
 			"/handoff_dismiss <case> - Close a handoff without sending the customer a reply\n" +
-			"/handoff_need_info <case> <customer message> - Ask the customer for more information\n" +
+			"/handoff_manual <ticket> <nội dung> - Linh Nhi biên tập nội dung Admin rồi gửi khách\n" +
 			"\nJust send a message to chat with the AI."
 		msg := tu.Message(chatIDObj, helpText)
 		setThread(msg)
@@ -260,6 +260,10 @@ func (c *Channel) handleBotCommand(ctx context.Context, message *telego.Message,
 		return true
 
 	case "/handoff_need_info":
+		c.handleAdminHandoffNeedInfo(ctx, chatID, chatIDStr, senderID, text, isGroup, setThread)
+		return true
+
+	case "/handoff_manual":
 		c.handleAdminHandoffNeedInfo(ctx, chatID, chatIDStr, senderID, text, isGroup, setThread)
 		return true
 

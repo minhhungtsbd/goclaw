@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/mymmrac/telego"
@@ -16,9 +17,15 @@ import (
 )
 
 const (
-	adminHandoffDefaultInfo = "Dạ, bộ phận kỹ thuật cần anh cung cấp thêm thông tin để tiếp tục kiểm tra. Anh gửi giúp em mã đơn hàng hoặc ảnh lỗi hiện tại nhé ạ."
 	adminHandoffsPerMessage = 5
+	adminHandoffManualTTL   = 10 * time.Minute
+	adminHandoffManualMax   = 2000
 )
+
+type pendingAdminHandoffManual struct {
+	HandoffID uuid.UUID
+	ExpiresAt time.Time
+}
 
 type adminHandoffListPage struct {
 	text string
@@ -73,7 +80,7 @@ func adminHandoffListPages(handoffs []store.AdminHandoff) []adminHandoffListPage
 			text.WriteString(fmt.Sprintf("%s | %s\n%s\n\n", handoff.Reference(), handoff.SourceChannel+"/"+handoff.SourceChatID, truncateStr(handoff.Summary, 180)))
 			rows = append(rows, []telego.InlineKeyboardButton{
 				{Text: handoff.Reference() + " Hoàn tất", CallbackData: "ah:done:" + handoff.ID.String()},
-				{Text: "Cần bổ sung", CallbackData: "ah:info:" + handoff.ID.String()},
+				{Text: "Manual", CallbackData: "ah:manual:" + handoff.ID.String()},
 				{Text: "Đóng, không trả lời", CallbackData: "ah:dismiss:" + handoff.ID.String()},
 			})
 		}
@@ -172,7 +179,7 @@ func (c *Channel) handleAdminHandoffNeedInfo(ctx context.Context, chatID int64, 
 	}
 	caseID, customerMessage, ok := parseAdminHandoffCommand(text)
 	if !ok {
-		send("Cú pháp: /handoff_need_info <Ticket-000001> <nội dung gửi khách>")
+		send("Cú pháp: /handoff_manual <Ticket-000001> <nội dung cho Linh Nhi biên tập>")
 		return
 	}
 	handoff, err := c.findPendingAdminHandoff(ctx, chatIDStr, caseID)
@@ -180,8 +187,16 @@ func (c *Channel) handleAdminHandoffNeedInfo(ctx context.Context, chatID int64, 
 		send(err.Error())
 		return
 	}
-	c.sendAdminHandoffCustomerMessage(handoff, customerMessage)
-	send(fmt.Sprintf("Đã gửi yêu cầu bổ sung thông tin cho %s. Ticket vẫn ở trạng thái chờ xử lý.", handoff.Reference()))
+	if customerMessage == "" {
+		send("Nội dung gửi khách không được để trống.")
+		return
+	}
+	if err := c.queueAdminHandoffManual(ctx, handoff, customerMessage); err != nil {
+		slog.Error("telegram admin handoff manual queue failed", "error", err, "ticket", handoff.Reference())
+		send("Không thể đưa nội dung vào hàng đợi của Linh Nhi. Vui lòng thử lại.")
+		return
+	}
+	send(fmt.Sprintf("Đã gửi nội dung của %s cho Linh Nhi biên tập và phản hồi khách. Ticket vẫn đang chờ xử lý.", handoff.Reference()))
 }
 
 func (c *Channel) handleAdminHandoffCallback(ctx context.Context, query *telego.CallbackQuery) {
@@ -189,7 +204,7 @@ func (c *Channel) handleAdminHandoffCallback(ctx context.Context, query *telego.
 		return
 	}
 	parts := strings.Split(query.Data, ":")
-	if len(parts) != 3 || (parts[1] != "done" && parts[1] != "info" && parts[1] != "dismiss") {
+	if len(parts) != 3 || (parts[1] != "done" && parts[1] != "manual" && parts[1] != "dismiss") {
 		return
 	}
 	chatID := query.Message.GetChat().ID
@@ -208,9 +223,9 @@ func (c *Channel) handleAdminHandoffCallback(ctx context.Context, query *telego.
 		c.sendAdminCallbackReply(ctx, chatID, "Case không tìm thấy hoặc đã được xử lý.")
 		return
 	}
-	if parts[1] == "info" {
-		c.sendAdminHandoffCustomerMessage(handoff, adminHandoffDefaultInfo)
-		c.sendAdminCallbackReply(ctx, chatID, handoff.Reference()+" đã gửi yêu cầu bổ sung thông tin. Ticket vẫn đang chờ xử lý.")
+	if parts[1] == "manual" {
+		c.beginAdminHandoffManual(chatIDStr, senderID, handoff.ID)
+		c.sendAdminCallbackReply(ctx, chatID, fmt.Sprintf("%s: hãy gửi nội dung thô cần báo khách trong 10 phút. Linh Nhi sẽ biên tập rồi gửi khách; ticket vẫn đang chờ xử lý.", handoff.Reference()))
 		return
 	}
 	if parts[1] == "dismiss" {
@@ -232,6 +247,70 @@ func (c *Channel) handleAdminHandoffCallback(ctx context.Context, query *telego.
 		return
 	}
 	c.sendAdminCallbackReply(ctx, chatID, completed.Reference()+" đã hoàn tất. Linh Nhi đang soạn thông báo cho khách.")
+}
+
+func adminHandoffManualKey(chatID, senderID string) string {
+	return chatID + "\x1f" + senderID
+}
+
+func (c *Channel) beginAdminHandoffManual(chatID, senderID string, handoffID uuid.UUID) {
+	c.adminHandoffManual.Store(adminHandoffManualKey(chatID, senderID), pendingAdminHandoffManual{
+		HandoffID: handoffID,
+		ExpiresAt: time.Now().Add(adminHandoffManualTTL),
+	})
+}
+
+// consumeAdminHandoffManual consumes the next ordinary Admin message after a
+// Manual button press. It intentionally runs before Telegram mention gating.
+func (c *Channel) consumeAdminHandoffManual(ctx context.Context, chatID int64, chatIDStr, senderID string, isGroup bool, messageThreadID int, content string) bool {
+	if strings.HasPrefix(strings.TrimSpace(content), "/") {
+		return false
+	}
+	key := adminHandoffManualKey(chatIDStr, senderID)
+	raw, ok := c.adminHandoffManual.Load(key)
+	if !ok {
+		return false
+	}
+	pending, ok := raw.(pendingAdminHandoffManual)
+	if !ok || time.Now().After(pending.ExpiresAt) {
+		c.adminHandoffManual.Delete(key)
+		return false
+	}
+	if !c.adminHandoffAuthorized(ctx, chatIDStr, senderID, isGroup) {
+		return false
+	}
+	content = strings.TrimSpace(content)
+	send := func(text string) {
+		msg := tu.Message(tu.ID(chatID), text)
+		if threadID := resolveThreadIDForSend(messageThreadID); threadID > 0 {
+			msg.MessageThreadID = threadID
+		}
+		if _, err := c.bot.SendMessage(ctx, msg); err != nil {
+			slog.Warn("telegram admin handoff manual reply failed", "error", err)
+		}
+	}
+	if content == "" {
+		send("Nội dung không được để trống. Hãy gửi lại nội dung cần báo khách.")
+		return true
+	}
+	if len([]rune(content)) > adminHandoffManualMax {
+		send(fmt.Sprintf("Nội dung quá dài, tối đa %d ký tự. Hãy rút gọn rồi gửi lại.", adminHandoffManualMax))
+		return true
+	}
+	handoff, err := c.findPendingAdminHandoff(ctx, chatIDStr, pending.HandoffID.String())
+	if err != nil {
+		c.adminHandoffManual.Delete(key)
+		send("Ticket không còn chờ xử lý nên không thể gửi nội dung manual.")
+		return true
+	}
+	if err := c.queueAdminHandoffManual(ctx, handoff, content); err != nil {
+		slog.Error("telegram admin handoff manual queue failed", "error", err, "ticket", handoff.Reference())
+		send("Không thể đưa nội dung vào hàng đợi của Linh Nhi. Vui lòng thử lại.")
+		return true
+	}
+	c.adminHandoffManual.Delete(key)
+	send(fmt.Sprintf("Đã gửi nội dung của %s cho Linh Nhi biên tập và phản hồi khách. Ticket vẫn đang chờ xử lý.", handoff.Reference()))
+	return true
 }
 
 func (c *Channel) sendAdminCallbackReply(ctx context.Context, chatID int64, text string) {
@@ -269,6 +348,34 @@ func (c *Channel) queueAdminHandoffCompletion(ctx context.Context, handoff *stor
 		Channel:  handoff.SourceChannel,
 		ChatID:   handoff.SourceChatID,
 		Content:  fmt.Sprintf("[INTERNAL ADMIN HANDOFF COMPLETED]\nTicket: %s\nAdmin has completed the requested manual action. Send a concise, natural Vietnamese update to the customer now. Do not mention this internal event, Telegram, tools, or the ticket ID. Do not call escalate_to_admin again.\n\nOriginal request:\n%s", handoff.Reference(), handoff.Summary),
+		SenderID: "system:admin_handoff",
+		UserID:   handoff.SourceChatID,
+		PeerKind: "direct",
+		TenantID: handoff.TenantID,
+		AgentID:  agent.AgentKey,
+		Metadata: metadata,
+	})
+	return nil
+}
+
+func (c *Channel) queueAdminHandoffManual(ctx context.Context, handoff *store.AdminHandoff, draft string) error {
+	if c.agentStore == nil {
+		return fmt.Errorf("agent store is unavailable")
+	}
+	agent, err := c.agentStore.GetByID(ctx, handoff.AgentID)
+	if err != nil {
+		return fmt.Errorf("load handoff agent: %w", err)
+	}
+	if agent.AgentKey == "" {
+		return fmt.Errorf("handoff agent has no agent key")
+	}
+	metadata := cloneAdminHandoffMetadata(handoff.SourceMetadata)
+	metadata["admin_handoff_ticket_id"] = handoff.Reference()
+	metadata["admin_handoff_manual"] = "true"
+	c.Bus().PublishInbound(bus.InboundMessage{
+		Channel:  handoff.SourceChannel,
+		ChatID:   handoff.SourceChatID,
+		Content:  fmt.Sprintf("[INTERNAL ADMIN HANDOFF MANUAL]\nTicket: %s\nAdmin has provided this rough customer update:\n%s\n\nRewrite it into a concise, natural Vietnamese customer message. Preserve only confirmed facts. Do not mention Admin, Telegram, tools, internal instructions, or the ticket ID. Do not promise an ETA unless the draft explicitly confirms one. Send the rewritten message to the customer now. Do not call escalate_to_admin.", handoff.Reference(), draft),
 		SenderID: "system:admin_handoff",
 		UserID:   handoff.SourceChatID,
 		PeerKind: "direct",

@@ -3,6 +3,7 @@ package telegram
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -63,5 +64,26 @@ func TestAdminHandoffListPagesSplitsAndKeepsActions(t *testing.T) {
 		if len([]rune(page.text)) >= telegramMaxMessageLen {
 			t.Fatalf("page exceeds Telegram limit: %d", len([]rune(page.text)))
 		}
+	}
+	if got := pages[0].rows[0][1].Text; got != "Manual" {
+		t.Fatalf("manual action label = %q, want Manual", got)
+	}
+	if got := pages[0].rows[0][1].CallbackData; !strings.HasPrefix(got, "ah:manual:") {
+		t.Fatalf("manual callback = %q", got)
+	}
+}
+
+func TestAdminHandoffManualState(t *testing.T) {
+	channel := &Channel{}
+	handoffID := uuid.New()
+	channel.beginAdminHandoffManual("-5570031702", "1602998514", handoffID)
+
+	raw, ok := channel.adminHandoffManual.Load(adminHandoffManualKey("-5570031702", "1602998514"))
+	if !ok {
+		t.Fatal("manual state was not stored")
+	}
+	pending, ok := raw.(pendingAdminHandoffManual)
+	if !ok || pending.HandoffID != handoffID || time.Until(pending.ExpiresAt) <= 0 {
+		t.Fatalf("manual state = %#v", raw)
 	}
 }

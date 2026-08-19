@@ -246,6 +246,12 @@ func (c *Channel) handleMessage(ctx context.Context, update telego.Update) {
 		}
 	}
 
+	// A Manual handoff reply is authorized separately and must bypass the
+	// regular group mention gate, so Admin can simply type the draft in group.
+	if c.consumeAdminHandoffManual(ctx, chatID, chatIDStr, senderID, isGroup, messageThreadID, content) {
+		return
+	}
+
 	// Handle bot commands BEFORE enriching with reply/forward context.
 	// Command parsing (SplitN on spaces) breaks when reply context is appended with newlines,
 	// e.g. "/addwriter@bot\n\n[Replying to ...]" — the bot-username check fails.

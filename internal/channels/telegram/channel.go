@@ -26,36 +26,37 @@ import (
 // Channel connects to Telegram via the Bot API using long polling.
 type Channel struct {
 	*channels.BaseChannel
-	bot               *telego.Bot
-	config            config.TelegramConfig
-	httpClient        *http.Client
-	transport         *http.Transport
-	ipv4Once          sync.Once                   // guards enableIPv4Only to prevent data race
-	agentStore        store.AgentStore            // for agent key lookup (nil if not configured)
-	configPermStore   store.ConfigPermissionStore // for group file writer management (nil if not configured)
-	teamStore         store.TeamStore             // for /tasks, /task_detail commands (nil if not configured)
-	subagentTaskStore store.SubagentTaskStore     // for /subagents, /subagent commands (nil if not configured)
-	adminHandoffStore store.AdminHandoffStore     // for secure Admin handoff commands (nil if not configured)
-	placeholders      sync.Map                    // localKey string → messageID int
-	stopThinking      sync.Map                    // localKey string → *thinkingCancel
-	typingCtrls       sync.Map                    // localKey string → *typing.Controller
-	reactions         sync.Map                    // localKey string → *StatusReactionController
-	threadIDs         sync.Map                    // localKey string → messageThreadID int (for forum topic routing)
-	mentionMode       string                      // "strict" (default) or "yield"
-	triggerWords      map[string]struct{}         // cached, normalized agent trigger-words from IDENTITY.md; whole-word, case-insensitive
-	triggerWordsAt    time.Time                   // when triggerWords was last refreshed
-	triggerMu         sync.Mutex                  // guards triggerWords/triggerWordsAt
-	botDisplayName    string                      // bot's first_name from GetMe (e.g. "ViệtBot"); captured once at Start
-	pollCtx           context.Context             // long-polling context (cancelled by pollCancel); promoted from Start-local so background helpers (e.g. albumAggregator) can derive from it
-	pollCancel        context.CancelFunc          // cancels the long polling context
-	pollDone          chan struct{}               // closed when polling goroutine exits
-	handlerWg         sync.WaitGroup              // tracks in-flight handler goroutines for graceful shutdown
-	handlerSem        chan struct{}               // bounded semaphore for concurrent handler goroutines
-	pendingDraftID    sync.Map                    // localKey string → int (draftID)
-	audioMgr          *audio.Manager              // unified STT via audio.Manager (nil = no STT)
-	albumAgg          *albumAggregator            // coalesces Telegram album members into a single dispatch; nil before Start
-	writerHealMu      sync.Mutex                  // guards writerHealLastTry for /writers self-heal
-	writerHealLastTry map[string]time.Time        // key "chatID|userID" → last attempt timestamp
+	bot                *telego.Bot
+	config             config.TelegramConfig
+	httpClient         *http.Client
+	transport          *http.Transport
+	ipv4Once           sync.Once                   // guards enableIPv4Only to prevent data race
+	agentStore         store.AgentStore            // for agent key lookup (nil if not configured)
+	configPermStore    store.ConfigPermissionStore // for group file writer management (nil if not configured)
+	teamStore          store.TeamStore             // for /tasks, /task_detail commands (nil if not configured)
+	subagentTaskStore  store.SubagentTaskStore     // for /subagents, /subagent commands (nil if not configured)
+	adminHandoffStore  store.AdminHandoffStore     // for secure Admin handoff commands (nil if not configured)
+	placeholders       sync.Map                    // localKey string → messageID int
+	stopThinking       sync.Map                    // localKey string → *thinkingCancel
+	typingCtrls        sync.Map                    // localKey string → *typing.Controller
+	reactions          sync.Map                    // localKey string → *StatusReactionController
+	threadIDs          sync.Map                    // localKey string → messageThreadID int (for forum topic routing)
+	mentionMode        string                      // "strict" (default) or "yield"
+	triggerWords       map[string]struct{}         // cached, normalized agent trigger-words from IDENTITY.md; whole-word, case-insensitive
+	triggerWordsAt     time.Time                   // when triggerWords was last refreshed
+	triggerMu          sync.Mutex                  // guards triggerWords/triggerWordsAt
+	botDisplayName     string                      // bot's first_name from GetMe (e.g. "ViệtBot"); captured once at Start
+	pollCtx            context.Context             // long-polling context (cancelled by pollCancel); promoted from Start-local so background helpers (e.g. albumAggregator) can derive from it
+	pollCancel         context.CancelFunc          // cancels the long polling context
+	pollDone           chan struct{}               // closed when polling goroutine exits
+	handlerWg          sync.WaitGroup              // tracks in-flight handler goroutines for graceful shutdown
+	handlerSem         chan struct{}               // bounded semaphore for concurrent handler goroutines
+	pendingDraftID     sync.Map                    // localKey string → int (draftID)
+	adminHandoffManual sync.Map                    // chatID\x1fsenderID → pendingAdminHandoffManual
+	audioMgr           *audio.Manager              // unified STT via audio.Manager (nil = no STT)
+	albumAgg           *albumAggregator            // coalesces Telegram album members into a single dispatch; nil before Start
+	writerHealMu       sync.Mutex                  // guards writerHealLastTry for /writers self-heal
+	writerHealLastTry  map[string]time.Time        // key "chatID|userID" → last attempt timestamp
 	// pairingService, approvedGroups, pairingDebounce, groupHistory, historyLimit, requireMention
 	// are inherited from channels.BaseChannel.
 }
