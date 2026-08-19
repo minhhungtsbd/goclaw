@@ -77,7 +77,7 @@ func adminHandoffListPages(handoffs []store.AdminHandoff) []adminHandoffListPage
 		var text strings.Builder
 		rows := make([][]telego.InlineKeyboardButton, 0, (end-start)*3)
 		for _, handoff := range handoffs[start:end] {
-			text.WriteString(fmt.Sprintf("%s | %s\n%s\n\n", handoff.Reference(), handoff.SourceChannel+"/"+handoff.SourceChatID, truncateStr(handoff.Summary, 180)))
+			text.WriteString(formatAdminHandoffListItem(handoff))
 			rows = append(rows, []telego.InlineKeyboardButton{
 				{Text: handoff.Reference() + " Hoàn tất", CallbackData: "ah:done:" + handoff.ID.String()},
 				{Text: "Manual", CallbackData: "ah:manual:" + handoff.ID.String()},
@@ -88,6 +88,31 @@ func adminHandoffListPages(handoffs []store.AdminHandoff) []adminHandoffListPage
 		pages = append(pages, adminHandoffListPage{text: text.String(), rows: rows})
 	}
 	return pages
+}
+
+func formatAdminHandoffListItem(handoff store.AdminHandoff) string {
+	service := handoff.Service
+	if service == "" {
+		service = "Chưa xác định (ticket cũ)"
+	}
+	identifiers := strings.Join(handoff.Identifiers, ", ")
+	if identifiers == "" {
+		identifiers = "Chưa có dữ liệu (ticket cũ)"
+	}
+	return fmt.Sprintf("%s | %s\nƯu tiên: %s\nDịch vụ: %s\nThông tin: %s\n%s\n\n",
+		handoff.Reference(), handoff.SourceChannel+"/"+handoff.SourceChatID,
+		adminHandoffPriorityLabel(handoff.Priority), service, truncateStr(identifiers, 320), truncateStr(handoff.Summary, 180))
+}
+
+func adminHandoffPriorityLabel(priority string) string {
+	switch priority {
+	case "urgent":
+		return "Khẩn"
+	case "high":
+		return "Cao"
+	default:
+		return "Bình thường"
+	}
 }
 
 func (c *Channel) handleAdminHandoffDismiss(ctx context.Context, chatID int64, chatIDStr, senderID, text string, isGroup bool, setThread func(*telego.SendMessageParams)) {

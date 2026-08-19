@@ -49,6 +49,9 @@ func TestAdminHandoffListPagesSplitsAndKeepsActions(t *testing.T) {
 			TicketNumber:  int64(i + 1),
 			SourceChannel: "facebook",
 			SourceChatID:  "customer",
+			Priority:      "high",
+			Service:       "Proxy PrivateV4",
+			Identifiers:   []string{"191.101.251.120", "customer@example.com"},
 			Summary:       strings.Repeat("nội dung xử lý ", 30),
 		}
 	}
@@ -70,6 +73,9 @@ func TestAdminHandoffListPagesSplitsAndKeepsActions(t *testing.T) {
 	}
 	if got := pages[0].rows[0][1].CallbackData; !strings.HasPrefix(got, "ah:manual:") {
 		t.Fatalf("manual callback = %q", got)
+	}
+	if !strings.Contains(pages[0].text, "Ưu tiên: Cao") || !strings.Contains(pages[0].text, "Dịch vụ: Proxy PrivateV4") || !strings.Contains(pages[0].text, "customer@example.com") {
+		t.Fatalf("list item missing persisted details: %s", pages[0].text)
 	}
 }
 

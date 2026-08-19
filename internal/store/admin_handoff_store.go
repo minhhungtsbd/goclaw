@@ -22,6 +22,9 @@ type AdminHandoff struct {
 	SourceChatID      string
 	SourceMetadata    map[string]string
 	DedupeKey         string
+	Priority          string
+	Service           string
+	Identifiers       []string
 	Summary           string
 	Status            string
 	CreatedAt         time.Time

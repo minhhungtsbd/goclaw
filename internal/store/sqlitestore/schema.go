@@ -16,7 +16,7 @@ var schemaSQL string
 
 // SchemaVersion is the current SQLite schema version.
 // Bump this when adding new migration steps below.
-const SchemaVersion = 63
+const SchemaVersion = 64
 
 // migrations maps version → SQL to apply when upgrading FROM that version.
 // schema.sql always represents the LATEST full schema (for fresh DBs).
@@ -95,6 +95,9 @@ BEGIN
 END;`
 
 var migrations = map[int]string{
+	63: `ALTER TABLE admin_handoffs ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal';
+ALTER TABLE admin_handoffs ADD COLUMN service TEXT NOT NULL DEFAULT '';
+ALTER TABLE admin_handoffs ADD COLUMN identifiers TEXT NOT NULL DEFAULT '[]';`,
 	62: `ALTER TABLE admin_handoffs ADD COLUMN ticket_number INTEGER;
 UPDATE admin_handoffs SET ticket_number = rowid WHERE ticket_number IS NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_handoffs_ticket_number ON admin_handoffs(ticket_number);`,

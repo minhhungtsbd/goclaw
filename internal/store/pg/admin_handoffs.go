@@ -18,21 +18,25 @@ func NewPGAdminHandoffStore(db *sql.DB) *PGAdminHandoffStore {
 }
 
 const adminHandoffColumns = `id, ticket_number, tenant_id, agent_id, admin_channel, admin_chat_id,
-source_channel, source_chat_id, source_metadata, summary, status, created_at, completed_at, completion_message`
+source_channel, source_chat_id, source_metadata, priority, service, identifiers, summary, status, created_at, completed_at, completion_message`
 
 func (s *PGAdminHandoffStore) Create(ctx context.Context, h *store.AdminHandoff) error {
 	metadata, err := json.Marshal(h.SourceMetadata)
 	if err != nil {
 		return fmt.Errorf("marshal source metadata: %w", err)
 	}
+	identifiers, err := json.Marshal(h.Identifiers)
+	if err != nil {
+		return fmt.Errorf("marshal handoff identifiers: %w", err)
+	}
 	row := s.db.QueryRowContext(ctx, `
 		INSERT INTO admin_handoffs (
 			id, tenant_id, agent_id, admin_channel, admin_chat_id,
-			source_channel, source_chat_id, source_metadata, dedupe_key, summary, status, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending', $11)
+			source_channel, source_chat_id, source_metadata, dedupe_key, priority, service, identifiers, summary, status, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending', $14)
 		RETURNING ticket_number`,
 		h.ID, h.TenantID, h.AgentID, h.AdminChannel, h.AdminChatID,
-		h.SourceChannel, h.SourceChatID, metadata, h.DedupeKey, h.Summary, h.CreatedAt,
+		h.SourceChannel, h.SourceChatID, metadata, h.DedupeKey, h.Priority, h.Service, identifiers, h.Summary, h.CreatedAt,
 	)
 	return row.Scan(&h.TicketNumber)
 }
@@ -48,16 +52,24 @@ func (s *PGAdminHandoffStore) CreateOrMerge(ctx context.Context, h *store.AdminH
 	if err != nil {
 		return nil, fmt.Errorf("marshal source metadata: %w", err)
 	}
+	identifiers, err := json.Marshal(h.Identifiers)
+	if err != nil {
+		return nil, fmt.Errorf("marshal handoff identifiers: %w", err)
+	}
 	row := s.db.QueryRowContext(ctx, `
 		INSERT INTO admin_handoffs (
 			id, tenant_id, agent_id, admin_channel, admin_chat_id,
-			source_channel, source_chat_id, source_metadata, dedupe_key, summary, status, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending', $11)
+			source_channel, source_chat_id, source_metadata, dedupe_key, priority, service, identifiers, summary, status, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending', $14)
 		ON CONFLICT (tenant_id, dedupe_key) WHERE status = 'pending' AND dedupe_key <> ''
-		DO UPDATE SET summary = admin_handoffs.summary || E'\n\n[Customer update]\n' || EXCLUDED.summary
+		DO UPDATE SET
+			summary = admin_handoffs.summary || E'\n\n[Customer update]\n' || EXCLUDED.summary,
+			priority = EXCLUDED.priority,
+			service = CASE WHEN EXCLUDED.service <> '' THEN EXCLUDED.service ELSE admin_handoffs.service END,
+			identifiers = CASE WHEN EXCLUDED.identifiers <> '[]'::jsonb THEN EXCLUDED.identifiers ELSE admin_handoffs.identifiers END
 		RETURNING `+adminHandoffColumns,
 		h.ID, h.TenantID, h.AgentID, h.AdminChannel, h.AdminChatID,
-		h.SourceChannel, h.SourceChatID, metadata, h.DedupeKey, h.Summary, h.CreatedAt,
+		h.SourceChannel, h.SourceChatID, metadata, h.DedupeKey, h.Priority, h.Service, identifiers, h.Summary, h.CreatedAt,
 	)
 	return scanAdminHandoff(row)
 }
@@ -136,9 +148,10 @@ type adminHandoffScanner interface {
 func scanAdminHandoff(row adminHandoffScanner) (*store.AdminHandoff, error) {
 	handoff := &store.AdminHandoff{}
 	var metadata json.RawMessage
+	var identifiers json.RawMessage
 	err := row.Scan(
 		&handoff.ID, &handoff.TicketNumber, &handoff.TenantID, &handoff.AgentID, &handoff.AdminChannel, &handoff.AdminChatID,
-		&handoff.SourceChannel, &handoff.SourceChatID, &metadata, &handoff.Summary, &handoff.Status,
+		&handoff.SourceChannel, &handoff.SourceChatID, &metadata, &handoff.Priority, &handoff.Service, &identifiers, &handoff.Summary, &handoff.Status,
 		&handoff.CreatedAt, &handoff.CompletedAt, &handoff.CompletionMessage,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -149,6 +162,9 @@ func scanAdminHandoff(row adminHandoffScanner) (*store.AdminHandoff, error) {
 	}
 	if err := json.Unmarshal(metadata, &handoff.SourceMetadata); err != nil {
 		return nil, fmt.Errorf("decode source metadata: %w", err)
+	}
+	if err := json.Unmarshal(identifiers, &handoff.Identifiers); err != nil {
+		return nil, fmt.Errorf("decode handoff identifiers: %w", err)
 	}
 	if handoff.SourceMetadata == nil {
 		handoff.SourceMetadata = map[string]string{}

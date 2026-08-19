@@ -143,6 +143,9 @@ func (t *AdminHandoffTool) Execute(ctx context.Context, args map[string]any) *Re
 		SourceChatID:   ToolChatIDFromCtx(ctx),
 		SourceMetadata: adminHandoffSourceMetadata(ctx),
 		DedupeKey:      adminHandoffDedupeKey(ToolChannelFromCtx(ctx), ToolChatIDFromCtx(ctx), summary, identifiers),
+		Priority:       priority,
+		Service:        service,
+		Identifiers:    identifiers,
 		Summary:        summary,
 		Status:         "pending",
 		CreatedAt:      time.Now().UTC(),
@@ -156,7 +159,7 @@ func (t *AdminHandoffTool) Execute(ctx context.Context, args map[string]any) *Re
 		return ErrorResult(fmt.Sprintf("admin handoff case creation failed: %v", err))
 	}
 	handoff = stored
-	message := formatAdminHandoff(handoff, priority, service, summary, identifiers)
+	message := formatAdminHandoff(handoff)
 	if err := t.sender(ctx, cfg.Channel, cfg.ChatID, message); err != nil {
 		// A failed update notification must not close the existing pending case.
 		if handoff.ID == newCaseID {
@@ -257,27 +260,27 @@ func adminHandoffSourceMetadata(ctx context.Context) map[string]string {
 	return metadata
 }
 
-func formatAdminHandoff(handoff *store.AdminHandoff, priority, service, summary string, identifiers []string) string {
+func formatAdminHandoff(handoff *store.AdminHandoff) string {
 	var b strings.Builder
 	b.WriteString("[CLOUDMINI ADMIN HANDOFF]\n")
 	b.WriteString("Mã ticket: ")
 	b.WriteString(handoff.Reference())
 	b.WriteString("\n")
 	b.WriteString("Ưu tiên: ")
-	b.WriteString(adminHandoffPriorityLabel(priority))
+	b.WriteString(adminHandoffPriorityLabel(handoff.Priority))
 	b.WriteString("\n")
-	if service != "" {
+	if handoff.Service != "" {
 		b.WriteString("Dịch vụ: ")
-		b.WriteString(service)
+		b.WriteString(handoff.Service)
 		b.WriteString("\n")
 	}
-	if len(identifiers) > 0 {
+	if len(handoff.Identifiers) > 0 {
 		b.WriteString("Thông tin: ")
-		b.WriteString(strings.Join(identifiers, ", "))
+		b.WriteString(strings.Join(handoff.Identifiers, ", "))
 		b.WriteString("\n")
 	}
 	b.WriteString("\nYêu cầu xử lý:\n")
-	b.WriteString(summary)
+	b.WriteString(handoff.Summary)
 	return b.String()
 }
 
