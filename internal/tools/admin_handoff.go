@@ -61,7 +61,7 @@ func (t *AdminHandoffTool) SetChannelTenantChecker(checker ChannelTenantChecker)
 func (t *AdminHandoffTool) Name() string { return "escalate_to_admin" }
 
 func (t *AdminHandoffTool) Description() string {
-	return "Tạo và gửi yêu cầu xử lý nội bộ đến nhóm Admin đã cấu hình cho agent. Chỉ dùng khi cần Admin hoặc Kỹ thuật thao tác thủ công. Summary và identifiers phải viết ngắn gọn bằng tiếng Việt có dấu; không ghi mật khẩu, token, cookie, OTP hoặc API key. Chỉ xác nhận đã chuyển yêu cầu cho khách sau khi tool thành công."
+	return "Tạo và gửi yêu cầu xử lý nội bộ đến nhóm Admin đã cấu hình cho agent. Chỉ dùng khi cần Admin hoặc Kỹ thuật thao tác thủ công. Luôn có email tài khoản trong identifiers; nếu liên quan Proxy hoặc VPS thì phải có cả IP và email. Summary và identifiers phải viết ngắn gọn bằng tiếng Việt có dấu; không ghi mật khẩu, token, cookie, OTP hoặc API key. Tool tự gửi mã Ticket cho khách chỉ sau khi tạo và gửi handoff thành công."
 }
 
 func (t *AdminHandoffTool) Parameters() map[string]any {
@@ -78,7 +78,7 @@ func (t *AdminHandoffTool) Parameters() map[string]any {
 				"type": "string", "description": "Loại dịch vụ và gói nếu đã xác định, viết bằng tiếng Việt có dấu.",
 			},
 			"identifiers": map[string]any{
-				"type": "array", "items": map[string]any{"type": "string"}, "description": "Chỉ liệt kê mã đơn, IP hoặc email tài khoản cần thiết. Không ghi mật khẩu, token, cookie, OTP hoặc API key.",
+				"type": "array", "items": map[string]any{"type": "string"}, "description": "Luôn gồm email tài khoản. Nếu liên quan Proxy/VPS phải gồm cả IP và email. Có thể thêm mã đơn khi cần. Không ghi mật khẩu, token, cookie, OTP hoặc API key.",
 			},
 		},
 		"required": []string{"summary"},
@@ -116,8 +116,8 @@ func (t *AdminHandoffTool) Execute(ctx context.Context, args map[string]any) *Re
 	if summary == "" {
 		return ErrorResult("summary is required")
 	}
-	if len([]rune(summary)) > 3000 {
-		return ErrorResult("summary must be at most 3000 characters")
+	if len([]rune(summary)) > 1200 {
+		return ErrorResult("summary must be at most 1200 characters")
 	}
 
 	priority := argString(args, "priority")
@@ -129,6 +129,10 @@ func (t *AdminHandoffTool) Execute(ctx context.Context, args map[string]any) *Re
 	}
 
 	identifiers := stringSlice(args["identifiers"])
+	service := strings.TrimSpace(argString(args, "service"))
+	if err := validateAdminHandoffDetails(service, summary, identifiers); err != nil {
+		return ErrorResult(err.Error())
+	}
 	handoff := &store.AdminHandoff{
 		ID:             uuid.New(),
 		TenantID:       store.TenantIDFromContext(ctx),
@@ -152,7 +156,7 @@ func (t *AdminHandoffTool) Execute(ctx context.Context, args map[string]any) *Re
 		return ErrorResult(fmt.Sprintf("admin handoff case creation failed: %v", err))
 	}
 	handoff = stored
-	message := formatAdminHandoff(handoff.ID, priority, strings.TrimSpace(argString(args, "service")), summary, identifiers)
+	message := formatAdminHandoff(handoff, priority, service, summary, identifiers)
 	if err := t.sender(ctx, cfg.Channel, cfg.ChatID, message); err != nil {
 		// A failed update notification must not close the existing pending case.
 		if handoff.ID == newCaseID {
@@ -162,10 +166,53 @@ func (t *AdminHandoffTool) Execute(ctx context.Context, args map[string]any) *Re
 		}
 		return ErrorResult(fmt.Sprintf("admin handoff delivery failed: %v", err))
 	}
-	return SilentResult(fmt.Sprintf(`{"status":"sent","destination":"admin_handoff","case_id":"CMH-%s"}`, strings.ToUpper(handoff.ID.String()[:8])))
+	confirmation := fmt.Sprintf("Dạ, em đã ghi nhận và chuyển yêu cầu đến bộ phận Admin/Kỹ thuật. Mã theo dõi của anh là %s. Bên em sẽ cập nhật lại anh khi có kết quả ạ.", handoff.Reference())
+	if err := t.sender(ctx, handoff.SourceChannel, handoff.SourceChatID, confirmation); err != nil {
+		return ErrorResult(fmt.Sprintf("admin handoff %s was sent to Admin but customer ticket notification failed: %v", handoff.Reference(), err))
+	}
+	return SilentResult(fmt.Sprintf(`{"status":"sent","destination":"admin_handoff","ticket_id":%q,"customer_notified":true,"instruction":"Ticket has already been sent to the customer. Do not send another acknowledgement."}`, handoff.Reference()))
 }
 
-var adminHandoffIPPattern = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
+var (
+	adminHandoffIPPattern    = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b|(?i)\b[0-9a-f]{0,4}:[0-9a-f:]+\b`)
+	adminHandoffEmailPattern = regexp.MustCompile(`(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b`)
+)
+
+func validateAdminHandoffDetails(service, summary string, identifiers []string) error {
+	allDetails := append(append([]string{}, identifiers...), summary)
+	if !containsAdminHandoffEmail(allDetails) {
+		return fmt.Errorf("email tài khoản là bắt buộc khi tạo Admin handoff; hãy xin hoặc dùng email đã có trong cuộc trò chuyện")
+	}
+	if isProxyOrVPSHandoff(service, summary) && !containsAdminHandoffIP(allDetails) {
+		return fmt.Errorf("case Proxy hoặc VPS phải có IP và email tài khoản trước khi chuyển Admin")
+	}
+	return nil
+}
+
+func isProxyOrVPSHandoff(service, summary string) bool {
+	text := strings.ToLower(service + "\n" + summary)
+	return strings.Contains(text, "proxy") || strings.Contains(text, "vps")
+}
+
+func containsAdminHandoffEmail(values []string) bool {
+	for _, value := range values {
+		if adminHandoffEmailPattern.FindString(value) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAdminHandoffIP(values []string) bool {
+	for _, value := range values {
+		for _, rawIP := range adminHandoffIPPattern.FindAllString(value, -1) {
+			if _, err := netip.ParseAddr(rawIP); err == nil {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 // adminHandoffDedupeKey groups pending manual work for the same customer IP.
 // Non-IP requests intentionally remain separate because their relationship is ambiguous.
@@ -210,11 +257,11 @@ func adminHandoffSourceMetadata(ctx context.Context) map[string]string {
 	return metadata
 }
 
-func formatAdminHandoff(id uuid.UUID, priority, service, summary string, identifiers []string) string {
+func formatAdminHandoff(handoff *store.AdminHandoff, priority, service, summary string, identifiers []string) string {
 	var b strings.Builder
 	b.WriteString("[CLOUDMINI ADMIN HANDOFF]\n")
-	b.WriteString("Mã case: CMH-")
-	b.WriteString(strings.ToUpper(id.String()[:8]))
+	b.WriteString("Mã ticket: ")
+	b.WriteString(handoff.Reference())
 	b.WriteString("\n")
 	b.WriteString("Ưu tiên: ")
 	b.WriteString(adminHandoffPriorityLabel(priority))

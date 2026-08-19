@@ -70,14 +70,14 @@ func adminHandoffListPages(handoffs []store.AdminHandoff) []adminHandoffListPage
 		var text strings.Builder
 		rows := make([][]telego.InlineKeyboardButton, 0, (end-start)*3)
 		for _, handoff := range handoffs[start:end] {
-			text.WriteString(fmt.Sprintf("%s | %s\n%s\n\n", handoffReference(handoff.ID), handoff.SourceChannel+"/"+handoff.SourceChatID, truncateStr(handoff.Summary, 180)))
+			text.WriteString(fmt.Sprintf("%s | %s\n%s\n\n", handoff.Reference(), handoff.SourceChannel+"/"+handoff.SourceChatID, truncateStr(handoff.Summary, 180)))
 			rows = append(rows, []telego.InlineKeyboardButton{
-				{Text: handoffReference(handoff.ID) + " Hoàn tất", CallbackData: "ah:done:" + handoff.ID.String()},
+				{Text: handoff.Reference() + " Hoàn tất", CallbackData: "ah:done:" + handoff.ID.String()},
 				{Text: "Cần bổ sung", CallbackData: "ah:info:" + handoff.ID.String()},
 				{Text: "Đóng, không trả lời", CallbackData: "ah:dismiss:" + handoff.ID.String()},
 			})
 		}
-		text.WriteString("Dùng nút để xử lý case. Hoặc dùng /handoff_done <case> hay /handoff_dismiss <case>.")
+		text.WriteString("Dùng nút để xử lý ticket. Hoặc dùng /handoff_done <Ticket-000001> hay /handoff_dismiss <Ticket-000001>.")
 		pages = append(pages, adminHandoffListPage{text: text.String(), rows: rows})
 	}
 	return pages
@@ -97,7 +97,7 @@ func (c *Channel) handleAdminHandoffDismiss(ctx context.Context, chatID int64, c
 	}
 	caseID, _, ok := parseAdminHandoffCommand(text)
 	if !ok {
-		send("Cú pháp: /handoff_dismiss <CMH-XXXXXXXX>")
+		send("Cú pháp: /handoff_dismiss <Ticket-000001>")
 		return
 	}
 	handoff, err := c.findPendingAdminHandoff(ctx, chatIDStr, caseID)
@@ -110,7 +110,7 @@ func (c *Channel) handleAdminHandoffDismiss(ctx context.Context, chatID int64, c
 		send("Không thể đóng case. Có thể case đã được xử lý trước đó.")
 		return
 	}
-	send(handoffReference(handoff.ID) + " đã đóng. Hệ thống sẽ không gửi phản hồi tự động cho khách.")
+	send(handoff.Reference() + " đã đóng. Hệ thống sẽ không gửi phản hồi tự động cho khách.")
 }
 
 func (c *Channel) handleAdminHandoffDone(ctx context.Context, chatID int64, chatIDStr, senderID, text string, isGroup bool, setThread func(*telego.SendMessageParams)) {
@@ -127,7 +127,7 @@ func (c *Channel) handleAdminHandoffDone(ctx context.Context, chatID int64, chat
 	}
 	caseID, customerMessage, ok := parseAdminHandoffCommand(text)
 	if !ok {
-		send("Cú pháp: /handoff_done <CMH-XXXXXXXX>. Có thể thêm nội dung gửi khách nếu cần.")
+		send("Cú pháp: /handoff_done <Ticket-000001>. Có thể thêm nội dung gửi khách nếu cần.")
 		return
 	}
 	handoff, err := c.findPendingAdminHandoff(ctx, chatIDStr, caseID)
@@ -147,7 +147,7 @@ func (c *Channel) handleAdminHandoffDone(ctx context.Context, chatID int64, chat
 	}
 	if customerMessage != "" {
 		c.sendAdminHandoffCustomerMessage(completed, customerMessage)
-		send(fmt.Sprintf("%s đã hoàn tất và đã gửi thông báo về %s/%s.", handoffReference(completed.ID), completed.SourceChannel, completed.SourceChatID))
+		send(fmt.Sprintf("%s đã hoàn tất và đã gửi thông báo về %s/%s.", completed.Reference(), completed.SourceChannel, completed.SourceChatID))
 		return
 	}
 	if err := c.queueAdminHandoffCompletion(ctx, completed); err != nil {
@@ -155,7 +155,7 @@ func (c *Channel) handleAdminHandoffDone(ctx context.Context, chatID int64, chat
 		send("Case đã được đánh dấu hoàn tất nhưng không thể đưa vào hàng đợi phản hồi của Linh Nhi. Vui lòng liên hệ kỹ thuật.")
 		return
 	}
-	send(fmt.Sprintf("%s đã hoàn tất. Linh Nhi đang soạn thông báo và gửi về đúng cuộc trò chuyện của khách.", handoffReference(completed.ID)))
+	send(fmt.Sprintf("%s đã hoàn tất. Linh Nhi đang soạn thông báo và gửi về đúng cuộc trò chuyện của khách.", completed.Reference()))
 }
 
 func (c *Channel) handleAdminHandoffNeedInfo(ctx context.Context, chatID int64, chatIDStr, senderID, text string, isGroup bool, setThread func(*telego.SendMessageParams)) {
@@ -172,7 +172,7 @@ func (c *Channel) handleAdminHandoffNeedInfo(ctx context.Context, chatID int64, 
 	}
 	caseID, customerMessage, ok := parseAdminHandoffCommand(text)
 	if !ok {
-		send("Cú pháp: /handoff_need_info <CMH-XXXXXXXX> <nội dung gửi khách>")
+		send("Cú pháp: /handoff_need_info <Ticket-000001> <nội dung gửi khách>")
 		return
 	}
 	handoff, err := c.findPendingAdminHandoff(ctx, chatIDStr, caseID)
@@ -181,7 +181,7 @@ func (c *Channel) handleAdminHandoffNeedInfo(ctx context.Context, chatID int64, 
 		return
 	}
 	c.sendAdminHandoffCustomerMessage(handoff, customerMessage)
-	send(fmt.Sprintf("Đã gửi yêu cầu bổ sung thông tin cho %s. Case vẫn ở trạng thái chờ xử lý.", handoffReference(handoff.ID)))
+	send(fmt.Sprintf("Đã gửi yêu cầu bổ sung thông tin cho %s. Ticket vẫn ở trạng thái chờ xử lý.", handoff.Reference()))
 }
 
 func (c *Channel) handleAdminHandoffCallback(ctx context.Context, query *telego.CallbackQuery) {
@@ -210,7 +210,7 @@ func (c *Channel) handleAdminHandoffCallback(ctx context.Context, query *telego.
 	}
 	if parts[1] == "info" {
 		c.sendAdminHandoffCustomerMessage(handoff, adminHandoffDefaultInfo)
-		c.sendAdminCallbackReply(ctx, chatID, handoffReference(handoff.ID)+" đã gửi yêu cầu bổ sung thông tin. Case vẫn đang chờ xử lý.")
+		c.sendAdminCallbackReply(ctx, chatID, handoff.Reference()+" đã gửi yêu cầu bổ sung thông tin. Ticket vẫn đang chờ xử lý.")
 		return
 	}
 	if parts[1] == "dismiss" {
@@ -218,7 +218,7 @@ func (c *Channel) handleAdminHandoffCallback(ctx context.Context, query *telego.
 			c.sendAdminCallbackReply(ctx, chatID, "Không thể đóng case. Có thể case đã được xử lý trước đó.")
 			return
 		}
-		c.sendAdminCallbackReply(ctx, chatID, handoffReference(handoff.ID)+" đã đóng. Hệ thống sẽ không gửi phản hồi tự động cho khách.")
+		c.sendAdminCallbackReply(ctx, chatID, handoff.Reference()+" đã đóng. Hệ thống sẽ không gửi phản hồi tự động cho khách.")
 		return
 	}
 	completed, err := c.adminHandoffStore.MarkCompleted(ctx, handoff.ID, "[agent-generated]")
@@ -231,7 +231,7 @@ func (c *Channel) handleAdminHandoffCallback(ctx context.Context, query *telego.
 		c.sendAdminCallbackReply(ctx, chatID, "Case đã được đánh dấu hoàn tất nhưng không thể đưa vào hàng đợi phản hồi của Linh Nhi.")
 		return
 	}
-	c.sendAdminCallbackReply(ctx, chatID, handoffReference(completed.ID)+" đã hoàn tất. Linh Nhi đang soạn thông báo cho khách.")
+	c.sendAdminCallbackReply(ctx, chatID, completed.Reference()+" đã hoàn tất. Linh Nhi đang soạn thông báo cho khách.")
 }
 
 func (c *Channel) sendAdminCallbackReply(ctx context.Context, chatID int64, text string) {
@@ -263,12 +263,12 @@ func (c *Channel) queueAdminHandoffCompletion(ctx context.Context, handoff *stor
 		return fmt.Errorf("handoff agent has no agent key")
 	}
 	metadata := cloneAdminHandoffMetadata(handoff.SourceMetadata)
-	metadata["admin_handoff_case_id"] = handoffReference(handoff.ID)
+	metadata["admin_handoff_case_id"] = handoff.Reference()
 	metadata["admin_handoff_completed"] = "true"
 	c.Bus().PublishInbound(bus.InboundMessage{
 		Channel:  handoff.SourceChannel,
 		ChatID:   handoff.SourceChatID,
-		Content:  fmt.Sprintf("[INTERNAL ADMIN HANDOFF COMPLETED]\nCase: %s\nAdmin has completed the requested manual action. Send a concise, natural Vietnamese update to the customer now. Do not mention this internal event, Telegram, tools, or the case ID. Do not call escalate_to_admin again.\n\nOriginal request:\n%s", handoffReference(handoff.ID), handoff.Summary),
+		Content:  fmt.Sprintf("[INTERNAL ADMIN HANDOFF COMPLETED]\nTicket: %s\nAdmin has completed the requested manual action. Send a concise, natural Vietnamese update to the customer now. Do not mention this internal event, Telegram, tools, or the ticket ID. Do not call escalate_to_admin again.\n\nOriginal request:\n%s", handoff.Reference(), handoff.Summary),
 		SenderID: "system:admin_handoff",
 		UserID:   handoff.SourceChatID,
 		PeerKind: "direct",
@@ -323,6 +323,14 @@ func (c *Channel) findPendingAdminHandoff(ctx context.Context, chatID, reference
 		return nil, fmt.Errorf("không thể tải danh sách handoff")
 	}
 	normalized := strings.ToLower(strings.TrimSpace(reference))
+	if strings.HasPrefix(normalized, "ticket-") {
+		for i := range handoffs {
+			if strings.EqualFold(handoffs[i].Reference(), reference) {
+				return &handoffs[i], nil
+			}
+		}
+		return nil, fmt.Errorf("không tìm thấy ticket %q đang chờ xử lý", reference)
+	}
 	normalized = strings.TrimPrefix(normalized, "cmh-")
 	var match *store.AdminHandoff
 	for i := range handoffs {
@@ -358,8 +366,4 @@ func adminHandoffUnauthorizedMessage(senderID string) string {
 		return "Bạn không được phép quản lý Admin handoff trong nhóm này."
 	}
 	return fmt.Sprintf("Tài khoản Telegram ID %s chưa nằm trong allow-list Admin của nhóm này.", numericSenderID)
-}
-
-func handoffReference(id uuid.UUID) string {
-	return "CMH-" + strings.ToUpper(id.String()[:8])
 }

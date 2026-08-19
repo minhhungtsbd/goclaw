@@ -2370,6 +2370,7 @@ CREATE INDEX IF NOT EXISTS idx_mcp_oauth_tokens_server_tenant ON mcp_oauth_token
 
 CREATE TABLE IF NOT EXISTS admin_handoffs (
     id TEXT PRIMARY KEY,
+	ticket_number INTEGER NOT NULL UNIQUE,
     tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
     admin_channel TEXT NOT NULL,

@@ -20,7 +20,7 @@ func NewSQLiteAdminHandoffStore(db *sql.DB) *SQLiteAdminHandoffStore {
 	return &SQLiteAdminHandoffStore{db: db}
 }
 
-const adminHandoffColumns = `id, tenant_id, agent_id, admin_channel, admin_chat_id,
+const adminHandoffColumns = `id, ticket_number, tenant_id, agent_id, admin_channel, admin_chat_id,
 source_channel, source_chat_id, source_metadata, summary, status, created_at, completed_at, completion_message`
 
 func (s *SQLiteAdminHandoffStore) Create(ctx context.Context, h *store.AdminHandoff) error {
@@ -28,15 +28,16 @@ func (s *SQLiteAdminHandoffStore) Create(ctx context.Context, h *store.AdminHand
 	if err != nil {
 		return fmt.Errorf("marshal source metadata: %w", err)
 	}
-	_, err = s.db.ExecContext(ctx, `
+	row := s.db.QueryRowContext(ctx, `
 		INSERT INTO admin_handoffs (
 			id, tenant_id, agent_id, admin_channel, admin_chat_id,
-			source_channel, source_chat_id, source_metadata, dedupe_key, summary, status, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+			source_channel, source_chat_id, source_metadata, dedupe_key, summary, status, created_at, ticket_number
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM admin_handoffs))
+		RETURNING ticket_number`,
 		h.ID.String(), h.TenantID.String(), h.AgentID.String(), h.AdminChannel, h.AdminChatID,
 		h.SourceChannel, h.SourceChatID, metadata, h.DedupeKey, h.Summary, h.CreatedAt,
 	)
-	return err
+	return row.Scan(&h.TicketNumber)
 }
 
 func (s *SQLiteAdminHandoffStore) CreateOrMerge(ctx context.Context, h *store.AdminHandoff) (*store.AdminHandoff, error) {
@@ -53,8 +54,8 @@ func (s *SQLiteAdminHandoffStore) CreateOrMerge(ctx context.Context, h *store.Ad
 	row := s.db.QueryRowContext(ctx, `
 		INSERT INTO admin_handoffs (
 			id, tenant_id, agent_id, admin_channel, admin_chat_id,
-			source_channel, source_chat_id, source_metadata, dedupe_key, summary, status, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+			source_channel, source_chat_id, source_metadata, dedupe_key, summary, status, created_at, ticket_number
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM admin_handoffs))
 		ON CONFLICT (tenant_id, dedupe_key) WHERE status = 'pending' AND dedupe_key <> ''
 		DO UPDATE SET summary = admin_handoffs.summary || char(10) || char(10) || '[Customer update]' || char(10) || excluded.summary
 		RETURNING `+adminHandoffColumns,
@@ -161,7 +162,7 @@ func scanAdminHandoff(row adminHandoffScanner) (*store.AdminHandoff, error) {
 	var metadata json.RawMessage
 	handoff := &store.AdminHandoff{}
 	err := row.Scan(
-		&id, &tenantID, &agentID, &handoff.AdminChannel, &handoff.AdminChatID,
+		&id, &handoff.TicketNumber, &tenantID, &agentID, &handoff.AdminChannel, &handoff.AdminChatID,
 		&handoff.SourceChannel, &handoff.SourceChatID, &metadata, &handoff.Summary, &handoff.Status,
 		&handoff.CreatedAt, &handoff.CompletedAt, &handoff.CompletionMessage,
 	)

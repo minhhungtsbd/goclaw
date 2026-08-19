@@ -17,7 +17,7 @@ func NewPGAdminHandoffStore(db *sql.DB) *PGAdminHandoffStore {
 	return &PGAdminHandoffStore{db: db}
 }
 
-const adminHandoffColumns = `id, tenant_id, agent_id, admin_channel, admin_chat_id,
+const adminHandoffColumns = `id, ticket_number, tenant_id, agent_id, admin_channel, admin_chat_id,
 source_channel, source_chat_id, source_metadata, summary, status, created_at, completed_at, completion_message`
 
 func (s *PGAdminHandoffStore) Create(ctx context.Context, h *store.AdminHandoff) error {
@@ -25,15 +25,16 @@ func (s *PGAdminHandoffStore) Create(ctx context.Context, h *store.AdminHandoff)
 	if err != nil {
 		return fmt.Errorf("marshal source metadata: %w", err)
 	}
-	_, err = s.db.ExecContext(ctx, `
+	row := s.db.QueryRowContext(ctx, `
 		INSERT INTO admin_handoffs (
 			id, tenant_id, agent_id, admin_channel, admin_chat_id,
 			source_channel, source_chat_id, source_metadata, dedupe_key, summary, status, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending', $11)`,
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending', $11)
+		RETURNING ticket_number`,
 		h.ID, h.TenantID, h.AgentID, h.AdminChannel, h.AdminChatID,
 		h.SourceChannel, h.SourceChatID, metadata, h.DedupeKey, h.Summary, h.CreatedAt,
 	)
-	return err
+	return row.Scan(&h.TicketNumber)
 }
 
 func (s *PGAdminHandoffStore) CreateOrMerge(ctx context.Context, h *store.AdminHandoff) (*store.AdminHandoff, error) {
@@ -136,7 +137,7 @@ func scanAdminHandoff(row adminHandoffScanner) (*store.AdminHandoff, error) {
 	handoff := &store.AdminHandoff{}
 	var metadata json.RawMessage
 	err := row.Scan(
-		&handoff.ID, &handoff.TenantID, &handoff.AgentID, &handoff.AdminChannel, &handoff.AdminChatID,
+		&handoff.ID, &handoff.TicketNumber, &handoff.TenantID, &handoff.AgentID, &handoff.AdminChannel, &handoff.AdminChatID,
 		&handoff.SourceChannel, &handoff.SourceChatID, &metadata, &handoff.Summary, &handoff.Status,
 		&handoff.CreatedAt, &handoff.CompletedAt, &handoff.CompletionMessage,
 	)

@@ -14,10 +14,16 @@ import (
 type testAdminHandoffStore struct{ created *store.AdminHandoff }
 
 func (s *testAdminHandoffStore) Create(_ context.Context, handoff *store.AdminHandoff) error {
+	if handoff.TicketNumber == 0 {
+		handoff.TicketNumber = 123456
+	}
 	s.created = handoff
 	return nil
 }
 func (s *testAdminHandoffStore) CreateOrMerge(_ context.Context, handoff *store.AdminHandoff) (*store.AdminHandoff, error) {
+	if handoff.TicketNumber == 0 {
+		handoff.TicketNumber = 123456
+	}
 	s.created = handoff
 	return handoff, nil
 }
@@ -64,9 +70,10 @@ func TestAdminHandoffDedupeKey(t *testing.T) {
 func TestAdminHandoffToolSendsOnlyConfiguredDestination(t *testing.T) {
 	handoffStore := &testAdminHandoffStore{}
 	tool := NewAdminHandoffTool(handoffStore)
-	var channel, chatID, content string
+	type sentMessage struct{ channel, chatID, content string }
+	var sent []sentMessage
 	tool.SetChannelSender(func(_ context.Context, gotChannel, gotChatID, gotContent string) error {
-		channel, chatID, content = gotChannel, gotChatID, gotContent
+		sent = append(sent, sentMessage{gotChannel, gotChatID, gotContent})
 		return nil
 	})
 	tool.SetChannelTenantChecker(func(name string) (uuid.UUID, bool) {
@@ -85,18 +92,48 @@ func TestAdminHandoffToolSendsOnlyConfiguredDestination(t *testing.T) {
 		"summary":     "Check order processing",
 		"priority":    "high",
 		"service":     "VPS-Custom Singapore",
-		"identifiers": []any{"#449329", "#449328"},
+		"identifiers": []any{"#449329", "103.183.121.6", "customer@example.com"},
 	})
 	if result.IsError {
 		t.Fatalf("Execute() error = %s", result.ForLLM)
 	}
-	if channel != "telegram" || chatID != "-5570031702" {
-		t.Fatalf("sent to %s/%s, want configured destination", channel, chatID)
+	if len(sent) != 2 {
+		t.Fatalf("sent messages = %d, want 2", len(sent))
 	}
-	if !strings.Contains(content, "#449329") || !strings.Contains(content, "Mã case: CMH-") || !strings.Contains(content, "Ưu tiên: Cao") || strings.Contains(content, "facebook / customer-1") {
-		t.Fatalf("handoff content missing expected context: %s", content)
+	if sent[0].channel != "telegram" || sent[0].chatID != "-5570031702" {
+		t.Fatalf("admin handoff sent to %s/%s, want configured destination", sent[0].channel, sent[0].chatID)
+	}
+	if !strings.Contains(sent[0].content, "#449329") || !strings.Contains(sent[0].content, "Mã ticket: Ticket-123456") || !strings.Contains(sent[0].content, "Ưu tiên: Cao") || strings.Contains(sent[0].content, "facebook / customer-1") {
+		t.Fatalf("handoff content missing expected context: %s", sent[0].content)
+	}
+	if sent[1].channel != "facebook" || sent[1].chatID != "customer-1" || !strings.Contains(sent[1].content, "Ticket-123456") {
+		t.Fatalf("customer confirmation = %#v", sent[1])
 	}
 	if handoffStore.created == nil || handoffStore.created.SourceMetadata["fb_mode"] != "messenger" {
 		t.Fatalf("source metadata = %#v", handoffStore.created)
+	}
+}
+
+func TestValidateAdminHandoffDetails(t *testing.T) {
+	tests := []struct {
+		name        string
+		service     string
+		summary     string
+		identifiers []string
+		wantErr     bool
+	}{
+		{name: "non-service requires email", summary: "Kiểm tra nạp tiền", wantErr: true},
+		{name: "non-service with email", summary: "Kiểm tra nạp tiền", identifiers: []string{"customer@example.com"}},
+		{name: "proxy requires IP", service: "Proxy PrivateV4", summary: "Khách báo lỗi", identifiers: []string{"customer@example.com"}, wantErr: true},
+		{name: "proxy requires email", service: "Proxy PrivateV4", summary: "Khách báo lỗi IP 191.101.251.120", identifiers: []string{"191.101.251.120"}, wantErr: true},
+		{name: "proxy with required details", service: "Proxy PrivateV4", summary: "Khách báo lỗi", identifiers: []string{"191.101.251.120", "customer@example.com"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateAdminHandoffDetails(tt.service, tt.summary, tt.identifiers)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validateAdminHandoffDetails() error = %v, wantErr %t", err, tt.wantErr)
+			}
+		})
 	}
 }

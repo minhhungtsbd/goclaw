@@ -2,15 +2,18 @@ package store
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 )
 
 // AdminHandoff records the exact customer route for an Admin-owned support case.
-// Its ID is the public reference used by Telegram commands and callbacks.
+// TicketNumber is the durable customer-facing reference; ID remains internal.
 type AdminHandoff struct {
 	ID                uuid.UUID
+	TicketNumber      int64
 	TenantID          uuid.UUID
 	AgentID           uuid.UUID
 	AdminChannel      string
@@ -24,6 +27,15 @@ type AdminHandoff struct {
 	CreatedAt         time.Time
 	CompletedAt       *time.Time
 	CompletionMessage string
+}
+
+// Reference returns the stable public ticket reference. The UUID form is kept
+// only for rows created before ticket numbers were introduced.
+func (h AdminHandoff) Reference() string {
+	if h.TicketNumber > 0 {
+		return fmt.Sprintf("Ticket-%06d", h.TicketNumber)
+	}
+	return "CMH-" + strings.ToUpper(h.ID.String()[:8])
 }
 
 type AdminHandoffStore interface {
