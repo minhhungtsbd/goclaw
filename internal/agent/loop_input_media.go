@@ -184,7 +184,14 @@ func (l *Loop) enrichInputMedia(ctx context.Context, req *RunRequest, messages [
 // requiresInlineCurrentImages identifies main providers that need the current-turn
 // image delivered in the LLM request even when read_image has a dedicated provider.
 func (l *Loop) requiresInlineCurrentImages() bool {
-	return l.provider != nil && providerTypeOf(l.provider) == store.ProviderAntigravityCLI
+	if l.provider == nil {
+		return false
+	}
+	provider := l.provider
+	if fallback, ok := provider.(interface{ PrimaryProvider() providers.Provider }); ok {
+		provider = fallback.PrimaryProvider()
+	}
+	return provider != nil && providerTypeOf(provider) == store.ProviderAntigravityCLI
 }
 
 // rehomeDelegatedMediaMessage replaces caller-owned attachment paths with the

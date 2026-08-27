@@ -34,6 +34,18 @@ func TestRequiresInlineCurrentImagesForAntigravity(t *testing.T) {
 	}
 }
 
+func TestRequiresInlineCurrentImagesForAntigravityWithFallback(t *testing.T) {
+	provider := providers.NewModelFallbackProvider(providers.FallbackCandidate{
+		ProviderName: "antigravity-local",
+		Model:        "default",
+		Provider:     antigravityTestProvider{},
+	}, nil, 1, false)
+	loop := Loop{provider: provider}
+	if !loop.requiresInlineCurrentImages() {
+		t.Fatal("Antigravity CLI primary provider must receive current images inline through fallback wrapper")
+	}
+}
+
 func TestRequiresInlineCurrentImagesLeavesOtherProvidersUnchanged(t *testing.T) {
 	loop := Loop{provider: &stubProvider{}}
 	if loop.requiresInlineCurrentImages() {
