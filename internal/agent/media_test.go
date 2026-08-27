@@ -13,6 +13,34 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
 )
 
+type antigravityTestProvider struct{}
+
+func (antigravityTestProvider) Chat(context.Context, providers.ChatRequest) (*providers.ChatResponse, error) {
+	return nil, nil
+}
+
+func (antigravityTestProvider) ChatStream(context.Context, providers.ChatRequest, func(providers.StreamChunk)) (*providers.ChatResponse, error) {
+	return nil, nil
+}
+
+func (antigravityTestProvider) DefaultModel() string { return "default" }
+func (antigravityTestProvider) Name() string         { return "antigravity-local" }
+func (antigravityTestProvider) ProviderType() string { return "antigravity_cli" }
+
+func TestRequiresInlineCurrentImagesForAntigravity(t *testing.T) {
+	loop := Loop{provider: antigravityTestProvider{}}
+	if !loop.requiresInlineCurrentImages() {
+		t.Fatal("Antigravity CLI must receive current images inline")
+	}
+}
+
+func TestRequiresInlineCurrentImagesLeavesOtherProvidersUnchanged(t *testing.T) {
+	loop := Loop{provider: &stubProvider{}}
+	if loop.requiresInlineCurrentImages() {
+		t.Fatal("non-Antigravity provider must preserve read_image routing")
+	}
+}
+
 // TestEnrichImageIDs_BareTag verifies enrichment of a bare <media:image> tag
 // (non-Discord channels where SourceURL is empty).
 func TestEnrichImageIDs_BareTag(t *testing.T) {

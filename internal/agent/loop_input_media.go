@@ -9,6 +9,7 @@ import (
 
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
+	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
 )
 
@@ -51,10 +52,11 @@ func collectRefsByKind(messages []providers.Message, currentRefs []providers.Med
 // with refs for tool access. Returns updated context, modified messages, and current-turn media refs.
 func (l *Loop) enrichInputMedia(ctx context.Context, req *RunRequest, messages []providers.Message) (context.Context, []providers.Message, []providers.MediaRef) {
 	// 1b. Determine image routing strategy.
-	// If read_image tool has a dedicated vision provider, images are NOT attached inline
-	// to the main LLM — the agent calls read_image tool instead. This avoids sending
-	// images to providers that don't support vision or have strict content filters.
-	deferToReadImageTool := l.hasReadImageProvider()
+	// If read_image has a dedicated vision provider, images are normally not attached
+	// inline to the main LLM. Antigravity CLI is the exception: its local runtime
+	// accepts OpenAI image_url content and must see the current image directly. Relying
+	// on a model-initiated read_image call can leave it with only historical text.
+	deferToReadImageTool := l.hasReadImageProvider() && !l.requiresInlineCurrentImages()
 
 	if !deferToReadImageTool {
 		// Inline mode: reload historical images directly into messages for main provider.
@@ -177,6 +179,12 @@ func (l *Loop) enrichInputMedia(ctx context.Context, req *RunRequest, messages [
 	}
 
 	return ctx, messages, mediaRefs
+}
+
+// requiresInlineCurrentImages identifies main providers that need the current-turn
+// image delivered in the LLM request even when read_image has a dedicated provider.
+func (l *Loop) requiresInlineCurrentImages() bool {
+	return l.provider != nil && providerTypeOf(l.provider) == store.ProviderAntigravityCLI
 }
 
 // rehomeDelegatedMediaMessage replaces caller-owned attachment paths with the
