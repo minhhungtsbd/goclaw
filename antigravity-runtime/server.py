@@ -11,7 +11,19 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 def prompt_from_messages(messages, workspace):
     parts = ["Follow the system instructions and answer the latest user request."]
-    for message in messages:
+
+    # GoClaw may reload recent historical images for vision-capable providers.
+    # AGY receives all attachments as files in one workspace, so unlabeled old
+    # images can make it analyze the wrong one. Only pass the latest user turn's
+    # images to AGY; textual history remains available for conversation context.
+    latest_user_index = next(
+        (index for index in range(len(messages) - 1, -1, -1)
+         if str(messages[index].get("role", "user")).lower() == "user"),
+        -1,
+    )
+    latest_image_count = 0
+
+    for index, message in enumerate(messages):
         role = str(message.get("role", "user")).upper()
         content = message.get("content", "")
         if isinstance(content, str):
@@ -21,6 +33,8 @@ def prompt_from_messages(messages, workspace):
             if item.get("type") == "text":
                 parts.append(f"\n[{role}]\n{item.get('text', '')}")
             elif item.get("type") == "image_url":
+                if index != latest_user_index:
+                    continue
                 url = item.get("image_url", {}).get("url", "")
                 if url.startswith("data:image/") and "," in url:
                     header, encoded = url.split(",", 1)
@@ -28,7 +42,14 @@ def prompt_from_messages(messages, workspace):
                     path = os.path.join(workspace, f"input-{uuid.uuid4().hex}.{ext}")
                     with open(path, "wb") as image:
                         image.write(base64.b64decode(encoded))
-                    parts.append(f"Attached image: {path}")
+                    latest_image_count += 1
+                    parts.append(f"\n[LATEST USER IMAGE {latest_image_count}]\nAttached image: {path}")
+
+    if latest_image_count:
+        parts.append(
+            "\nThe attached image(s) above belong to the latest user turn. "
+            "Analyze them before answering; do not infer their contents from earlier conversation history."
+        )
     return "\n".join(parts)
 
 
@@ -109,4 +130,5 @@ def run_agy(request, workspace):
     return output
 
 
-ThreadingHTTPServer(("0.0.0.0", int(os.environ["PORT"])), Handler).serve_forever()
+if __name__ == "__main__":
+    ThreadingHTTPServer(("0.0.0.0", int(os.environ["PORT"])), Handler).serve_forever()

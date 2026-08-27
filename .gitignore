@@ -116,3 +116,6 @@ ui/web/nginx.staging.conf
 **/debug-*.log
 /*.sql
 scripts/docker-patch-*.sql
+
+# Local SSH credentials used for VPS administration. Never commit.
+/.local-ssh/
