@@ -101,6 +101,16 @@ type ChannelSenderAware interface {
 	SetChannelSender(ChannelSender)
 }
 
+// ChannelMetadataSender delivers a message while preserving channel-specific
+// routing metadata such as Facebook Messenger mode or a comment reply target.
+type ChannelMetadataSender func(ctx context.Context, channel, chatID, content string, metadata map[string]string) error
+
+// ChannelMetadataSenderAware tools can receive a sender that preserves the
+// source route for follow-up messages to the same customer.
+type ChannelMetadataSenderAware interface {
+	SetChannelMetadataSender(ChannelMetadataSender)
+}
+
 // ChannelEditor abstracts editing an existing message in a channel.
 // Implemented by channels.Manager.EditChannelMessage. Not all channel types
 // support editing arbitrary messages; unsupported channels return an error.

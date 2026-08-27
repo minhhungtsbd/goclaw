@@ -868,6 +868,9 @@ func runGateway() {
 		if cs, ok := t.(tools.ChannelSenderAware); ok {
 			cs.SetChannelSender(channelMgr.SendToChannel)
 		}
+		if cs, ok := t.(tools.ChannelMetadataSenderAware); ok {
+			cs.SetChannelMetadataSender(channelMgr.SendToChannelWithMetadata)
+		}
 		if tc, ok := t.(tools.ChannelTenantCheckerAware); ok {
 			tc.SetChannelTenantChecker(channelMgr.ChannelTenantID)
 		}

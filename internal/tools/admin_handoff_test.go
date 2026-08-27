@@ -11,7 +11,10 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
-type testAdminHandoffStore struct{ created *store.AdminHandoff }
+type testAdminHandoffStore struct {
+	created     *store.AdminHandoff
+	mergeResult *store.AdminHandoff
+}
 
 func (s *testAdminHandoffStore) Create(_ context.Context, handoff *store.AdminHandoff) error {
 	if handoff.TicketNumber == 0 {
@@ -21,11 +24,74 @@ func (s *testAdminHandoffStore) Create(_ context.Context, handoff *store.AdminHa
 	return nil
 }
 func (s *testAdminHandoffStore) CreateOrMerge(_ context.Context, handoff *store.AdminHandoff) (*store.AdminHandoff, error) {
+	if s.mergeResult != nil {
+		return s.mergeResult, nil
+	}
 	if handoff.TicketNumber == 0 {
 		handoff.TicketNumber = 123456
 	}
 	s.created = handoff
 	return handoff, nil
+}
+
+func TestAdminHandoffToolPreservesCustomerRoutingMetadata(t *testing.T) {
+	handoffStore := &testAdminHandoffStore{}
+	tool := NewAdminHandoffTool(handoffStore)
+	tool.SetChannelSender(func(context.Context, string, string, string) error { return nil })
+	var gotMetadata map[string]string
+	tool.SetChannelMetadataSender(func(_ context.Context, channel, chatID, content string, metadata map[string]string) error {
+		if channel != "facebook" || chatID != "customer-1" || !strings.Contains(content, "Ticket-123456") {
+			t.Fatalf("unexpected customer confirmation: %s/%s %q", channel, chatID, content)
+		}
+		gotMetadata = metadata
+		return nil
+	})
+	ctx := store.WithTenantID(context.Background(), store.MasterTenantID)
+	ctx = store.WithAgentAudio(ctx, store.AgentAudioSnapshot{
+		AgentID:     uuid.New(),
+		OtherConfig: json.RawMessage(`{"admin_handoff":{"enabled":true,"channel":"telegram","chat_id":"-5570031702"}}`),
+	})
+	ctx = WithToolChannel(ctx, "facebook")
+	ctx = WithToolChatID(ctx, "customer-1")
+	ctx = store.WithRunContext(ctx, &store.RunContext{OutboundMetadata: map[string]string{"fb_mode": "messenger"}})
+
+	result := tool.Execute(ctx, map[string]any{
+		"summary":     "Kiểm tra Proxy 191.101.251.120",
+		"service":     "Proxy PrivateV4",
+		"identifiers": []any{"191.101.251.120", "customer@example.com"},
+	})
+	if result.IsError || !result.Silent {
+		t.Fatalf("result = %#v", result)
+	}
+	if gotMetadata["fb_mode"] != "messenger" {
+		t.Fatalf("routing metadata = %#v", gotMetadata)
+	}
+}
+
+func TestAdminHandoffToolDoesNotResendMergedCase(t *testing.T) {
+	existingID := uuid.New()
+	handoffStore := &testAdminHandoffStore{mergeResult: &store.AdminHandoff{ID: existingID, TicketNumber: 123456}}
+	tool := NewAdminHandoffTool(handoffStore)
+	tool.SetChannelSender(func(context.Context, string, string, string) error {
+		t.Fatal("merged case must not resend to Admin or customer")
+		return nil
+	})
+	ctx := store.WithTenantID(context.Background(), store.MasterTenantID)
+	ctx = store.WithAgentAudio(ctx, store.AgentAudioSnapshot{
+		AgentID:     uuid.New(),
+		OtherConfig: json.RawMessage(`{"admin_handoff":{"enabled":true,"channel":"telegram","chat_id":"-5570031702"}}`),
+	})
+	ctx = WithToolChannel(ctx, "facebook")
+	ctx = WithToolChatID(ctx, "customer-1")
+
+	result := tool.Execute(ctx, map[string]any{
+		"summary":     "Khách bổ sung Proxy 191.101.251.120",
+		"service":     "Proxy PrivateV4",
+		"identifiers": []any{"191.101.251.120", "customer@example.com"},
+	})
+	if result.IsError || !result.Silent || !strings.Contains(result.ForLLM, "merged") {
+		t.Fatalf("result = %#v", result)
+	}
 }
 func (*testAdminHandoffStore) Get(context.Context, uuid.UUID) (*store.AdminHandoff, error) {
 	return nil, nil

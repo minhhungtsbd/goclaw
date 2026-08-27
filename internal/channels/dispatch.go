@@ -178,6 +178,12 @@ func (m *Manager) WebhookHandlers() []WebhookRoute {
 
 // SendToChannel delivers a message to a specific channel by name.
 func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, content string) error {
+	return m.SendToChannelWithMetadata(ctx, channelName, chatID, content, nil)
+}
+
+// SendToChannelWithMetadata delivers a message while preserving routing
+// metadata required by channel adapters, such as Facebook Messenger mode.
+func (m *Manager) SendToChannelWithMetadata(ctx context.Context, channelName, chatID, content string, metadata map[string]string) error {
 	m.mu.RLock()
 	channel, exists := m.channels[channelName]
 	m.mu.RUnlock()
@@ -190,6 +196,7 @@ func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, conten
 		Channel: channelName,
 		ChatID:  chatID,
 		Content: content,
+		Metadata: metadata,
 	}
 
 	return channel.Send(ctx, msg)

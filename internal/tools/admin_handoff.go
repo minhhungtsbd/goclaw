@@ -44,9 +44,10 @@ func ParseAdminHandoffConfig(raw json.RawMessage) (AdminHandoffConfig, bool) {
 // AdminHandoffTool sends an auditable, bounded support case to the configured
 // internal admin group. It intentionally has no channel or target arguments.
 type AdminHandoffTool struct {
-	sender        ChannelSender
-	tenantChecker ChannelTenantChecker
-	store         store.AdminHandoffStore
+	sender          ChannelSender
+	metadataSender  ChannelMetadataSender
+	tenantChecker   ChannelTenantChecker
+	store           store.AdminHandoffStore
 }
 
 func NewAdminHandoffTool(handoffStore store.AdminHandoffStore) *AdminHandoffTool {
@@ -54,6 +55,9 @@ func NewAdminHandoffTool(handoffStore store.AdminHandoffStore) *AdminHandoffTool
 }
 
 func (t *AdminHandoffTool) SetChannelSender(sender ChannelSender) { t.sender = sender }
+func (t *AdminHandoffTool) SetChannelMetadataSender(sender ChannelMetadataSender) {
+	t.metadataSender = sender
+}
 func (t *AdminHandoffTool) SetChannelTenantChecker(checker ChannelTenantChecker) {
 	t.tenantChecker = checker
 }
@@ -159,6 +163,10 @@ func (t *AdminHandoffTool) Execute(ctx context.Context, args map[string]any) *Re
 		return ErrorResult(fmt.Sprintf("admin handoff case creation failed: %v", err))
 	}
 	handoff = stored
+	if handoff.ID != newCaseID {
+		return SilentResult(fmt.Sprintf(`{"status":"merged","destination":"admin_handoff","ticket_id":%q,"instruction":"This information was merged into an existing pending ticket. Do not send another acknowledgement or call escalate_to_admin again."}`, handoff.Reference()))
+	}
+
 	message := formatAdminHandoff(handoff)
 	if err := t.sender(ctx, cfg.Channel, cfg.ChatID, message); err != nil {
 		// A failed update notification must not close the existing pending case.
@@ -170,10 +178,17 @@ func (t *AdminHandoffTool) Execute(ctx context.Context, args map[string]any) *Re
 		return ErrorResult(fmt.Sprintf("admin handoff delivery failed: %v", err))
 	}
 	confirmation := fmt.Sprintf("Dạ, em đã ghi nhận và chuyển yêu cầu đến bộ phận Admin/Kỹ thuật. Mã theo dõi của anh là %s. Bên em sẽ cập nhật lại anh khi có kết quả ạ.", handoff.Reference())
-	if err := t.sender(ctx, handoff.SourceChannel, handoff.SourceChatID, confirmation); err != nil {
-		return ErrorResult(fmt.Sprintf("admin handoff %s was sent to Admin but customer ticket notification failed: %v", handoff.Reference(), err))
+	if err := t.sendCustomerConfirmation(ctx, handoff, confirmation); err != nil {
+		return SilentResult(fmt.Sprintf(`{"status":"sent","destination":"admin_handoff","ticket_id":%q,"customer_notified":false,"instruction":"The Admin handoff succeeded but the automatic customer notification failed. Do not retry escalate_to_admin. Send one concise Vietnamese confirmation with the ticket ID to the customer now."}`, handoff.Reference()))
 	}
 	return SilentResult(fmt.Sprintf(`{"status":"sent","destination":"admin_handoff","ticket_id":%q,"customer_notified":true,"instruction":"Ticket has already been sent to the customer. Do not send another acknowledgement."}`, handoff.Reference()))
+}
+
+func (t *AdminHandoffTool) sendCustomerConfirmation(ctx context.Context, handoff *store.AdminHandoff, content string) error {
+	if t.metadataSender != nil {
+		return t.metadataSender(ctx, handoff.SourceChannel, handoff.SourceChatID, content, handoff.SourceMetadata)
+	}
+	return t.sender(ctx, handoff.SourceChannel, handoff.SourceChatID, content)
 }
 
 var (
