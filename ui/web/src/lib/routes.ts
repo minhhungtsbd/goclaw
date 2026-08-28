@@ -34,6 +34,7 @@ export const ROUTES = {
   TTS: "/tts",
   STORAGE: "/storage",
   PENDING_MESSAGES: "/pending-messages",
+  ADMIN_HANDOFFS: "/admin-handoffs",
   MEMORY: "/memory",
   VAULT: "/vault",
   KNOWLEDGE_GRAPH: "/knowledge-graph",

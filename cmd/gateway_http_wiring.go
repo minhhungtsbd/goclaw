@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/nextlevelbuilder/goclaw/internal/adminhandoff"
 	"github.com/nextlevelbuilder/goclaw/internal/audio"
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/edition"
@@ -97,6 +98,12 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 			h.pendingMessages.SetProviderModel(pc.Provider, pc.Model)
 		}
 		d.server.SetPendingMessagesHandler(h.pendingMessages)
+	}
+	if d.pgStores != nil && d.pgStores.AdminHandoffs != nil && d.pgStores.Agents != nil {
+		if managed, ok := d.pgStores.AdminHandoffs.(store.AdminHandoffManagementStore); ok {
+			service := adminhandoff.NewService(d.pgStores.AdminHandoffs, d.pgStores.Agents, d.msgBus)
+			d.server.SetAdminHandoffsHandler(httpapi.NewAdminHandoffsHandler(managed, service, d.pgStores.Tenants))
+		}
 	}
 	if h.secureCLI != nil {
 		d.server.SetSecureCLIHandler(h.secureCLI)

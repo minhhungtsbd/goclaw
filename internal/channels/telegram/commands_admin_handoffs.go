@@ -11,6 +11,7 @@ import (
 	"github.com/mymmrac/telego"
 	tu "github.com/mymmrac/telego/telegoutil"
 
+	"github.com/nextlevelbuilder/goclaw/internal/adminhandoff"
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
@@ -137,7 +138,7 @@ func (c *Channel) handleAdminHandoffDismiss(ctx context.Context, chatID int64, c
 		send(err.Error())
 		return
 	}
-	if _, err := c.adminHandoffStore.MarkDismissed(ctx, handoff.ID); err != nil {
+	if _, err := c.adminHandoffService().Dismiss(ctx, handoff.ID, telegramHandoffActor(senderID)); err != nil {
 		slog.Warn("telegram admin handoff dismissal failed", "error", err, "case", handoff.ID)
 		send("Không thể đóng case. Có thể case đã được xử lý trước đó.")
 		return
@@ -167,24 +168,21 @@ func (c *Channel) handleAdminHandoffDone(ctx context.Context, chatID int64, chat
 		send(err.Error())
 		return
 	}
-	completionMessage := customerMessage
-	if completionMessage == "" {
-		completionMessage = "[agent-generated]"
-	}
-	completed, err := c.adminHandoffStore.MarkCompleted(ctx, handoff.ID, completionMessage)
-	if err != nil {
-		slog.Warn("telegram admin handoff completion failed", "error", err, "case", handoff.ID)
-		send("Không thể hoàn tất case. Có thể case đã được xử lý trước đó.")
-		return
-	}
 	if customerMessage != "" {
+		completed, err := c.adminHandoffStore.MarkCompleted(ctx, handoff.ID, customerMessage)
+		if err != nil {
+			slog.Warn("telegram admin handoff completion failed", "error", err, "case", handoff.ID)
+			send("Không thể hoàn tất case. Có thể case đã được xử lý trước đó.")
+			return
+		}
 		c.sendAdminHandoffCustomerMessage(completed, customerMessage)
 		send(fmt.Sprintf("%s đã hoàn tất và đã gửi thông báo về %s/%s.", completed.Reference(), completed.SourceChannel, completed.SourceChatID))
 		return
 	}
-	if err := c.queueAdminHandoffCompletion(ctx, completed); err != nil {
+	completed, err := c.adminHandoffService().Complete(ctx, handoff.ID, telegramHandoffActor(senderID))
+	if err != nil {
 		slog.Error("telegram admin handoff agent completion queue failed", "error", err, "case", completed.ID)
-		send("Case đã được đánh dấu hoàn tất nhưng không thể đưa vào hàng đợi phản hồi của Linh Nhi. Vui lòng liên hệ kỹ thuật.")
+		send("Không thể hoàn tất và đưa case vào hàng đợi phản hồi của Linh Nhi. Vui lòng thử lại.")
 		return
 	}
 	send(fmt.Sprintf("%s đã hoàn tất. Linh Nhi đang soạn thông báo và gửi về đúng cuộc trò chuyện của khách.", completed.Reference()))
@@ -216,7 +214,7 @@ func (c *Channel) handleAdminHandoffNeedInfo(ctx context.Context, chatID int64, 
 		send("Nội dung gửi khách không được để trống.")
 		return
 	}
-	if err := c.queueAdminHandoffManual(ctx, handoff, customerMessage); err != nil {
+	if _, err := c.adminHandoffService().Manual(ctx, handoff.ID, customerMessage, false, telegramHandoffActor(senderID)); err != nil {
 		slog.Error("telegram admin handoff manual queue failed", "error", err, "ticket", handoff.Reference())
 		send("Không thể đưa nội dung vào hàng đợi của Linh Nhi. Vui lòng thử lại.")
 		return
@@ -254,21 +252,17 @@ func (c *Channel) handleAdminHandoffCallback(ctx context.Context, query *telego.
 		return
 	}
 	if parts[1] == "dismiss" {
-		if _, err := c.adminHandoffStore.MarkDismissed(ctx, handoff.ID); err != nil {
+		if _, err := c.adminHandoffService().Dismiss(ctx, handoff.ID, telegramHandoffActor(senderID)); err != nil {
 			c.sendAdminCallbackReply(ctx, chatID, "Không thể đóng case. Có thể case đã được xử lý trước đó.")
 			return
 		}
 		c.sendAdminCallbackReply(ctx, chatID, handoff.Reference()+" đã đóng. Hệ thống sẽ không gửi phản hồi tự động cho khách.")
 		return
 	}
-	completed, err := c.adminHandoffStore.MarkCompleted(ctx, handoff.ID, "[agent-generated]")
+	completed, err := c.adminHandoffService().Complete(ctx, handoff.ID, telegramHandoffActor(senderID))
 	if err != nil {
-		c.sendAdminCallbackReply(ctx, chatID, "Không thể hoàn tất case. Có thể case đã được xử lý trước đó.")
-		return
-	}
-	if err := c.queueAdminHandoffCompletion(ctx, completed); err != nil {
 		slog.Error("telegram admin handoff callback completion queue failed", "error", err, "case", completed.ID)
-		c.sendAdminCallbackReply(ctx, chatID, "Case đã được đánh dấu hoàn tất nhưng không thể đưa vào hàng đợi phản hồi của Linh Nhi.")
+		c.sendAdminCallbackReply(ctx, chatID, "Không thể hoàn tất và đưa case vào hàng đợi phản hồi của Linh Nhi.")
 		return
 	}
 	c.sendAdminCallbackReply(ctx, chatID, completed.Reference()+" đã hoàn tất. Linh Nhi đang soạn thông báo cho khách.")
@@ -328,7 +322,7 @@ func (c *Channel) consumeAdminHandoffManual(ctx context.Context, chatID int64, c
 		send("Ticket không còn chờ xử lý nên không thể gửi nội dung manual.")
 		return true
 	}
-	if err := c.queueAdminHandoffManual(ctx, handoff, content); err != nil {
+	if _, err := c.adminHandoffService().Manual(ctx, handoff.ID, content, false, telegramHandoffActor(senderID)); err != nil {
 		slog.Error("telegram admin handoff manual queue failed", "error", err, "ticket", handoff.Reference())
 		send("Không thể đưa nội dung vào hàng đợi của Linh Nhi. Vui lòng thử lại.")
 		return true
@@ -336,6 +330,14 @@ func (c *Channel) consumeAdminHandoffManual(ctx context.Context, chatID int64, c
 	c.adminHandoffManual.Delete(key)
 	send(fmt.Sprintf("Đã gửi nội dung của %s cho Linh Nhi biên tập và phản hồi khách. Ticket vẫn đang chờ xử lý.", handoff.Reference()))
 	return true
+}
+
+func (c *Channel) adminHandoffService() *adminhandoff.Service {
+	return adminhandoff.NewService(c.adminHandoffStore, c.agentStore, c.Bus())
+}
+
+func telegramHandoffActor(senderID string) adminhandoff.Actor {
+	return adminhandoff.Actor{Type: "telegram", ID: senderID}
 }
 
 func (c *Channel) sendAdminCallbackReply(ctx context.Context, chatID int64, text string) {

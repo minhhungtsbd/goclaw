@@ -163,8 +163,27 @@ func isResellerEmail(email string, allowed []string) bool {
 }
 
 func isResidentialStaticPlan(plan string) bool {
-	p := strings.ToLower(strings.TrimSpace(plan))
-	return strings.Contains(p, "residential static")
+	return classifyCloudminiPlan(plan) == "residential_static"
+}
+
+func classifyCloudminiPlan(plan string) string {
+	p := strings.ToLower(strings.Join(strings.Fields(plan), " "))
+	switch {
+	case strings.Contains(p, "budget residential static"):
+		return "budget_residential_static"
+	case strings.Contains(p, "residential static"):
+		return "residential_static"
+	case strings.Contains(p, "budgetv4"), strings.Contains(p, "budget v4"):
+		return "budget_v4"
+	case strings.Contains(p, "privatev4"), strings.Contains(p, "private v4"):
+		return "private_v4"
+	case strings.Contains(p, "privatev6"), strings.Contains(p, "private v6"):
+		return "private_v6"
+	case isVPSPlan(plan):
+		return "vps"
+	default:
+		return "other"
+	}
 }
 
 func isVPSPlan(plan string) bool {
@@ -243,6 +262,7 @@ func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, reseller
 		expectedEmail := strings.TrimSpace(accountEmail)
 		for i := range items {
 			items[i].setServiceStatus()
+			items[i].PlanFamily = classifyCloudminiPlan(items[i].Plan)
 			rawUserEmail := strings.TrimSpace(items[i].UserEmail)
 			items[i].UserEmail = "" // Redact system account email from LLM view
 
@@ -270,12 +290,14 @@ func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, reseller
 							} else {
 								items[i].StatusNote = "IP đã bị xóa đúng tài khoản của khách hàng." + classNote + " Thông báo dịch vụ đã bị xóa/hết hạn và chuyển Admin kiểm tra khả năng khôi phục."
 							}
+						} else if items[i].ServiceStatus == "expired" {
+							items[i].StatusNote = "Dịch vụ đã hết hạn đúng tài khoản của khách hàng nhưng vẫn còn bản ghi trên hệ thống." + classNote + " Hướng dẫn khách kiểm tra khả năng tự gia hạn trong trang quản lý; không coi đây là lỗi kết nối và không gọi live_check."
 						} else {
 							items[i].StatusNote = "IP đang hoạt động đúng tài khoản của khách hàng." + classNote
 							items[i].CancellationPolicy, items[i].CancellationInstruction = cancellationPolicy(items[i].Plan)
 						}
 					} else {
-						if items[i].ServiceStatus == "linked" || items[i].ServiceStatus == "active" {
+						if items[i].ServiceStatus == "linked" || items[i].ServiceStatus == "active" || items[i].ServiceStatus == "expired" || items[i].ServiceStatus == "unknown" {
 							items[i].ServiceStatus = "unavailable"
 							items[i].StatusNote = "IP hiện không còn khả dụng." + classNote
 							items[i].Expire = nil // Redact expiry when email does not match
@@ -283,7 +305,7 @@ func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, reseller
 					}
 				}
 			} else {
-				if items[i].ServiceStatus == "linked" || items[i].ServiceStatus == "active" {
+				if items[i].ServiceStatus == "linked" || items[i].ServiceStatus == "active" || items[i].ServiceStatus == "expired" || items[i].ServiceStatus == "unknown" {
 					items[i].ServiceStatus = "active"
 					items[i].StatusNote = "IP đang có thông tin dịch vụ." + classNote + " YÊU CẦU BẮT BUỘC BƯỚC 2: Nếu trong toàn bộ cuộc trò chuyện CHƯA CÓ email của khách hàng, BẮT BUỘC phải hỏi xin email tài khoản Cloudmini của khách trước hết. KHÔNG ĐƯỢC đưa ra hướng dẫn kỹ thuật chuyên sâu hay kết luận hỗ trợ khi chưa có email."
 					items[i].Expire = nil // Redact expiry until email is supplied & verified
@@ -337,6 +359,7 @@ func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, reseller
 type cloudminiServiceInfo struct {
 	IP                      string  `json:"ip"`
 	Plan                    string  `json:"plan"`
+	PlanFamily              string  `json:"plan_family"`
 	UserEmail               string  `json:"user_email,omitempty"`
 	Expire                  *string `json:"expire"`
 	Region                  string  `json:"region"`
@@ -361,6 +384,30 @@ func (s *cloudminiServiceInfo) setServiceStatus() {
 		s.StatusNote = "IP đã bị xóa và không còn gắn với dịch vụ nào."
 		return
 	}
+	expiresAt, ok := parseCloudminiExpiry(*s.Expire)
+	if !ok {
+		s.ServiceStatus = "unknown"
+		s.StatusNote = "Không đọc được định dạng ngày hết hạn; không tự kết luận trạng thái dịch vụ."
+		return
+	}
+	if expiresAt.Before(time.Now()) {
+		s.ServiceStatus = "expired"
+		s.StatusNote = "Dịch vụ đã hết hạn nhưng vẫn còn bản ghi trên hệ thống."
+		return
+	}
 	s.ServiceStatus = "active"
 	s.StatusNote = "IP đang có thông tin dịch vụ."
+}
+
+func parseCloudminiExpiry(value string) (time.Time, bool) {
+	value = strings.TrimSpace(value)
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed, true
+		}
+	}
+	if parsed, err := time.ParseInLocation("2006-01-02", value, time.FixedZone("Asia/Ho_Chi_Minh", 7*60*60)); err == nil {
+		return parsed.Add(24*time.Hour - time.Nanosecond), true
+	}
+	return time.Time{}, false
 }

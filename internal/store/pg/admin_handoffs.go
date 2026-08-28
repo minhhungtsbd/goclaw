@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
@@ -109,7 +111,7 @@ func (s *PGAdminHandoffStore) MarkCompleted(ctx context.Context, id uuid.UUID, m
 	row := s.db.QueryRowContext(ctx, `
 		UPDATE admin_handoffs
 		SET status = 'completed', completed_at = now(), completion_message = $1
-		WHERE id = $2 AND tenant_id = $3 AND status = 'pending'
+		WHERE id = $2 AND tenant_id = $3 AND status IN ('pending', 'delivery_failed')
 		RETURNING `+adminHandoffColumns, message, id, store.TenantIDFromContext(ctx))
 	return scanAdminHandoff(row)
 }
@@ -127,7 +129,7 @@ func (s *PGAdminHandoffStore) MarkDeliveryFailed(ctx context.Context, id uuid.UU
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE admin_handoffs
 		SET status = 'delivery_failed'
-		WHERE id = $1 AND tenant_id = $2 AND status = 'pending'`, id, store.TenantIDFromContext(ctx))
+		WHERE id = $1 AND tenant_id = $2 AND status IN ('pending', 'completed')`, id, store.TenantIDFromContext(ctx))
 	if err != nil {
 		return err
 	}
@@ -139,6 +141,92 @@ func (s *PGAdminHandoffStore) MarkDeliveryFailed(ctx context.Context, id uuid.UU
 		return fmt.Errorf("admin handoff is not pending or was not found")
 	}
 	return nil
+}
+
+func (s *PGAdminHandoffStore) List(ctx context.Context, opts store.AdminHandoffListOptions) ([]store.AdminHandoff, int, error) {
+	limit := opts.Limit
+	if limit <= 0 || limit > 100 {
+		limit = 25
+	}
+	conditions := []string{"tenant_id = $1"}
+	args := []any{store.TenantIDFromContext(ctx)}
+	add := func(condition string, value any) {
+		args = append(args, value)
+		conditions = append(conditions, fmt.Sprintf(condition, len(args)))
+	}
+	if value := strings.TrimSpace(opts.Status); value != "" {
+		add("status = $%d", value)
+	}
+	if value := strings.TrimSpace(opts.Priority); value != "" {
+		add("priority = $%d", value)
+	}
+	if value := strings.TrimSpace(opts.Service); value != "" {
+		add("service ILIKE $%d", "%"+value+"%")
+	}
+	if value := strings.TrimSpace(opts.Search); value != "" {
+		add("(summary ILIKE $%[1]d OR service ILIKE $%[1]d OR identifiers::text ILIKE $%[1]d OR ('Ticket-' || lpad(ticket_number::text, 6, '0')) ILIKE $%[1]d)", "%"+value+"%")
+	}
+	where := strings.Join(conditions, " AND ")
+	var total int
+	if err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM admin_handoffs WHERE "+where, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	args = append(args, limit, max(opts.Offset, 0))
+	query := fmt.Sprintf("SELECT %s FROM admin_handoffs WHERE %s ORDER BY created_at DESC LIMIT $%d OFFSET $%d", adminHandoffColumns, where, len(args)-1, len(args))
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	result := make([]store.AdminHandoff, 0)
+	for rows.Next() {
+		handoff, err := scanAdminHandoff(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		result = append(result, *handoff)
+	}
+	return result, total, rows.Err()
+}
+
+func (s *PGAdminHandoffStore) ListEvents(ctx context.Context, handoffID uuid.UUID) ([]store.AdminHandoffEvent, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, tenant_id, handoff_id, action, actor_type, actor_id, content, metadata, created_at
+		FROM admin_handoff_events WHERE tenant_id = $1 AND handoff_id = $2 ORDER BY created_at ASC`, store.TenantIDFromContext(ctx), handoffID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]store.AdminHandoffEvent, 0)
+	for rows.Next() {
+		var event store.AdminHandoffEvent
+		var metadata json.RawMessage
+		if err := rows.Scan(&event.ID, &event.TenantID, &event.HandoffID, &event.Action, &event.ActorType, &event.ActorID, &event.Content, &metadata, &event.CreatedAt); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(metadata, &event.Metadata); err != nil {
+			return nil, err
+		}
+		result = append(result, event)
+	}
+	return result, rows.Err()
+}
+
+func (s *PGAdminHandoffStore) AppendEvent(ctx context.Context, event *store.AdminHandoffEvent) error {
+	if event.ID == uuid.Nil {
+		event.ID = uuid.Must(uuid.NewV7())
+	}
+	if event.CreatedAt.IsZero() {
+		event.CreatedAt = time.Now()
+	}
+	event.TenantID = store.TenantIDFromContext(ctx)
+	metadata, err := json.Marshal(event.Metadata)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `INSERT INTO admin_handoff_events
+		(id, tenant_id, handoff_id, action, actor_type, actor_id, content, metadata, created_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, event.ID, event.TenantID, event.HandoffID, event.Action, event.ActorType, event.ActorID, event.Content, metadata, event.CreatedAt)
+	return err
 }
 
 type adminHandoffScanner interface {

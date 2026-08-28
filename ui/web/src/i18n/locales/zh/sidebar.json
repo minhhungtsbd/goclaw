@@ -29,6 +29,7 @@
     "nodes": "Nodes",
     "overview": "概览",
     "pendingMessages": "待处理消息",
+    "adminHandoffs": "管理员转交",
     "providers": "Provider",
     "realtimeEvents": "实时事件",
     "sessions": "Session",

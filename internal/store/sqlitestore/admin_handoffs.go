@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -112,7 +113,7 @@ func (s *SQLiteAdminHandoffStore) MarkCompleted(ctx context.Context, id uuid.UUI
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE admin_handoffs
 		SET status = 'completed', completed_at = ?, completion_message = ?
-		WHERE id = ? AND tenant_id = ? AND status = 'pending'`,
+		WHERE id = ? AND tenant_id = ? AND status IN ('pending', 'delivery_failed')`,
 		time.Now().UTC(), message, id.String(), store.TenantIDFromContext(ctx).String())
 	if err != nil {
 		return nil, err
@@ -125,6 +126,103 @@ func (s *SQLiteAdminHandoffStore) MarkCompleted(ctx context.Context, id uuid.UUI
 		return nil, fmt.Errorf("admin handoff not found or is no longer pending")
 	}
 	return s.Get(ctx, id)
+}
+
+func (s *SQLiteAdminHandoffStore) List(ctx context.Context, opts store.AdminHandoffListOptions) ([]store.AdminHandoff, int, error) {
+	limit := opts.Limit
+	if limit <= 0 || limit > 100 {
+		limit = 25
+	}
+	conditions := []string{"tenant_id = ?"}
+	args := []any{store.TenantIDFromContext(ctx).String()}
+	if value := strings.TrimSpace(opts.Status); value != "" {
+		conditions = append(conditions, "status = ?")
+		args = append(args, value)
+	}
+	if value := strings.TrimSpace(opts.Priority); value != "" {
+		conditions = append(conditions, "priority = ?")
+		args = append(args, value)
+	}
+	if value := strings.TrimSpace(opts.Service); value != "" {
+		conditions = append(conditions, "lower(service) LIKE lower(?)")
+		args = append(args, "%"+value+"%")
+	}
+	if value := strings.TrimSpace(opts.Search); value != "" {
+		conditions = append(conditions, "(lower(summary) LIKE lower(?) OR lower(service) LIKE lower(?) OR lower(identifiers) LIKE lower(?) OR lower('Ticket-' || printf('%06d', ticket_number)) LIKE lower(?))")
+		search := "%" + value + "%"
+		args = append(args, search, search, search, search)
+	}
+	where := strings.Join(conditions, " AND ")
+	var total int
+	if err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM admin_handoffs WHERE "+where, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	queryArgs := append(append([]any{}, args...), limit, max(opts.Offset, 0))
+	rows, err := s.db.QueryContext(ctx, "SELECT "+adminHandoffColumns+" FROM admin_handoffs WHERE "+where+" ORDER BY created_at DESC LIMIT ? OFFSET ?", queryArgs...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	result := make([]store.AdminHandoff, 0)
+	for rows.Next() {
+		handoff, err := scanAdminHandoff(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		result = append(result, *handoff)
+	}
+	return result, total, rows.Err()
+}
+
+func (s *SQLiteAdminHandoffStore) ListEvents(ctx context.Context, handoffID uuid.UUID) ([]store.AdminHandoffEvent, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, tenant_id, handoff_id, action, actor_type, actor_id, content, metadata, created_at
+		FROM admin_handoff_events WHERE tenant_id = ? AND handoff_id = ? ORDER BY created_at ASC`, store.TenantIDFromContext(ctx).String(), handoffID.String())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]store.AdminHandoffEvent, 0)
+	for rows.Next() {
+		var event store.AdminHandoffEvent
+		var id, tenantID, eventHandoffID string
+		var metadata json.RawMessage
+		if err := rows.Scan(&id, &tenantID, &eventHandoffID, &event.Action, &event.ActorType, &event.ActorID, &event.Content, &metadata, &event.CreatedAt); err != nil {
+			return nil, err
+		}
+		var err error
+		if event.ID, err = uuid.Parse(id); err != nil {
+			return nil, err
+		}
+		if event.TenantID, err = uuid.Parse(tenantID); err != nil {
+			return nil, err
+		}
+		if event.HandoffID, err = uuid.Parse(eventHandoffID); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(metadata, &event.Metadata); err != nil {
+			return nil, err
+		}
+		result = append(result, event)
+	}
+	return result, rows.Err()
+}
+
+func (s *SQLiteAdminHandoffStore) AppendEvent(ctx context.Context, event *store.AdminHandoffEvent) error {
+	if event.ID == uuid.Nil {
+		event.ID = uuid.Must(uuid.NewV7())
+	}
+	if event.CreatedAt.IsZero() {
+		event.CreatedAt = time.Now().UTC()
+	}
+	event.TenantID = store.TenantIDFromContext(ctx)
+	metadata, err := json.Marshal(event.Metadata)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `INSERT INTO admin_handoff_events
+		(id, tenant_id, handoff_id, action, actor_type, actor_id, content, metadata, created_at)
+		VALUES (?,?,?,?,?,?,?,?,?)`, event.ID.String(), event.TenantID.String(), event.HandoffID.String(), event.Action, event.ActorType, event.ActorID, event.Content, metadata, event.CreatedAt)
+	return err
 }
 
 func (s *SQLiteAdminHandoffStore) MarkDismissed(ctx context.Context, id uuid.UUID) (*store.AdminHandoff, error) {
@@ -150,7 +248,7 @@ func (s *SQLiteAdminHandoffStore) MarkDeliveryFailed(ctx context.Context, id uui
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE admin_handoffs
 		SET status = 'delivery_failed'
-		WHERE id = ? AND tenant_id = ? AND status = 'pending'`,
+		WHERE id = ? AND tenant_id = ? AND status IN ('pending', 'completed')`,
 		id.String(), store.TenantIDFromContext(ctx).String())
 	if err != nil {
 		return err

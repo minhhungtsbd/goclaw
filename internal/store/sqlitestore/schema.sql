@@ -2390,3 +2390,17 @@ CREATE TABLE IF NOT EXISTS admin_handoffs (
 );
 CREATE INDEX IF NOT EXISTS idx_admin_handoffs_pending ON admin_handoffs(tenant_id, admin_channel, admin_chat_id, created_at DESC) WHERE status = 'pending';
 CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_handoffs_pending_dedupe ON admin_handoffs(tenant_id, dedupe_key) WHERE status = 'pending' AND dedupe_key <> '';
+CREATE INDEX IF NOT EXISTS idx_admin_handoffs_tenant_status_created ON admin_handoffs(tenant_id, status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS admin_handoff_events (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    handoff_id TEXT NOT NULL REFERENCES admin_handoffs(id) ON DELETE CASCADE,
+    action TEXT NOT NULL,
+    actor_type TEXT NOT NULL,
+    actor_id TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL DEFAULT '',
+    metadata TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_admin_handoff_events_handoff_created ON admin_handoff_events(tenant_id, handoff_id, created_at);

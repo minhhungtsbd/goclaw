@@ -30,6 +30,7 @@ import enMemory from "./locales/en/memory.json";
 import enVault from "./locales/en/vault.json";
 import enStorage from "./locales/en/storage.json";
 import enPendingMessages from "./locales/en/pending-messages.json";
+import enAdminHandoffs from "./locales/en/admin-handoffs.json";
 import enContacts from "./locales/en/contacts.json";
 import enActivity from "./locales/en/activity.json";
 import enApiKeys from "./locales/en/api-keys.json";
@@ -73,6 +74,7 @@ import viMemory from "./locales/vi/memory.json";
 import viVault from "./locales/vi/vault.json";
 import viStorage from "./locales/vi/storage.json";
 import viPendingMessages from "./locales/vi/pending-messages.json";
+import viAdminHandoffs from "./locales/vi/admin-handoffs.json";
 import viContacts from "./locales/vi/contacts.json";
 import viActivity from "./locales/vi/activity.json";
 import viApiKeys from "./locales/vi/api-keys.json";
@@ -116,6 +118,7 @@ import koMemory from "./locales/ko/memory.json";
 import koVault from "./locales/ko/vault.json";
 import koStorage from "./locales/ko/storage.json";
 import koPendingMessages from "./locales/ko/pending-messages.json";
+import koAdminHandoffs from "./locales/ko/admin-handoffs.json";
 import koContacts from "./locales/ko/contacts.json";
 import koActivity from "./locales/ko/activity.json";
 import koApiKeys from "./locales/ko/api-keys.json";
@@ -156,6 +159,7 @@ import zhMemory from "./locales/zh/memory.json";
 import zhVault from "./locales/zh/vault.json";
 import zhStorage from "./locales/zh/storage.json";
 import zhPendingMessages from "./locales/zh/pending-messages.json";
+import zhAdminHandoffs from "./locales/zh/admin-handoffs.json";
 import zhContacts from "./locales/zh/contacts.json";
 import zhActivity from "./locales/zh/activity.json";
 import zhApiKeys from "./locales/zh/api-keys.json";
@@ -199,6 +203,7 @@ import ruMemory from "./locales/ru/memory.json";
 import ruVault from "./locales/ru/vault.json";
 import ruStorage from "./locales/ru/storage.json";
 import ruPendingMessages from "./locales/ru/pending-messages.json";
+import ruAdminHandoffs from "./locales/ru/admin-handoffs.json";
 import ruContacts from "./locales/ru/contacts.json";
 import ruActivity from "./locales/ru/activity.json";
 import ruApiKeys from "./locales/ru/api-keys.json";
@@ -231,7 +236,7 @@ const ns = [
   "agents", "teams", "sessions", "skills", "cron", "config",
   "channels", "providers", "traces", "events",
   "usage", "approvals", "nodes", "logs", "tools", "mcp", "tts",
-  "setup", "memory", "vault", "storage", "pending-messages", "contacts", "activity", "api-keys",
+  "setup", "memory", "vault", "storage", "pending-messages", "admin-handoffs", "contacts", "activity", "api-keys",
   "cli-credentials", "packages", "tenants", "system-settings", "import-export",
   "v3-capabilities",
   "backup",
@@ -251,6 +256,7 @@ i18n.use(initReactI18next).init({
       approvals: enApprovals, nodes: enNodes, logs: enLogs, tools: enTools,
       mcp: enMcp, tts: enTts, setup: enSetup, memory: enMemory, vault: enVault, storage: enStorage,
       "pending-messages": enPendingMessages,
+      "admin-handoffs": enAdminHandoffs,
       contacts: enContacts, activity: enActivity, "api-keys": enApiKeys,
       "cli-credentials": enCliCredentials,
       packages: enPackages,
@@ -272,6 +278,7 @@ i18n.use(initReactI18next).init({
       approvals: viApprovals, nodes: viNodes, logs: viLogs, tools: viTools,
       mcp: viMcp, tts: viTts, setup: viSetup, memory: viMemory, vault: viVault, storage: viStorage,
       "pending-messages": viPendingMessages,
+      "admin-handoffs": viAdminHandoffs,
       contacts: viContacts, activity: viActivity, "api-keys": viApiKeys,
       "cli-credentials": viCliCredentials,
       packages: viPackages,
@@ -293,6 +300,7 @@ i18n.use(initReactI18next).init({
       approvals: zhApprovals, nodes: zhNodes, logs: zhLogs, tools: zhTools,
       mcp: zhMcp, tts: zhTts, setup: zhSetup, memory: zhMemory, vault: zhVault, storage: zhStorage,
       "pending-messages": zhPendingMessages,
+      "admin-handoffs": zhAdminHandoffs,
       contacts: zhContacts, activity: zhActivity, "api-keys": zhApiKeys,
       "cli-credentials": zhCliCredentials,
       packages: zhPackages,
@@ -314,6 +322,7 @@ i18n.use(initReactI18next).init({
       approvals: koApprovals, nodes: koNodes, logs: koLogs, tools: koTools,
       mcp: koMcp, tts: koTts, setup: koSetup, memory: koMemory, vault: koVault, storage: koStorage,
       "pending-messages": koPendingMessages,
+      "admin-handoffs": koAdminHandoffs,
       contacts: koContacts, activity: koActivity, "api-keys": koApiKeys,
       "cli-credentials": koCliCredentials,
       packages: koPackages,
@@ -332,6 +341,7 @@ i18n.use(initReactI18next).init({
       approvals: ruApprovals, nodes: ruNodes, logs: ruLogs, tools: ruTools,
       mcp: ruMcp, tts: ruTts, setup: ruSetup, memory: ruMemory, vault: ruVault, storage: ruStorage,
       "pending-messages": ruPendingMessages,
+      "admin-handoffs": ruAdminHandoffs,
       contacts: ruContacts, activity: ruActivity, "api-keys": ruApiKeys,
       "cli-credentials": ruCliCredentials,
       packages: ruPackages,

@@ -16,7 +16,7 @@ var schemaSQL string
 
 // SchemaVersion is the current SQLite schema version.
 // Bump this when adding new migration steps below.
-const SchemaVersion = 65
+const SchemaVersion = 66
 
 // migrations maps version → SQL to apply when upgrading FROM that version.
 // schema.sql always represents the LATEST full schema (for fresh DBs).
@@ -95,6 +95,21 @@ BEGIN
 END;`
 
 var migrations = map[int]string{
+	65: `CREATE INDEX IF NOT EXISTS idx_admin_handoffs_tenant_status_created
+    ON admin_handoffs(tenant_id, status, created_at DESC);
+CREATE TABLE IF NOT EXISTS admin_handoff_events (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    handoff_id TEXT NOT NULL REFERENCES admin_handoffs(id) ON DELETE CASCADE,
+    action TEXT NOT NULL,
+    actor_type TEXT NOT NULL,
+    actor_id TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL DEFAULT '',
+    metadata TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_admin_handoff_events_handoff_created
+    ON admin_handoff_events(tenant_id, handoff_id, created_at);`,
 	64: `UPDATE llm_providers
 SET provider_type = 'antigravity_cli_host',
     api_base = CASE

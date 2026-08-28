@@ -27,6 +27,7 @@
     { "name": "Custom Tools", "description": "Custom tool definitions" },
     { "name": "Built-in Tools", "description": "Built-in tool configuration" },
     { "name": "Browser", "description": "Browser automation cookie sync" },
+    { "name": "Admin Handoffs", "description": "Tenant-scoped support escalation management" },
     { "name": "Memory", "description": "Agent memory (pgvector) management" },
     { "name": "Knowledge Graph", "description": "Entity knowledge graph" },
     { "name": "Channels", "description": "Channel instance management" },
@@ -1164,6 +1165,55 @@
         "summary": "Serve media by ID",
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
         "responses": { "200": { "description": "Media file" } }
+      }
+    },
+    "/v1/admin-handoffs": {
+      "get": {
+        "tags": ["Admin Handoffs"],
+        "summary": "List Admin handoffs",
+        "description": "Search and filter tenant-scoped Admin handoff tickets. Requires tenant Admin role.",
+        "parameters": [
+          { "name": "search", "in": "query", "schema": { "type": "string" } },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["pending", "completed", "delivery_failed", "dismissed"] } },
+          { "name": "priority", "in": "query", "schema": { "type": "string", "enum": ["normal", "high", "urgent"] } },
+          { "name": "service", "in": "query", "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 25, "maximum": 100 } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } }
+        ],
+        "responses": { "200": { "description": "Paged Admin handoff list" }, "401": { "$ref": "#/components/responses/Unauthorized" }, "403": { "description": "Tenant Admin role required" } }
+      }
+    },
+    "/v1/admin-handoffs/{id}": {
+      "get": {
+        "tags": ["Admin Handoffs"],
+        "summary": "Get Admin handoff and audit events",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "Admin handoff detail and event history" }, "404": { "description": "Ticket not found" } }
+      }
+    },
+    "/v1/admin-handoffs/{id}/complete": {
+      "post": {
+        "tags": ["Admin Handoffs"],
+        "summary": "Complete handoff and queue an agent-generated customer reply",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "Ticket completed and reply queued" }, "409": { "description": "Ticket cannot be completed" } }
+      }
+    },
+    "/v1/admin-handoffs/{id}/manual": {
+      "post": {
+        "tags": ["Admin Handoffs"],
+        "summary": "Queue an Admin draft for agent rewriting",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["content"], "properties": { "content": { "type": "string", "maxLength": 4000 }, "close_after": { "type": "boolean", "default": false } } } } } },
+        "responses": { "200": { "description": "Draft queued for agent rewriting" }, "400": { "description": "Invalid draft" }, "409": { "description": "Ticket is not pending" } }
+      }
+    },
+    "/v1/admin-handoffs/{id}/dismiss": {
+      "post": {
+        "tags": ["Admin Handoffs"],
+        "summary": "Close handoff without replying to the customer",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "Ticket dismissed" }, "409": { "description": "Ticket is not pending" } }
       }
     },
     "/v1/pending-messages": {

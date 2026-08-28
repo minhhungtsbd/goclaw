@@ -699,6 +699,11 @@ func (s *Server) SetPendingMessagesHandler(h *httpapi.PendingMessagesHandler) {
 	s.handlers = append(s.handlers, h)
 }
 
+// SetAdminHandoffsHandler sets the tenant Admin handoff management handler.
+func (s *Server) SetAdminHandoffsHandler(h *httpapi.AdminHandoffsHandler) {
+	s.handlers = append(s.handlers, h)
+}
+
 // SetBuiltinToolsHandler sets the builtin tool management handler.
 func (s *Server) SetBuiltinToolsHandler(h *httpapi.BuiltinToolsHandler) {
 	s.handlers = append(s.handlers, h)
