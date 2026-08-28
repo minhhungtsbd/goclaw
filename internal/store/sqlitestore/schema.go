@@ -16,7 +16,7 @@ var schemaSQL string
 
 // SchemaVersion is the current SQLite schema version.
 // Bump this when adding new migration steps below.
-const SchemaVersion = 64
+const SchemaVersion = 65
 
 // migrations maps version → SQL to apply when upgrading FROM that version.
 // schema.sql always represents the LATEST full schema (for fresh DBs).
@@ -95,6 +95,13 @@ BEGIN
 END;`
 
 var migrations = map[int]string{
+	64: `UPDATE llm_providers
+SET provider_type = 'antigravity_cli_host',
+    api_base = CASE
+        WHEN api_base = 'http://antigravity-runtime:8080/v1' THEN ''
+        ELSE api_base
+    END
+WHERE provider_type = 'antigravity_cli';`,
 	63: `ALTER TABLE admin_handoffs ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal';
 ALTER TABLE admin_handoffs ADD COLUMN service TEXT NOT NULL DEFAULT '';
 ALTER TABLE admin_handoffs ADD COLUMN identifiers TEXT NOT NULL DEFAULT '[]';`,

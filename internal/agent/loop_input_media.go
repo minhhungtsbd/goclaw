@@ -191,7 +191,7 @@ func (l *Loop) requiresInlineCurrentImages() bool {
 	if fallback, ok := provider.(interface{ PrimaryProvider() providers.Provider }); ok {
 		provider = fallback.PrimaryProvider()
 	}
-	return provider != nil && providerTypeOf(provider) == store.ProviderAntigravityCLI
+	return provider != nil && providerTypeOf(provider) == store.ProviderAntigravityCLIHost
 }
 
 // rehomeDelegatedMediaMessage replaces caller-owned attachment paths with the

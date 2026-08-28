@@ -191,6 +191,19 @@
     "runOnServer": "Run on the server terminal:",
     "recheckButton": "Re-check"
   },
+  "agyHost": {
+    "title": "Host-native Antigravity CLI",
+    "description": "Sign in with OAuth and select a model in a provider-isolated terminal. No API key is required.",
+    "authenticated": "AGY is signed in for this provider.",
+    "notAuthenticated": "AGY is not signed in for this provider.",
+    "checking": "Checking AGY status...",
+    "openTerminal": "Open AGY terminal",
+    "starting": "Opening terminal...",
+    "active": "Terminal is open",
+    "instructions": "In the terminal, complete Google sign-in when AGY prompts, then use /model to select a model. Type /exit when finished.",
+    "unavailable": "The AGY host bridge is unavailable. Check the server service.",
+    "terminalFailed": "Could not open the AGY terminal. Please try again."
+  },
   "detail": {
     "title": "Provider Details",
     "advanced": "Advanced",

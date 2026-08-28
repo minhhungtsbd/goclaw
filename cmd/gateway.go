@@ -540,6 +540,11 @@ func runGateway() {
 	server.SetMessageBus(msgBus)
 	server.SetExecApprovalManager(execApprovalMgr)
 	server.SetOAuthHandler(httpapi.NewOAuthHandler(pgStores.Providers, pgStores.ConfigSecrets, providerRegistry, msgBus))
+	if agyHostHandler, err := httpapi.NewAGYHostHandlerFromEnv(); err != nil {
+		slog.Error("AGY host bridge disabled", "error", err)
+	} else if agyHostHandler != nil {
+		server.SetAGYHostHandler(agyHostHandler)
+	}
 
 	// contextFileInterceptor is created inside wireExtras.
 	// Declared here so it can be passed to registerAllMethods → AgentsMethods

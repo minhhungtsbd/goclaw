@@ -196,6 +196,19 @@
     "runOnServer": "Chạy trên terminal máy chủ:",
     "recheckButton": "Kiểm tra lại"
   },
+  "agyHost": {
+    "title": "Antigravity CLI trên máy chủ",
+    "description": "Đăng nhập OAuth và chọn model trong terminal được cô lập theo provider. Không cần API key.",
+    "authenticated": "Đã đăng nhập AGY cho provider này.",
+    "notAuthenticated": "Chưa đăng nhập AGY cho provider này.",
+    "checking": "Đang kiểm tra trạng thái AGY...",
+    "openTerminal": "Mở terminal AGY",
+    "starting": "Đang mở terminal...",
+    "active": "Terminal đang mở",
+    "instructions": "Trong terminal, hoàn tất đăng nhập Google khi AGY yêu cầu rồi dùng /model để chọn model. Gõ /exit khi hoàn tất.",
+    "unavailable": "Không kết nối được AGY host bridge. Kiểm tra dịch vụ trên máy chủ.",
+    "terminalFailed": "Không thể mở terminal AGY. Hãy thử lại."
+  },
   "detail": {
     "advanced": "Nâng cao",
     "identity": "Danh tính",

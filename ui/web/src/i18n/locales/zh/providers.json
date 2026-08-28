@@ -214,6 +214,19 @@
     "runOnServer": "在服务器终端运行：",
     "recheckButton": "重新检查"
   },
+  "agyHost": {
+    "title": "主机原生 Antigravity CLI",
+    "description": "在按 Provider 隔离的终端中使用 OAuth 登录并选择模型，无需 API Key。",
+    "authenticated": "此 Provider 的 AGY 已登录。",
+    "notAuthenticated": "此 Provider 的 AGY 尚未登录。",
+    "checking": "正在检查 AGY 状态...",
+    "openTerminal": "打开 AGY 终端",
+    "starting": "正在打开终端...",
+    "active": "终端已打开",
+    "instructions": "在终端中按 AGY 提示完成 Google 登录，然后用 /model 选择模型。完成后输入 /exit。",
+    "unavailable": "AGY 主机桥接不可用，请检查服务器服务。",
+    "terminalFailed": "无法打开 AGY 终端，请重试。"
+  },
   "detail": {
     "advanced": "高级设置",
     "identity": "身份",

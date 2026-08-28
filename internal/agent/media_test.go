@@ -25,7 +25,7 @@ func (antigravityTestProvider) ChatStream(context.Context, providers.ChatRequest
 
 func (antigravityTestProvider) DefaultModel() string { return "default" }
 func (antigravityTestProvider) Name() string         { return "antigravity-local" }
-func (antigravityTestProvider) ProviderType() string { return "antigravity_cli" }
+func (antigravityTestProvider) ProviderType() string { return "antigravity_cli_host" }
 
 func TestRequiresInlineCurrentImagesForAntigravity(t *testing.T) {
 	loop := Loop{provider: antigravityTestProvider{}}

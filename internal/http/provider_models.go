@@ -61,8 +61,8 @@ func (h *ProvidersHandler) handleListProviderModels(w http.ResponseWriter, r *ht
 		return
 	}
 
-	if p.ProviderType == store.ProviderAntigravityCLI {
-		respond([]ModelInfo{{ID: "default", Name: "Antigravity CLI default"}})
+	if p.ProviderType == store.ProviderAntigravityCLIHost {
+		respond([]ModelInfo{{ID: "default", Name: "Antigravity CLI selected model"}})
 		return
 	}
 

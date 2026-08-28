@@ -732,6 +732,9 @@ func (s *Server) SetGatewayUpgradeHandler(h *httpapi.GatewayUpgradeHandler) {
 // SetOAuthHandler sets the OAuth handler (available in all modes).
 func (s *Server) SetOAuthHandler(h *httpapi.OAuthHandler) { s.handlers = append(s.handlers, h) }
 
+// SetAGYHostHandler proxies the host-native Antigravity CLI bridge.
+func (s *Server) SetAGYHostHandler(h *httpapi.AGYHostHandler) { s.handlers = append(s.handlers, h) }
+
 // SetAPIKeysHandler sets the API key management handler.
 func (s *Server) SetAPIKeysHandler(h *httpapi.APIKeysHandler) {
 	s.handlers = append(s.handlers, h)

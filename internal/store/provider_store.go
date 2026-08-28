@@ -25,7 +25,7 @@ const (
 	ProviderBailian         = "bailian"
 	ProviderChatGPTOAuth    = "chatgpt_oauth"
 	ProviderClaudeCLI       = "claude_cli"
-	ProviderAntigravityCLI  = "antigravity_cli" // Antigravity CLI via local OpenAI-compatible runtime sidecar
+	ProviderAntigravityCLIHost = "antigravity_cli_host" // Host-native Antigravity CLI bridge
 	ProviderYesScale        = "yescale"
 	ProviderZai             = "zai"
 	ProviderZaiCoding       = "zai_coding"
@@ -86,7 +86,7 @@ var ValidProviderTypes = map[string]bool{
 	ProviderBailian:         true,
 	ProviderChatGPTOAuth:    true,
 	ProviderClaudeCLI:       true,
-	ProviderAntigravityCLI:  true,
+	ProviderAntigravityCLIHost: true,
 	ProviderYesScale:        true,
 	ProviderZai:             true,
 	ProviderZaiCoding:       true,
@@ -268,7 +268,7 @@ var NoEmbeddingTypes = map[string]bool{
 	ProviderAnthropicNative: true, // uses x-api-key auth, not Bearer; no embedding models
 	ProviderACP:             true,
 	ProviderClaudeCLI:       true,
-	ProviderAntigravityCLI:  true,
+	ProviderAntigravityCLIHost: true,
 	ProviderChatGPTOAuth:    true,
 	ProviderVertex:          true, // Vertex embeddings live on a different native endpoint, not on /endpoints/openapi
 }

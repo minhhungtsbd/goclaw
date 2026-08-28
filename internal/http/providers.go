@@ -270,8 +270,8 @@ func (h *ProvidersHandler) registerInMemory(p *store.LLMProviderData) providerRu
 		h.providerReg.RegisterForTenant(p.TenantID, prov)
 		return providerRuntimeRegistered
 	}
-	if p.ProviderType == store.ProviderAntigravityCLI {
-		prov := providers.NewOpenAIProvider(p.Name, p.APIKey, antigravityAPIBase(p.APIBase), "default").
+	if p.ProviderType == store.ProviderAntigravityCLIHost {
+		prov := providers.NewOpenAIProvider(p.Name, antigravityAPIKey(p.APIKey), antigravityAPIBase(p.APIBase, p.Name), "default").
 			WithProviderType(p.ProviderType)
 		h.providerReg.RegisterForTenant(p.TenantID, prov)
 		return providerRuntimeRegistered
@@ -401,8 +401,8 @@ func (h *ProvidersHandler) resolveOllamaNumCtx(p *store.LLMProviderData, apiBase
 
 func openAIProviderDefaults(providerType, apiBase string) (string, string) {
 	switch providerType {
-	case store.ProviderAntigravityCLI:
-		return antigravityAPIBase(apiBase), "default"
+	case store.ProviderAntigravityCLIHost:
+		return antigravityAPIBase(apiBase, "default"), "default"
 	case store.ProviderMiniMax:
 		if apiBase == "" {
 			apiBase = store.MiniMaxDefaultAPIBase
@@ -413,11 +413,18 @@ func openAIProviderDefaults(providerType, apiBase string) (string, string) {
 	}
 }
 
-func antigravityAPIBase(apiBase string) string {
+func antigravityAPIBase(apiBase, profile string) string {
 	if apiBase == "" {
-		return "http://antigravity-runtime:8080/v1"
+		return "http://host.docker.internal:18891/v1/profiles/" + profile
 	}
 	return apiBase
+}
+
+func antigravityAPIKey(apiKey string) string {
+	if apiKey != "" {
+		return apiKey
+	}
+	return os.Getenv("GOCLAW_AGY_HOST_TOKEN")
 }
 
 // normalizeOllamaAPIBase normalizes the api_base stored for Ollama providers.
@@ -442,7 +449,7 @@ func normalizeOllamaAPIBase(p *store.LLMProviderData) {
 var localURLProviderTypes = map[string]bool{
 	store.ProviderOllama:         true,
 	store.ProviderACP:            true,
-	store.ProviderAntigravityCLI: true,
+	store.ProviderAntigravityCLIHost: true,
 }
 
 // allowedLocalHosts are the only hosts permitted for local provider types.
@@ -451,7 +458,7 @@ var localURLProviderTypes = map[string]bool{
 var allowedLocalHosts = []string{"localhost", "127.0.0.1", "::1", "host.docker.internal"}
 
 var localProviderExtraHosts = map[string][]string{
-	store.ProviderAntigravityCLI: {"antigravity-runtime"},
+	store.ProviderAntigravityCLIHost: {"host.docker.internal"},
 }
 
 // dnsResolverFn resolves hostnames to IPs. Replaceable in tests.

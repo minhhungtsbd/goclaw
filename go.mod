@@ -13,6 +13,7 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/huh v0.8.0
 	github.com/charmbracelet/lipgloss v1.1.0
+	github.com/creack/pty v1.1.24
 	github.com/disintegration/imaging v1.6.2
 	github.com/dop251/goja v0.0.0-20260311135729-065cd970411c
 	github.com/fsnotify/fsnotify v1.9.0

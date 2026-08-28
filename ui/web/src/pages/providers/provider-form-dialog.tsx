@@ -70,7 +70,7 @@ export function ProviderFormDialog({ open, onOpenChange, onSubmit, existingProvi
   const isOAuth = providerType === "chatgpt_oauth";
   const isCLI = providerType === "claude_cli";
   const isACP = providerType === "acp";
-  const isAntigravity = providerType === "antigravity_cli";
+  const isAntigravity = providerType === "antigravity_cli_host";
 
   // Reset form when dialog opens
   useEffect(() => {
@@ -112,6 +112,10 @@ export function ProviderFormDialog({ open, onOpenChange, onSubmit, existingProvi
 
     if (data.apiKey && data.apiKey !== "***") {
       payload.api_key = data.apiKey;
+    }
+
+    if (isAntigravity) {
+      payload.api_base = `http://host.docker.internal:18891/v1/profiles/${data.name}`;
     }
 
     await onSubmit(payload);
@@ -224,7 +228,7 @@ export function ProviderFormDialog({ open, onOpenChange, onSubmit, existingProvi
                 />
               )}
 
-              {!isCLI && !isACP && (
+              {!isCLI && !isACP && !isAntigravity && (
                 <ProviderStandardFormFields
                   register={register}
                   errors={errors}
@@ -234,7 +238,7 @@ export function ProviderFormDialog({ open, onOpenChange, onSubmit, existingProvi
                 />
               )}
 
-              {(isCLI || isACP) && (
+              {(isCLI || isACP || isAntigravity) && (
                 <>
                   <div className="flex items-center justify-between">
                     <Label htmlFor="enabled">{t("form.enabled")}</Label>

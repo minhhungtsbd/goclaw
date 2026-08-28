@@ -45,7 +45,7 @@ export function StepProvider({ onComplete, existingProvider }: StepProviderProps
 
   const isOAuth = providerType === "chatgpt_oauth";
   const isCLI = providerType === "claude_cli";
-  const isAntigravity = providerType === "antigravity_cli";
+  const isAntigravity = providerType === "antigravity_cli_host";
   // Local Ollama uses no API key — the server accepts any non-empty Bearer value internally
   const isOllama = providerType === "ollama";
   const needsApiKey = !isCLI && !isOllama && !isOAuth && !isAntigravity;
@@ -103,11 +103,14 @@ export function StepProvider({ onComplete, existingProvider }: StepProviderProps
     setLoading(true);
     setError("");
     try {
+      const resolvedAPIBase = isAntigravity
+        ? `http://host.docker.internal:18891/v1/profiles/${name.trim()}`
+        : apiBase.trim() || undefined;
       if (isEditing) {
         const patch: Record<string, unknown> = {
           name: name.trim(),
           provider_type: providerType,
-          api_base: apiBase.trim() || undefined,
+          api_base: resolvedAPIBase,
         };
         // Only include api_key if user entered a new one
         if (apiKey.trim()) patch.api_key = apiKey.trim();
@@ -117,7 +120,7 @@ export function StepProvider({ onComplete, existingProvider }: StepProviderProps
         const provider = await createProvider({
           name: name.trim(),
           provider_type: providerType,
-          api_base: apiBase.trim() || undefined,
+          api_base: resolvedAPIBase,
           api_key: needsApiKey ? apiKey.trim() : undefined,
           enabled: true,
         }) as ProviderData;

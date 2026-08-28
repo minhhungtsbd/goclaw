@@ -1,0 +1,17 @@
+[Unit]
+Description=GoClaw host-native Antigravity CLI bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=-/etc/goclaw/agy-host.env
+ExecStart=/opt/goclaw/goclaw agy-host --listen 0.0.0.0:18891 --agy-path /root/.local/bin/agy --profiles-dir /var/lib/goclaw-agy/profiles
+Restart=on-failure
+RestartSec=5
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

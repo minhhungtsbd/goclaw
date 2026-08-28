@@ -22,6 +22,7 @@ import { ProviderReasoningSection } from "./provider-reasoning-section";
 import { ProviderEmbeddingSection } from "./provider-embedding-section";
 import { ProviderPoolActivitySection } from "./provider-pool-activity-section";
 import { ProviderPricingSection } from "./provider-pricing-section";
+import { AGYHostSection } from "../agy-host-section";
 import {
   buildProviderSettingsWithChatGPTOAuthRouting,
   buildProviderSettingsWithReasoningDefaults,
@@ -65,6 +66,7 @@ export function ProviderOverview({ provider, onUpdate }: ProviderOverviewProps) 
   const showApiKey = !NO_API_KEY_TYPES.has(provider.provider_type);
   const showEmbedding = !NO_EMBEDDING_TYPES.has(provider.provider_type);
   const isOAuth = provider.provider_type === "chatgpt_oauth";
+  const isAGYHost = provider.provider_type === "antigravity_cli_host";
 
   // --- Pool ownership & status maps ---
   const providerByName = useMemo(() => new Map(providers.map((item) => [item.name, item])), [providers]);
@@ -241,6 +243,8 @@ export function ProviderOverview({ provider, onUpdate }: ProviderOverviewProps) 
       </section>
 
       {isOAuth ? <ProviderOAuthAccountSection provider={provider} managedByProvider={managedByProvider} managedMemberCount={managedMemberCount} availability={currentOAuthAvailability} quota={quotaByName.get(provider.name)} quotaLoading={quotasLoading || quotasFetching} /> : null}
+
+      {isAGYHost ? <AGYHostSection profile={provider.name} /> : null}
 
       {showReasoningDefaults ? (
         <ProviderReasoningSection

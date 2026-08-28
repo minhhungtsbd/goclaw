@@ -47,6 +47,9 @@ services:
       - GOCLAW_GATEWAY_TOKEN=${GOCLAW_GATEWAY_TOKEN:?run ./prepare-env.sh or set GOCLAW_GATEWAY_TOKEN}
       - GOCLAW_ENCRYPTION_KEY=${GOCLAW_ENCRYPTION_KEY:-}
       - GOCLAW_SKILLS_DIR=/app/data/skills
+      # Host-native AGY bridge. Leave both blank to keep the feature disabled.
+      - GOCLAW_AGY_HOST_BRIDGE_URL=${GOCLAW_AGY_HOST_BRIDGE_URL:-}
+      - GOCLAW_AGY_HOST_TOKEN=${GOCLAW_AGY_HOST_TOKEN:-}
       # Debug
       - GOCLAW_TRACE_VERBOSE=${GOCLAW_TRACE_VERBOSE:-0}
       - BITRIX24_LOG_RAW_EVENT=${BITRIX24_LOG_RAW_EVENT:-0}

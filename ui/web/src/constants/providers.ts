@@ -38,7 +38,7 @@ export const PROVIDER_TYPES: ProviderTypeInfo[] = [
   { value: "ollama", label: "Ollama (Local)", apiBase: "http://localhost:11434/v1", placeholder: "" },
   { value: "ollama_cloud", label: "Ollama Cloud", apiBase: "https://ollama.com/v1", placeholder: "" },
   { value: "claude_cli", label: "Claude CLI (Local)", apiBase: "", placeholder: "" },
-  { value: "antigravity_cli", label: "Antigravity CLI (Local)", apiBase: "http://antigravity-runtime:8080/v1", placeholder: "" },
+  { value: "antigravity_cli_host", label: "Antigravity CLI (Host)", apiBase: "", placeholder: "" },
   { value: "acp", label: "ACP Agent (Subprocess)", apiBase: "", placeholder: "claude" },
 ];
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -323,9 +324,9 @@ func registerProvidersFromDB(registry *providers.Registry, provStore store.Provi
 			slog.Info("registered provider from DB", "name", p.Name)
 			continue
 		}
-		if p.ProviderType == store.ProviderAntigravityCLI {
-			base := antigravityAPIBase(p.APIBase)
-			prov := providers.NewOpenAIProvider(p.Name, p.APIKey, base, "default").
+		if p.ProviderType == store.ProviderAntigravityCLIHost {
+			base := antigravityAPIBase(p.APIBase, p.Name)
+			prov := providers.NewOpenAIProvider(p.Name, antigravityAPIKey(p.APIKey), base, "default").
 				WithProviderType(p.ProviderType)
 			registry.RegisterForTenant(p.TenantID, prov)
 			slog.Info("registered provider from DB", "name", p.Name, "type", p.ProviderType)
@@ -464,8 +465,8 @@ func registerProvidersFromDB(registry *providers.Registry, provStore store.Provi
 
 func openAIProviderDefaults(providerType, apiBase string) (string, string) {
 	switch providerType {
-	case store.ProviderAntigravityCLI:
-		return antigravityAPIBase(apiBase), "default"
+	case store.ProviderAntigravityCLIHost:
+		return antigravityAPIBase(apiBase, "default"), "default"
 	case store.ProviderMiniMax:
 		if apiBase == "" {
 			apiBase = store.MiniMaxDefaultAPIBase
@@ -476,11 +477,20 @@ func openAIProviderDefaults(providerType, apiBase string) (string, string) {
 	}
 }
 
-func antigravityAPIBase(apiBase string) string {
+func antigravityAPIBase(apiBase, profile string) string {
 	if apiBase == "" {
-		return "http://antigravity-runtime:8080/v1"
+		return "http://host.docker.internal:18891/v1/profiles/" + profile
 	}
 	return apiBase
+}
+
+// antigravityAPIKey keeps the bridge credential out of provider records. The
+// host bridge is reachable only from this deployment and verifies this token.
+func antigravityAPIKey(apiKey string) string {
+	if apiKey != "" {
+		return apiKey
+	}
+	return os.Getenv("GOCLAW_AGY_HOST_TOKEN")
 }
 
 // resolveOllamaNumCtx returns the operator-configured num_ctx for an Ollama

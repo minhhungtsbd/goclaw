@@ -254,7 +254,7 @@ func ShouldEnforceProvider(providerType string, hasAPIKey bool) bool {
 	switch providerType {
 	case store.ProviderChatGPTOAuth,
 		store.ProviderClaudeCLI,
-		store.ProviderAntigravityCLI,
+		store.ProviderAntigravityCLIHost,
 		store.ProviderBailian,
 		store.ProviderACP,
 		store.ProviderOllama:
