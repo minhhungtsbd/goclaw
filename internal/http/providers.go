@@ -447,8 +447,8 @@ func normalizeOllamaAPIBase(p *store.LLMProviderData) {
 // They are restricted to an explicit localhost allowlist
 // rather than skipping SSRF validation entirely.
 var localURLProviderTypes = map[string]bool{
-	store.ProviderOllama:         true,
-	store.ProviderACP:            true,
+	store.ProviderOllama:             true,
+	store.ProviderACP:                true,
 	store.ProviderAntigravityCLIHost: true,
 }
 

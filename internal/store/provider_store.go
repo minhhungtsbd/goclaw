@@ -9,34 +9,34 @@ import (
 
 // Provider type constants.
 const (
-	ProviderAnthropicNative = "anthropic_native"
-	ProviderOpenAICompat    = "openai_compat"
-	ProviderGeminiNative    = "gemini_native"
-	ProviderOpenRouter      = "openrouter"
-	ProviderAIMLAPI         = "aimlapi"
-	ProviderGroq            = "groq"
-	ProviderDeepSeek        = "deepseek"
-	ProviderMistral         = "mistral"
-	ProviderXAI             = "xai"
-	ProviderMiniMax         = "minimax_native"
-	ProviderCohere          = "cohere"
-	ProviderPerplexity      = "perplexity"
-	ProviderDashScope       = "dashscope"
-	ProviderBailian         = "bailian"
-	ProviderChatGPTOAuth    = "chatgpt_oauth"
-	ProviderClaudeCLI       = "claude_cli"
+	ProviderAnthropicNative    = "anthropic_native"
+	ProviderOpenAICompat       = "openai_compat"
+	ProviderGeminiNative       = "gemini_native"
+	ProviderOpenRouter         = "openrouter"
+	ProviderAIMLAPI            = "aimlapi"
+	ProviderGroq               = "groq"
+	ProviderDeepSeek           = "deepseek"
+	ProviderMistral            = "mistral"
+	ProviderXAI                = "xai"
+	ProviderMiniMax            = "minimax_native"
+	ProviderCohere             = "cohere"
+	ProviderPerplexity         = "perplexity"
+	ProviderDashScope          = "dashscope"
+	ProviderBailian            = "bailian"
+	ProviderChatGPTOAuth       = "chatgpt_oauth"
+	ProviderClaudeCLI          = "claude_cli"
 	ProviderAntigravityCLIHost = "antigravity_cli_host" // Host-native Antigravity CLI bridge
-	ProviderYesScale        = "yescale"
-	ProviderZai             = "zai"
-	ProviderZaiCoding       = "zai_coding"
-	ProviderOllama          = "ollama"          // local or self-hosted Ollama (no API key)
-	ProviderOllamaCloud     = "ollama_cloud"    // Ollama Cloud (Bearer token required)
-	ProviderACP             = "acp"             // ACP (Agent Client Protocol) agent subprocess
-	ProviderNovita          = "novita"          // Novita AI (OpenAI-compatible endpoint)
-	ProviderBytePlus        = "byteplus"        // BytePlus ModelArk (Seed 2.0 models)
-	ProviderBytePlusCoding  = "byteplus_coding" // BytePlus ModelArk Coding Plan
-	ProviderVertex          = "vertex"          // Google Cloud Vertex AI (OAuth2 service account + ADC)
-	ProviderKimiCoding      = "kimi_coding"     // Moonshot Kimi Coding (OpenAI-compat, requires fixed User-Agent)
+	ProviderYesScale           = "yescale"
+	ProviderZai                = "zai"
+	ProviderZaiCoding          = "zai_coding"
+	ProviderOllama             = "ollama"          // local or self-hosted Ollama (no API key)
+	ProviderOllamaCloud        = "ollama_cloud"    // Ollama Cloud (Bearer token required)
+	ProviderACP                = "acp"             // ACP (Agent Client Protocol) agent subprocess
+	ProviderNovita             = "novita"          // Novita AI (OpenAI-compatible endpoint)
+	ProviderBytePlus           = "byteplus"        // BytePlus ModelArk (Seed 2.0 models)
+	ProviderBytePlusCoding     = "byteplus_coding" // BytePlus ModelArk Coding Plan
+	ProviderVertex             = "vertex"          // Google Cloud Vertex AI (OAuth2 service account + ADC)
+	ProviderKimiCoding         = "kimi_coding"     // Moonshot Kimi Coding (OpenAI-compat, requires fixed User-Agent)
 
 	// MiniMax defaults.
 	MiniMaxDefaultAPIBase = "https://api.minimax.io/v1"
@@ -70,34 +70,34 @@ const (
 
 // ValidProviderTypes lists all accepted provider_type values.
 var ValidProviderTypes = map[string]bool{
-	ProviderAnthropicNative: true,
-	ProviderOpenAICompat:    true,
-	ProviderGeminiNative:    true,
-	ProviderOpenRouter:      true,
-	ProviderAIMLAPI:         true,
-	ProviderGroq:            true,
-	ProviderDeepSeek:        true,
-	ProviderMistral:         true,
-	ProviderXAI:             true,
-	ProviderMiniMax:         true,
-	ProviderCohere:          true,
-	ProviderPerplexity:      true,
-	ProviderDashScope:       true,
-	ProviderBailian:         true,
-	ProviderChatGPTOAuth:    true,
-	ProviderClaudeCLI:       true,
+	ProviderAnthropicNative:    true,
+	ProviderOpenAICompat:       true,
+	ProviderGeminiNative:       true,
+	ProviderOpenRouter:         true,
+	ProviderAIMLAPI:            true,
+	ProviderGroq:               true,
+	ProviderDeepSeek:           true,
+	ProviderMistral:            true,
+	ProviderXAI:                true,
+	ProviderMiniMax:            true,
+	ProviderCohere:             true,
+	ProviderPerplexity:         true,
+	ProviderDashScope:          true,
+	ProviderBailian:            true,
+	ProviderChatGPTOAuth:       true,
+	ProviderClaudeCLI:          true,
 	ProviderAntigravityCLIHost: true,
-	ProviderYesScale:        true,
-	ProviderZai:             true,
-	ProviderZaiCoding:       true,
-	ProviderOllama:          true,
-	ProviderOllamaCloud:     true,
-	ProviderACP:             true,
-	ProviderNovita:          true,
-	ProviderBytePlus:        true,
-	ProviderBytePlusCoding:  true,
-	ProviderVertex:          true,
-	ProviderKimiCoding:      true,
+	ProviderYesScale:           true,
+	ProviderZai:                true,
+	ProviderZaiCoding:          true,
+	ProviderOllama:             true,
+	ProviderOllamaCloud:        true,
+	ProviderACP:                true,
+	ProviderNovita:             true,
+	ProviderBytePlus:           true,
+	ProviderBytePlusCoding:     true,
+	ProviderVertex:             true,
+	ProviderKimiCoding:         true,
 }
 
 // VertexProviderSettings holds Vertex-specific config stored in llm_providers.settings JSONB.
@@ -265,12 +265,12 @@ func normalizeProviderReasoningConfig(raw *ProviderReasoningConfig) *ProviderRea
 
 // NoEmbeddingTypes lists provider types that cannot serve embeddings.
 var NoEmbeddingTypes = map[string]bool{
-	ProviderAnthropicNative: true, // uses x-api-key auth, not Bearer; no embedding models
-	ProviderACP:             true,
-	ProviderClaudeCLI:       true,
+	ProviderAnthropicNative:    true, // uses x-api-key auth, not Bearer; no embedding models
+	ProviderACP:                true,
+	ProviderClaudeCLI:          true,
 	ProviderAntigravityCLIHost: true,
-	ProviderChatGPTOAuth:    true,
-	ProviderVertex:          true, // Vertex embeddings live on a different native endpoint, not on /endpoints/openapi
+	ProviderChatGPTOAuth:       true,
+	ProviderVertex:             true, // Vertex embeddings live on a different native endpoint, not on /endpoints/openapi
 }
 
 // ProviderStore manages LLM providers.
