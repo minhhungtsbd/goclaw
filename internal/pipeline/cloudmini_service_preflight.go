@@ -15,6 +15,7 @@ import (
 const cloudminiProxyCheckToolName = "cloudmini_proxy_check"
 
 var cloudminiIPCandidate = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
+var cloudminiEmailCandidate = regexp.MustCompile(`(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b`)
 
 // CloudminiServicePreflightStage loads service facts before the model answers a
 // customer request about a Proxy IP. It applies only when the scoped agent has
@@ -51,14 +52,19 @@ func (s *CloudminiServicePreflightStage) Execute(ctx context.Context, state *Run
 	}
 
 	state.Tool.AllowedTools = map[string]bool{cloudminiProxyCheckToolName: true}
+	accountEmail := latestCloudminiCustomerEmail(state.Messages.History())
 	for index, ip := range ips {
+		arguments := map[string]any{
+			"ip":        ip,
+			"operation": "service_info",
+		}
+		if accountEmail != "" {
+			arguments["account_email"] = accountEmail
+		}
 		tc := providers.ToolCall{
 			ID:   fmt.Sprintf("cloudmini-service-preflight-%d", index+1),
 			Name: cloudminiProxyCheckToolName,
-			Arguments: map[string]any{
-				"ip":        ip,
-				"operation": "service_info",
-			},
+			Arguments: arguments,
 		}
 		if s.deps.AuthorizeToolCall != nil {
 			if ok, reason := s.deps.AuthorizeToolCall(ctx, state, tc); !ok {
@@ -177,6 +183,21 @@ func cloudminiIPs(message string) []string {
 		ips = append(ips, value)
 	}
 	return ips
+}
+
+// latestCloudminiCustomerEmail reuses an email the customer already supplied,
+// without trusting assistant or Admin messages that may mention other accounts.
+func latestCloudminiCustomerEmail(history []providers.Message) string {
+	for i := len(history) - 1; i >= 0; i-- {
+		if history[i].Role != "user" {
+			continue
+		}
+		matches := cloudminiEmailCandidate.FindAllString(history[i].Content, -1)
+		if len(matches) > 0 {
+			return strings.ToLower(matches[len(matches)-1])
+		}
+	}
+	return ""
 }
 
 func containsAny(value string, terms ...string) bool {

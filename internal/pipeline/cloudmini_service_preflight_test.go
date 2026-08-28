@@ -47,6 +47,28 @@ func TestCloudminiServicePreflightPinsCurrentMultiIPScope(t *testing.T) {
 	}
 }
 
+func TestCloudminiServicePreflightReusesCustomerEmail(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "Khôi phục 48.45.161.144 giúp em"}, nil, "", nil)
+	state.Messages.SetHistory([]providers.Message{
+		{Role: "assistant", Content: "Admin nói email admin@example.com"},
+		{Role: "user", Content: "Email Cloudmini của em là customer@example.com"},
+	})
+	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
+	var call providers.ToolCall
+	stage := NewCloudminiServicePreflightStage(&PipelineDeps{
+		ExecuteToolCall: func(_ context.Context, _ *RunState, tc providers.ToolCall) ([]providers.Message, error) {
+			call = tc
+			return []providers.Message{{Role: "tool", ToolCallID: tc.ID, Content: `{"services":[{"service_status":"deleted"}]}`}}, nil
+		},
+	})
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	if got, _ := call.Arguments["account_email"].(string); got != "customer@example.com" {
+		t.Fatalf("account_email = %q, want customer email", got)
+	}
+}
+
 func TestValidateCloudminiCurrentRequestToolCallRejectsOldIP(t *testing.T) {
 	state := NewRunState(&RunInput{Message: "Khôi phục 48.45.161.144 và 48.45.161.122 giúp em"}, nil, "", nil)
 	if ok, _ := validateCloudminiCurrentRequestToolCall(state, providers.ToolCall{
