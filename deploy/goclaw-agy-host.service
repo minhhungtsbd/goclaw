@@ -7,7 +7,8 @@ Wants=network-online.target
 Type=simple
 User=root
 EnvironmentFile=-/etc/goclaw/agy-host.env
-ExecStart=/opt/goclaw/goclaw agy-host --listen 0.0.0.0:18891 --agy-path /root/.local/bin/agy --profiles-dir /var/lib/goclaw-agy/profiles
+# Docker's host-gateway address keeps the bridge off public interfaces.
+ExecStart=/usr/local/bin/goclaw-agy-host agy-host --listen 172.17.0.1:18891 --agy-path /root/.local/bin/agy --profiles-dir /var/lib/goclaw-agy/profiles
 Restart=on-failure
 RestartSec=5
 PrivateTmp=true

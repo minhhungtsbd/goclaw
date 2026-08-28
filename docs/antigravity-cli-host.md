@@ -5,7 +5,7 @@ GoClaw container. It replaces the retired `antigravity-runtime` sidecar.
 
 ## Install
 
-1. Install the GoClaw binary at `/opt/goclaw/goclaw` and AGY at
+1. Install the `goclaw` host bridge binary at `/usr/local/bin/goclaw-agy-host` and AGY at
    `/root/.local/bin/agy`.
 2. Generate a bridge token and save the following file with mode `0600`:
 
@@ -41,5 +41,6 @@ embedded terminal, then use AGY's `/model` command to select the desired model.
 Each provider name has a separate AGY profile under
 `/var/lib/goclaw-agy/profiles/<provider-name>`.
 
-The bridge accepts requests only with its private token. Do not publish port
-`18891` through Docker or expose the token in a provider API key.
+The included systemd unit binds to Docker's host-gateway address
+`172.17.0.1:18891`; do not publish this port through Docker or expose the
+token in a provider API key.
