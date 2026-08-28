@@ -13,6 +13,7 @@ GoClaw container. It replaces the retired `antigravity-runtime` sidecar.
 install -d -m 700 /etc/goclaw
 cat >/etc/goclaw/agy-host.env <<'EOF'
 GOCLAW_AGY_HOST_TOKEN=replace-with-a-long-random-secret
+GOCLAW_AGY_HOST_LISTEN=172.18.0.1:18891
 EOF
 chmod 600 /etc/goclaw/agy-host.env
 ```
@@ -30,6 +31,7 @@ systemctl enable --now goclaw-agy-host
 ```sh
 GOCLAW_AGY_HOST_BRIDGE_URL=http://host.docker.internal:18891
 GOCLAW_AGY_HOST_TOKEN=the-same-long-random-secret
+GOCLAW_HOST_GATEWAY_IP=172.18.0.1
 docker compose up -d --force-recreate goclaw
 ```
 
@@ -41,6 +43,7 @@ embedded terminal, then use AGY's `/model` command to select the desired model.
 Each provider name has a separate AGY profile under
 `/var/lib/goclaw-agy/profiles/<provider-name>`.
 
-The included systemd unit binds to Docker's host-gateway address
-`172.17.0.1:18891`; do not publish this port through Docker or expose the
-token in a provider API key.
+Set both gateway IP values to the gateway of the compose network containing
+GoClaw (inspect it with `docker network inspect goclaw_default`). Add a UFW
+rule that allows only that subnet to reach `18891`; do not publish the port
+through Docker or expose the token in a provider API key.

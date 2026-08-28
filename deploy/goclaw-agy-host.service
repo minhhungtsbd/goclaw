@@ -7,8 +7,9 @@ Wants=network-online.target
 Type=simple
 User=root
 EnvironmentFile=-/etc/goclaw/agy-host.env
-# Docker's host-gateway address keeps the bridge off public interfaces.
-ExecStart=/usr/local/bin/goclaw-agy-host agy-host --listen 172.17.0.1:18891 --agy-path /root/.local/bin/agy --profiles-dir /var/lib/goclaw-agy/profiles
+# Set GOCLAW_AGY_HOST_LISTEN to the GoClaw compose network gateway, for example
+# 172.18.0.1:18891. UFW must allow only that compose subnet to reach the port.
+ExecStart=/usr/local/bin/goclaw-agy-host agy-host --listen ${GOCLAW_AGY_HOST_LISTEN} --agy-path /root/.local/bin/agy --profiles-dir /var/lib/goclaw-agy/profiles
 Restart=on-failure
 RestartSec=5
 PrivateTmp=true

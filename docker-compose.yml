@@ -59,7 +59,9 @@ services:
       - goclaw-data:/app/data
       - goclaw-workspace:/app/workspace
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      # Set GOCLAW_HOST_GATEWAY_IP to this compose network's gateway when the
+      # default Docker bridge is unavailable (for example, 172.18.0.1).
+      - "host.docker.internal:${GOCLAW_HOST_GATEWAY_IP:-host-gateway}"
     security_opt:
       - no-new-privileges:true
     init: true
