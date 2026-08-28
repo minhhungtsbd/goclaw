@@ -161,6 +161,14 @@ func (s *ToolStage) preflightToolCalls(ctx context.Context, state *RunState, too
 }
 
 func (s *ToolStage) preflightToolCall(ctx context.Context, state *RunState, tc providers.ToolCall) (providers.ToolCall, *providers.Message) {
+	if ok, reason := validateCloudminiCurrentRequestToolCall(state, tc); !ok {
+		return tc, &providers.Message{
+			Role:       "tool",
+			Content:    reason,
+			ToolCallID: tc.ID,
+			IsError:    true,
+		}
+	}
 	if s.deps.AuthorizeToolCall != nil {
 		if ok, reason := s.deps.AuthorizeToolCall(ctx, state, tc); !ok {
 			return tc, &providers.Message{

@@ -33,6 +33,7 @@ func (s *CloudminiServicePreflightStage) Execute(ctx context.Context, state *Run
 	if !isCloudminiServiceRequest(state) || s.deps.ExecuteToolCall == nil {
 		return nil
 	}
+	ips := cloudminiIPs(state.Input.Message)
 	// ContextStage intentionally treats its initial tool snapshot as best effort
 	// for token accounting. A transient filter error must not silently disable a
 	// mandatory support check, so refresh the list before deciding to skip.
@@ -50,7 +51,7 @@ func (s *CloudminiServicePreflightStage) Execute(ctx context.Context, state *Run
 	}
 
 	state.Tool.AllowedTools = map[string]bool{cloudminiProxyCheckToolName: true}
-	for index, ip := range cloudminiIPs(state.Input.Message) {
+	for index, ip := range ips {
 		tc := providers.ToolCall{
 			ID:   fmt.Sprintf("cloudmini-service-preflight-%d", index+1),
 			Name: cloudminiProxyCheckToolName,
@@ -97,7 +98,23 @@ func (s *CloudminiServicePreflightStage) Execute(ctx context.Context, state *Run
 			state.Tool.TotalToolCalls++
 		}
 	}
+	appendCloudminiRequestScope(state, ips)
 	return nil
+}
+
+// appendCloudminiRequestScope pins a multi-IP support run to the customer's
+// current list. Long-running support sessions can otherwise make an LLM reuse
+// an older proxy list after it has received the current service facts.
+func appendCloudminiRequestScope(state *RunState, ips []string) {
+	if len(ips) == 0 {
+		return
+	}
+	system := state.Messages.System()
+	system.Content += "\n\n[PHẠM VI YÊU CẦU CLOUDMINI HIỆN TẠI]\n" +
+		"Chỉ xử lý các IP có trong tin nhắn khách vừa gửi: " + strings.Join(ips, ", ") + ".\n" +
+		"Không dùng, không kiểm tra lại và không đưa IP từ các danh sách cũ trong lịch sử vào phản hồi hoặc Admin handoff. " +
+		"Nếu cần chuyển Admin cho yêu cầu nhiều IP này, ticket phải chứa đúng toàn bộ các IP trên."
+	state.Messages.SetSystem(system)
 }
 
 func requiresCloudminiProxyLiveCheck(message string) bool {
@@ -169,4 +186,101 @@ func containsAny(value string, terms ...string) bool {
 		}
 	}
 	return false
+}
+
+// validateCloudminiCurrentRequestToolCall prevents a later LLM iteration from
+// acting on an older IP list that happens to remain in a long session history.
+// It is deliberately limited to Cloudmini's service check and Admin handoff;
+// unrelated tools continue to use the normal tool-policy gate.
+func validateCloudminiCurrentRequestToolCall(state *RunState, tc providers.ToolCall) (bool, string) {
+	if state == nil || state.Input == nil || state.Input.SenderID == "system:admin_handoff" {
+		return true, ""
+	}
+	current := cloudminiIPs(state.Input.Message)
+	if len(current) == 0 {
+		return true, ""
+	}
+	allowed := make(map[string]struct{}, len(current))
+	for _, ip := range current {
+		allowed[ip] = struct{}{}
+	}
+
+	switch strings.TrimSpace(tc.Name) {
+	case cloudminiProxyCheckToolName:
+		ip, _ := tc.Arguments["ip"].(string)
+		parsed, err := netip.ParseAddr(strings.TrimSpace(ip))
+		if err != nil || !parsed.Is4() || !containsCloudminiIP(allowed, parsed.String()) {
+			return false, "chỉ được kiểm tra IP trong tin nhắn Cloudmini hiện tại; không dùng IP từ lịch sử cuộc trò chuyện"
+		}
+	case "escalate_to_admin":
+		referenced := cloudminiHandoffIPs(tc.Arguments)
+		if len(referenced) == 0 {
+			return false, "Admin handoff cho yêu cầu Cloudmini hiện tại phải chứa IP trong tin nhắn khách vừa gửi"
+		}
+		for _, ip := range referenced {
+			if !containsCloudminiIP(allowed, ip) {
+				return false, "Admin handoff chỉ được chứa IP trong tin nhắn Cloudmini hiện tại; không dùng danh sách IP cũ"
+			}
+		}
+		if requiresAllCloudminiIPs(state.Input.Message) {
+			for _, ip := range current {
+				if !containsCloudminiString(referenced, ip) {
+					return false, "Admin handoff cho yêu cầu nhiều IP phải chứa đầy đủ toàn bộ IP trong tin nhắn khách vừa gửi"
+				}
+			}
+		}
+	}
+	return true, ""
+}
+
+func cloudminiHandoffIPs(args map[string]any) []string {
+	var values []string
+	for _, key := range []string{"service", "summary"} {
+		if value, ok := args[key].(string); ok {
+			values = append(values, value)
+		}
+	}
+	switch identifiers := args["identifiers"].(type) {
+	case []any:
+		for _, identifier := range identifiers {
+			if value, ok := identifier.(string); ok {
+				values = append(values, value)
+			}
+		}
+	case []string:
+		values = append(values, identifiers...)
+	}
+
+	seen := make(map[string]struct{})
+	var ips []string
+	for _, value := range values {
+		for _, ip := range cloudminiIPs(value) {
+			if _, exists := seen[ip]; !exists {
+				seen[ip] = struct{}{}
+				ips = append(ips, ip)
+			}
+		}
+	}
+	return ips
+}
+
+func containsCloudminiIP(ips map[string]struct{}, ip string) bool {
+	_, ok := ips[ip]
+	return ok
+}
+
+func containsCloudminiString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func requiresAllCloudminiIPs(message string) bool {
+	message = strings.ToLower(message)
+	return len(cloudminiIPs(message)) > 1 && containsAny(message,
+		"khôi phục", "khoi phuc", "phục hồi", "phuc hoi", "gia hạn", "gia han",
+		"hủy", "huỷ", "huy", "đổi", "doi", "thay", "hoàn", "hoan")
 }
