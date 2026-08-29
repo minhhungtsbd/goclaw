@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -75,6 +77,7 @@ func sanitizeHistory(msgs []providers.Message) ([]providers.Message, int) {
 	// may have persisted duplicates before the live uniquify fix was deployed.
 	var result []providers.Message
 	globalSeen := make(map[string]bool) // tracks IDs seen across entire transcript
+	occurrences := make(map[string]int)
 
 	for i := start; i < len(msgs); i++ {
 		msg := msgs[i]
@@ -85,19 +88,21 @@ func sanitizeHistory(msgs []providers.Message) ([]providers.Message, int) {
 			msg.ToolCalls = make([]providers.ToolCall, len(oldCalls))
 			copy(msg.ToolCalls, oldCalls)
 
-			// Dedup: rewrite any ID that was already seen in an earlier turn or
-			// within the same turn. Uses a queue per original ID so multiple tool
-			// results with the same raw ID pair correctly in encounter order.
+			// Normalize every unsafe ID and rewrite duplicates. Uses a queue per
+			// original ID so multiple tool results with the same raw ID pair
+			// correctly in encounter order.
 			idQueue := make(map[string][]string, len(msg.ToolCalls)) // origID → []newID
 			expectedIDs := make(map[string]bool, len(msg.ToolCalls))
-			didDedup := false
+			didRewrite := false
 			for j := range msg.ToolCalls {
 				origID := msg.ToolCalls[j].ID
 				newID := origID
-				if globalSeen[origID] {
-					newID = fmt.Sprintf("%s_dedup_%d", origID, j)
-					slog.Debug("sanitizeHistory: dedup tool call ID", "orig", origID, "new", newID)
-					didDedup = true
+				occurrence := occurrences[origID]
+				occurrences[origID] = occurrence + 1
+				if !validHistoryToolCallID(origID) || globalSeen[origID] {
+					newID = boundedHistoryToolCallID(origID, i, j, occurrence, globalSeen)
+					slog.Debug("sanitizeHistory: rewrite tool call ID", "orig", origID, "new", newID)
+					didRewrite = true
 					dropped++ // count as change so cleaned history is persisted back to DB
 				}
 				msg.ToolCalls[j].ID = newID
@@ -105,9 +110,9 @@ func sanitizeHistory(msgs []providers.Message) ([]providers.Message, int) {
 				idQueue[origID] = append(idQueue[origID], newID)
 				expectedIDs[newID] = true
 			}
-			// When dedup rewrites IDs, clear RawAssistantContent so the provider
+			// When IDs change, clear RawAssistantContent so the provider
 			// uses the corrected ToolCalls instead of raw JSON with stale IDs.
-			if didDedup {
+			if didRewrite {
 				msg.RawAssistantContent = nil
 			}
 
@@ -194,6 +199,34 @@ func sanitizeHistory(msgs []providers.Message) ([]providers.Message, int) {
 	}
 
 	return result, dropped
+}
+
+// validHistoryToolCallID uses the strictest limit shared by the supported
+// OpenAI-compatible transports. Keeping repaired IDs at 40 ASCII characters
+// leaves room for provider-specific prefixes such as "fc_".
+func validHistoryToolCallID(id string) bool {
+	if id == "" || len(id) > 40 {
+		return false
+	}
+	for _, char := range id {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') || char == '_' || char == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func boundedHistoryToolCallID(orig string, messageIndex, callIndex, occurrence int, seen map[string]bool) string {
+	for salt := 0; ; salt++ {
+		raw := fmt.Sprintf("%s:%d:%d:%d:%d", orig, messageIndex, callIndex, occurrence, salt)
+		hash := sha256.Sum256([]byte(raw))
+		candidate := "call_" + hex.EncodeToString(hash[:])[:35]
+		if !seen[candidate] {
+			return candidate
+		}
+	}
 }
 
 // hasPendingToolResultAhead returns true if there is at least one tool-role

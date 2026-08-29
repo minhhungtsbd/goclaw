@@ -35,6 +35,7 @@ type RunState struct {
 	Observe   ObserveState
 	Compact   CompactState
 	Evolution EvolutionState
+	Cloudmini CloudminiState
 
 	// Cross-cutting concerns
 	Iteration int

@@ -95,6 +95,88 @@ func TestThinkStage_NoToolCalls_ReturnsBreakLoop(t *testing.T) {
 	}
 }
 
+func TestThinkStageRetriesInventedAdminHandoffClaim(t *testing.T) {
+	var calls int
+	deps := &PipelineDeps{
+		Config: PipelineConfig{MaxIterations: 10, MaxTokens: 1000},
+		CallLLM: func(_ context.Context, _ *RunState, req providers.ChatRequest) (*providers.ChatResponse, error) {
+			calls++
+			if calls == 1 {
+				return &providers.ChatResponse{Content: "Em đã chuyển Kỹ thuật. Mã tiếp nhận CMH-EF915885.", FinishReason: "stop"}, nil
+			}
+			if !strings.Contains(req.Messages[len(req.Messages)-1].Content, "ADMIN HANDOFF TRUTH CHECK") {
+				t.Fatal("retry request is missing truth-check instruction")
+			}
+			return &providers.ChatResponse{Content: "IP thuộc subnet ngưng hoạt động; bên em hỗ trợ đổi miễn phí hoặc hoàn tiền.", FinishReason: "stop"}, nil
+		},
+	}
+	stage := NewThinkStage(deps)
+	state := defaultState()
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("LLM calls = %d, want 2", calls)
+	}
+	if got := state.Think.LastResponse.Content; strings.Contains(got, "CMH-") || strings.Contains(got, "đã chuyển") {
+		t.Fatalf("invented handoff survived correction: %q", got)
+	}
+}
+
+func TestThinkStageBlocksRepeatedInventedAdminHandoffClaim(t *testing.T) {
+	deps := &PipelineDeps{
+		Config: PipelineConfig{MaxIterations: 10, MaxTokens: 1000},
+		CallLLM: func(_ context.Context, _ *RunState, _ providers.ChatRequest) (*providers.ChatResponse, error) {
+			return &providers.ChatResponse{Content: "Đã gửi yêu cầu cho Admin, mã Ticket-999999.", FinishReason: "stop"}, nil
+		},
+	}
+	stage := NewThinkStage(deps)
+	state := defaultState()
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if got := state.Think.LastResponse.Content; !strings.Contains(got, "chưa tạo được ticket") {
+		t.Fatalf("unsafe fallback content = %q", got)
+	}
+}
+
+func TestThinkStageForcesHandoffToolForDeterministicManualCase(t *testing.T) {
+	var calls int
+	handoffTool := providers.ToolDefinition{Function: &providers.ToolFunctionSchema{Name: "escalate_to_admin"}}
+	otherTool := providers.ToolDefinition{Function: &providers.ToolFunctionSchema{Name: "cloudmini_proxy_check"}}
+	deps := &PipelineDeps{
+		Config: PipelineConfig{MaxIterations: 10, MaxTokens: 1000},
+		BuildFilteredTools: func(_ *RunState) ([]providers.ToolDefinition, error) {
+			return []providers.ToolDefinition{otherTool, handoffTool}, nil
+		},
+		CallLLM: func(_ context.Context, _ *RunState, req providers.ChatRequest) (*providers.ChatResponse, error) {
+			calls++
+			if calls == 1 {
+				return &providers.ChatResponse{Content: "Em sẽ kiểm tra thêm.", FinishReason: "stop"}, nil
+			}
+			if req.Options[providers.OptToolChoice] != "required" {
+				t.Fatalf("tool_choice = %#v, want required", req.Options[providers.OptToolChoice])
+			}
+			if len(req.Tools) != 1 || req.Tools[0].Function == nil || req.Tools[0].Function.Name != "escalate_to_admin" {
+				t.Fatalf("retry tools = %#v", req.Tools)
+			}
+			return &providers.ChatResponse{
+				FinishReason: "tool_calls",
+				ToolCalls:    []providers.ToolCall{{ID: "handoff-1", Name: "escalate_to_admin", Arguments: map[string]any{"summary": "Khôi phục proxy"}}},
+			}, nil
+		},
+	}
+	stage := NewThinkStage(deps)
+	state := defaultState()
+	state.Cloudmini.HandoffRequired = true
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if calls != 2 || stage.Result() != Continue || len(state.Think.LastResponse.ToolCalls) != 1 {
+		t.Fatalf("calls=%d result=%v response=%#v", calls, stage.Result(), state.Think.LastResponse)
+	}
+}
+
 func TestThinkStage_WithToolCalls_ReturnsContinue(t *testing.T) {
 	t.Parallel()
 	deps := &PipelineDeps{

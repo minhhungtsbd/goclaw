@@ -3,6 +3,8 @@ package providers
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,8 +25,10 @@ func (p *CodexProvider) buildRequestBody(req ChatRequest, stream bool) map[strin
 
 	var instructions string
 	var input []any
+	seenCallIDs := make(map[string]bool)
+	callIDQueues := make(map[string][]string)
 
-	for _, m := range req.Messages {
+	for messageIndex, m := range req.Messages {
 		switch m.Role {
 		case "system":
 			if instructions == "" {
@@ -62,9 +66,14 @@ func (p *CodexProvider) buildRequestBody(req ChatRequest, stream bool) map[strin
 
 		case "assistant":
 			if len(m.ToolCalls) > 0 {
-				for _, tc := range m.ToolCalls {
+				for callIndex, tc := range m.ToolCalls {
 					argsJSON, _ := json.Marshal(tc.Arguments)
 					callID := toFcID(tc.ID)
+					if seenCallIDs[callID] {
+						callID = uniqueFcID(tc.ID, messageIndex, callIndex, seenCallIDs)
+					}
+					seenCallIDs[callID] = true
+					callIDQueues[tc.ID] = append(callIDQueues[tc.ID], callID)
 					input = append(input, map[string]any{
 						"type":      "function_call",
 						"id":        callID,
@@ -89,9 +98,14 @@ func (p *CodexProvider) buildRequestBody(req ChatRequest, stream bool) map[strin
 			}
 
 		case "tool":
+			callID := toFcID(m.ToolCallID)
+			if queue := callIDQueues[m.ToolCallID]; len(queue) > 0 {
+				callID = queue[0]
+				callIDQueues[m.ToolCallID] = queue[1:]
+			}
 			input = append(input, map[string]any{
 				"type":    "function_call_output",
-				"call_id": toFcID(m.ToolCallID),
+				"call_id": callID,
 				"output":  m.Content,
 			})
 		}
@@ -134,6 +148,9 @@ func (p *CodexProvider) buildRequestBody(req ChatRequest, stream bool) map[strin
 			}
 		}
 		body["tools"] = tools
+	}
+	if choice, ok := req.Options[OptToolChoice]; ok && choice != nil {
+		body["tool_choice"] = choice
 	}
 
 	if level, ok := req.Options[OptThinkingLevel].(string); ok && level != "" && level != "off" {
@@ -197,9 +214,21 @@ func (p *CodexProvider) doRequest(ctx context.Context, body any) (io.ReadCloser,
 	return resp.Body, nil
 }
 
+func uniqueFcID(original string, messageIndex, callIndex int, seen map[string]bool) string {
+	for salt := 0; ; salt++ {
+		raw := fmt.Sprintf("%s:%d:%d:%d", original, messageIndex, callIndex, salt)
+		hash := sha256.Sum256([]byte(raw))
+		candidate := "fc_" + hex.EncodeToString(hash[:])[:37]
+		if !seen[candidate] {
+			return candidate
+		}
+	}
+}
+
 // toFcID ensures a tool call ID starts with "fc_" and contains only
 // letters, numbers, underscores, or dashes as required by the Responses API.
 func toFcID(id string) string {
+	original := id
 	if strings.HasPrefix(id, "tool_") {
 		id = id[len("tool_"):]
 	} else if strings.HasPrefix(id, "call_") {
@@ -209,5 +238,12 @@ func toFcID(id string) string {
 	}
 	// Replace invalid characters (e.g. colons from session keys) with underscores.
 	id = invalidFcIDChars.ReplaceAllString(id, "_")
+	// ChatGPT's Responses endpoint rejects input item IDs over 64 characters.
+	// Keep IDs at 40 characters to match the strict transcript invariant and
+	// hash instead of truncating so distinct calls cannot collapse together.
+	if id == "" || len(id) > 37 {
+		hash := sha256.Sum256([]byte(original))
+		id = hex.EncodeToString(hash[:])[:37]
+	}
 	return "fc_" + id
 }

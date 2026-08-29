@@ -211,6 +211,43 @@ func TestCodexProviderBuildRequestBodyToolCallMessages(t *testing.T) {
 	}
 }
 
+func TestCodexProviderBuildRequestBodyBoundsAndPairsDuplicateToolCallIDs(t *testing.T) {
+	p := NewCodexProvider("test", &staticTokenSource{token: "test"}, "", "gpt-5.6-terra")
+	longID := "cloudmini-service-preflight-1" + strings.Repeat("_dedup_0", 8)
+	req := ChatRequest{Messages: []Message{
+		{Role: "assistant", ToolCalls: []ToolCall{{ID: longID, Name: "first"}}},
+		{Role: "tool", ToolCallID: longID, Content: "one"},
+		{Role: "assistant", ToolCalls: []ToolCall{{ID: longID, Name: "second"}}},
+		{Role: "tool", ToolCallID: longID, Content: "two"},
+	}}
+
+	input := p.buildRequestBody(req, false)["input"].([]any)
+	firstCall := input[0].(map[string]any)["call_id"].(string)
+	firstResult := input[1].(map[string]any)["call_id"].(string)
+	secondCall := input[2].(map[string]any)["call_id"].(string)
+	secondResult := input[3].(map[string]any)["call_id"].(string)
+	if len(firstCall) > 40 || len(secondCall) > 40 {
+		t.Fatalf("wire IDs exceed safe limit: %d, %d", len(firstCall), len(secondCall))
+	}
+	if firstCall == secondCall {
+		t.Fatalf("duplicate wire IDs were not separated: %q", firstCall)
+	}
+	if firstResult != firstCall || secondResult != secondCall {
+		t.Fatalf("tool result pairing broken: %q/%q and %q/%q", firstCall, firstResult, secondCall, secondResult)
+	}
+}
+
+func TestCodexProviderBuildRequestBodyIncludesToolChoice(t *testing.T) {
+	p := NewCodexProvider("test", &staticTokenSource{token: "test"}, "", "gpt-5.6-terra")
+	body := p.buildRequestBody(ChatRequest{
+		Messages: []Message{{Role: "user", Content: "test"}},
+		Options:  map[string]any{OptToolChoice: "required"},
+	}, false)
+	if body["tool_choice"] != "required" {
+		t.Fatalf("tool_choice = %#v, want required", body["tool_choice"])
+	}
+}
+
 func TestCodexProviderBuildRequestBodyThinking(t *testing.T) {
 	p := NewCodexProvider("test", &staticTokenSource{token: "test"}, "", "gpt-4o")
 

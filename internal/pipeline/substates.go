@@ -36,10 +36,11 @@ type ThinkState struct {
 	// prompt sent to the model — the session's current context. Consumed by
 	// FinalizeStage → UpdateMetadata → SetLastPromptTokens for the sessions
 	// context-usage display and compaction calibration.
-	LastUsage       providers.Usage
-	TruncRetries    int  // consecutive truncation retries (max 3)
-	OverflowRetries int  // context overflow compact+retry attempts (max 1)
-	StreamingActive bool // true during active stream
+	LastUsage           providers.Usage
+	TruncRetries        int  // consecutive truncation retries (max 3)
+	OverflowRetries     int  // context overflow compact+retry attempts (max 1)
+	HandoffClaimRetries int  // unsupported Admin handoff claim correction attempts (max 1)
+	StreamingActive     bool // true during active stream
 
 	// Tools is populated by ContextStage (iteration=0) for overhead calculation.
 	// It holds the best-effort tool list at run start and is used exclusively by
@@ -60,13 +61,32 @@ type PruneState struct {
 type ToolState struct {
 	// AllowedTools is the per-iteration execution allowlist built from tool
 	// definitions sent to the provider. Nil means "no runtime restriction".
-	AllowedTools   map[string]bool
-	LoopDetector   any // concrete type toolLoopState lives in agent; Phase 5 defines LoopDetector interface
-	TotalToolCalls int
-	AsyncToolCalls []string      // tool names that executed async (spawn)
-	MediaResults   []MediaResult // media files produced by tools
-	Deliverables   []string      // tool output content for team task results
-	LoopKilled     bool          // set when loop detector triggers critical
+	AllowedTools       map[string]bool
+	LoopDetector       any // concrete type toolLoopState lives in agent; Phase 5 defines LoopDetector interface
+	TotalToolCalls     int
+	AsyncToolCalls     []string      // tool names that executed async (spawn)
+	MediaResults       []MediaResult // media files produced by tools
+	Deliverables       []string      // tool output content for team task results
+	LoopKilled         bool          // set when loop detector triggers critical
+	AdminHandoffTicket string        // non-empty only after escalate_to_admin created or merged a ticket
+}
+
+// CloudminiState is scoped to one pipeline run. It keeps deterministic service
+// facts out of shared agent state so concurrent customer sessions cannot leak.
+type CloudminiState struct {
+	RequestIPs      []string
+	ScopeAmbiguous  bool
+	OutageCIDRs     []string
+	HandoffRequired bool
+	ServiceFacts    []CloudminiServiceFact
+}
+
+type CloudminiServiceFact struct {
+	IP                  string
+	Plan                string
+	Status              string
+	AccountEmailMatches bool
+	CancellationPolicy  string
 }
 
 // ObserveState: owned by ObserveStage.

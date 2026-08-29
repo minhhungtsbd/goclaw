@@ -120,6 +120,45 @@ func (s *ThinkStage) Execute(ctx context.Context, state *RunState) error {
 		}
 	}
 
+	// A model must never claim that an Admin handoff happened unless this run
+	// actually created or merged a ticket. Retry once with an explicit truth
+	// constraint; if the retry still invents a handoff, return a safe statement.
+	requiresHandoff := state.Cloudmini.HandoffRequired && state.Tool.AdminHandoffTicket == ""
+	unsupportedClaim := len(resp.ToolCalls) == 0 && unsupportedAdminHandoffClaim(resp.Content, state.Tool.AdminHandoffTicket)
+	if len(resp.ToolCalls) == 0 && (requiresHandoff || unsupportedClaim) {
+		state.Think.HandoffClaimRetries++
+		retryReq := req
+		if requiresHandoff {
+			retryReq.Tools = onlyToolDefinition(req.Tools, "escalate_to_admin")
+			retryReq.Options = cloneRequestOptions(req.Options)
+			retryReq.Options[providers.OptToolChoice] = "required"
+		}
+		retryReq.Messages = append(append([]providers.Message(nil), req.Messages...), providers.Message{
+			Role: "system",
+			Content: "[ADMIN HANDOFF TRUTH CHECK] No Admin handoff ticket has been created in this run. " +
+				"Do not say that a request was sent/transferred and do not invent CMH/Ticket codes. " +
+				"Review the current AGENTS.md operational notice and the Cloudmini tool result. " +
+				"If Admin action is genuinely required, call `escalate_to_admin`; otherwise answer the customer directly without claiming a handoff.",
+		})
+		retryResp, retryErr := s.deps.CallLLM(ctx, state, retryReq)
+		if retryErr == nil && retryResp != nil {
+			if retryResp.Usage != nil {
+				AddUsage(&state.Think.TotalUsage, *retryResp.Usage)
+				if retryResp.Usage.PromptTokens > 0 {
+					state.Think.LastUsage = *retryResp.Usage
+				}
+			}
+			resp = retryResp
+		}
+		if retryErr != nil || resp == nil || len(resp.ToolCalls) == 0 &&
+			(requiresHandoff || unsupportedAdminHandoffClaim(resp.Content, state.Tool.AdminHandoffTicket)) {
+			resp = &providers.ChatResponse{
+				Content:      "Em đã ghi nhận thông tin nhưng hệ thống chưa tạo được ticket Admin, nên em chưa thể xác nhận yêu cầu đã được chuyển xử lý ạ.",
+				FinishReason: "stop",
+			}
+		}
+	}
+
 	if isEmptyLengthResponse(resp) {
 		if state.Think.OverflowRetries > 0 {
 			return fmt.Errorf("llm response truncated before content after compaction")
@@ -191,6 +230,23 @@ func (s *ThinkStage) Execute(ctx context.Context, state *RunState) error {
 	s.emitToolIterationBlockReply(ctx, resp)
 
 	return nil
+}
+
+func onlyToolDefinition(definitions []providers.ToolDefinition, name string) []providers.ToolDefinition {
+	for _, definition := range definitions {
+		if definition.Function != nil && definition.Function.Name == name {
+			return []providers.ToolDefinition{definition}
+		}
+	}
+	return nil
+}
+
+func cloneRequestOptions(options map[string]any) map[string]any {
+	cloned := make(map[string]any, len(options)+1)
+	for key, value := range options {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func (s *ThinkStage) logFinalRequestActual(ctx context.Context, state *RunState, estimate FinalRequestEstimate, usage providers.Usage) {

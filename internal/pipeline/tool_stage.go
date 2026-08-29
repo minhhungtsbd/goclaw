@@ -90,6 +90,7 @@ func (s *ToolStage) Execute(ctx context.Context, state *RunState) error {
 			return fmt.Errorf("execute tool %s: %w", tc.Name, err)
 		}
 		appendToolBatchMessages(state, msgs, &deferredNonTool)
+		recordAdminHandoffResult(state, tc, msgs)
 		state.Tool.TotalToolCalls++
 
 		// Hook: async PostToolUse — fire and forget with detached context.
@@ -330,6 +331,7 @@ func (s *ToolStage) executeParallel(ctx context.Context, state *RunState, prefli
 		}
 		processed := s.deps.ProcessToolResult(ctx, state, tc, r.msg, r.rawData)
 		appendToolBatchMessages(state, processed, &deferredNonTool)
+		recordAdminHandoffResult(state, tc, processed)
 		state.Tool.TotalToolCalls++
 
 		// Hook: async PostToolUse for parallel path — fire and forget.

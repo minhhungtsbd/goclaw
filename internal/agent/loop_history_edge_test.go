@@ -214,6 +214,47 @@ func TestSanitizeHistory_DedupAcrossTwoTurns(t *testing.T) {
 	}
 }
 
+func TestSanitizeHistory_RepairsLongRepeatedIDsIdempotently(t *testing.T) {
+	longID := "cloudmini-service-preflight-1" + strings.Repeat("_dedup_0", 8)
+	var messages []providers.Message
+	for i := 0; i < 3; i++ {
+		messages = append(messages,
+			providers.Message{Role: "user", Content: fmt.Sprintf("turn %d", i)},
+			providers.Message{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: longID, Name: "cloudmini_proxy_check"}}},
+			providers.Message{Role: "tool", ToolCallID: longID, Content: "ok"},
+		)
+	}
+
+	cleaned, changed := sanitizeHistory(messages)
+	if changed != 3 {
+		t.Fatalf("changed = %d, want 3", changed)
+	}
+	seen := map[string]bool{}
+	for i := 1; i < len(cleaned); i += 3 {
+		id := cleaned[i].ToolCalls[0].ID
+		if len(id) > 40 || !validHistoryToolCallID(id) {
+			t.Fatalf("unsafe repaired ID %q", id)
+		}
+		if seen[id] {
+			t.Fatalf("duplicate repaired ID %q", id)
+		}
+		seen[id] = true
+		if cleaned[i+1].ToolCallID != id {
+			t.Fatalf("tool result ID %q does not match %q", cleaned[i+1].ToolCallID, id)
+		}
+	}
+
+	again, changedAgain := sanitizeHistory(cleaned)
+	if changedAgain != 0 {
+		t.Fatalf("second sanitize changed %d messages, want idempotent", changedAgain)
+	}
+	for i := 1; i < len(again); i += 3 {
+		if again[i].ToolCalls[0].ID != cleaned[i].ToolCalls[0].ID {
+			t.Fatalf("ID changed on second sanitize")
+		}
+	}
+}
+
 // --- sanitizeHistory: performance with large history ---
 // Verify sanitization doesn't degrade catastrophically with many messages.
 
