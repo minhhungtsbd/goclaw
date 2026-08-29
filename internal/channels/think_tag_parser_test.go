@@ -33,7 +33,7 @@ func TestSplitThinkTags_EscapedOrphanClosingTag(t *testing.T) {
 	if got.Thinking != "Chủ nhân chào, cần đáp lại thân thiện." {
 		t.Fatalf("Thinking = %q, want escaped prefix as reasoning", got.Thinking)
 	}
-	if got.Answer != "Chào anh!" {
-		t.Fatalf("Answer = %q, want visible answer", got.Answer)
+	if got.Answer != "\nChào anh!" {
+		t.Fatalf("Answer = %q, want visible answer with preserved whitespace", got.Answer)
 	}
 }
