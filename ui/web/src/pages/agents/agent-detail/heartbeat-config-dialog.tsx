@@ -16,7 +16,7 @@ import { useChannels } from "@/pages/channels/hooks/use-channels";
 import { useProviders } from "@/pages/providers/hooks/use-providers";
 import { useUiStore } from "@/stores/use-ui-store";
 import { ProviderModelSelect } from "@/components/shared/provider-model-select";
-import { isValidIanaTimezone } from "@/lib/constants";
+import { isValidIanaTimezone, normalizeIanaTimezone } from "@/lib/constants";
 import { toast } from "@/stores/use-toast-store";
 import type { HeartbeatConfig, DeliveryTarget } from "@/pages/agents/hooks/use-agent-heartbeat";
 import { HeartbeatScheduleSection } from "./heartbeat-schedule-section";
@@ -167,7 +167,8 @@ export function HeartbeatConfigDialog({
   };
 
   const handleSave = form.handleSubmit(async (values) => {
-    if (values.timezone && !isValidIanaTimezone(values.timezone)) {
+    const normalizedTimezone = values.timezone ? normalizeIanaTimezone(values.timezone) : undefined;
+    if (values.timezone && (!normalizedTimezone || !isValidIanaTimezone(values.timezone))) {
       toast.error(t("heartbeat.invalidTimezone", "Invalid timezone"));
       return;
     }
@@ -182,7 +183,7 @@ export function HeartbeatConfigDialog({
         lightContext: values.lightContext,
         activeHoursStart: values.activeHoursStart || undefined,
         activeHoursEnd: values.activeHoursEnd || undefined,
-        timezone: values.timezone || undefined,
+        timezone: normalizedTimezone,
         channel: values.channel || undefined,
         chatId: values.chatId || undefined,
         model: values.hbModel || undefined,

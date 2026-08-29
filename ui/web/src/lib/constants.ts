@@ -5,6 +5,7 @@ export {
   TIMEZONE_OPTIONS,
   getAllIanaTimezones,
   isValidIanaTimezone,
+  normalizeIanaTimezone,
 } from "./timezone-utils";
 
 export const LOCAL_STORAGE_KEYS = {

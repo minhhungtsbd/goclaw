@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Combobox } from "@/components/ui/combobox";
 import { InfoLabel } from "@/components/shared/info-label";
-import { getAllIanaTimezones, isValidIanaTimezone } from "@/lib/constants";
+import { getAllIanaTimezones, isValidIanaTimezone, normalizeIanaTimezone } from "@/lib/constants";
 import { toast } from "@/stores/use-toast-store";
 
 interface CronData {
@@ -93,11 +93,12 @@ export function CronSection({ data, onSave, saving }: Props) {
         {dirty && (
           <div className="flex justify-end pt-2">
             <Button size="sm" onClick={() => {
-              if (draft.default_timezone && !isValidIanaTimezone(draft.default_timezone)) {
+              const normalizedTimezone = draft.default_timezone ? normalizeIanaTimezone(draft.default_timezone) : "";
+              if (draft.default_timezone && (!normalizedTimezone || !isValidIanaTimezone(draft.default_timezone))) {
                 toast.error(t("cron.invalidTimezone", "Invalid timezone"));
                 return;
               }
-              onSave(draft).catch(() => {});
+              onSave({ ...draft, default_timezone: normalizedTimezone ?? "" }).catch(() => {});
             }} disabled={saving} className="gap-1.5">
               <Save className="h-3.5 w-3.5" /> {saving ? t("saving") : t("save")}
             </Button>

@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { StickySaveBar } from "@/components/shared/sticky-save-bar";
 import { MarkdownRenderer } from "@/components/shared/markdown-renderer";
-import { isValidIanaTimezone } from "@/lib/constants";
+import { isValidIanaTimezone, normalizeIanaTimezone } from "@/lib/constants";
 import { formatDate } from "@/lib/format";
 import { toast } from "@/stores/use-toast-store";
 import { useChannels } from "@/pages/channels/hooks/use-channels";
@@ -48,7 +48,7 @@ export function CronOverviewTab({ job, onUpdate }: CronOverviewTabProps) {
   const [scheduleKind, setScheduleKind] = useState<ScheduleKind>(job.schedule.kind as ScheduleKind);
   const [everySeconds, setEverySeconds] = useState(getEverySeconds(job));
   const [cronExpr, setCronExpr] = useState(job.schedule.expr ?? "0 * * * *");
-  const [timezone, setTimezone] = useState(job.schedule.tz ?? "UTC");
+  const [timezone, setTimezone] = useState(normalizeIanaTimezone(job.schedule.tz ?? "UTC") ?? "UTC");
   const [message, setMessage] = useState(job.payload?.message ?? "");
   const [agentId, setAgentId] = useState(job.agentId ?? "");
   const [enabled, setEnabled] = useState(job.enabled);
@@ -86,7 +86,8 @@ export function CronOverviewTab({ job, onUpdate }: CronOverviewTabProps) {
 
   const handleSave = async () => {
     if (!onUpdate) return;
-    if (timezone && timezone !== "UTC" && !isValidIanaTimezone(timezone)) {
+    const normalizedTimezone = normalizeIanaTimezone(timezone);
+    if (timezone && timezone !== "UTC" && (!normalizedTimezone || !isValidIanaTimezone(timezone))) {
       toast.error(t("detail.invalidTimezone", "Invalid timezone"));
       return;
     }
@@ -111,11 +112,11 @@ export function CronOverviewTab({ job, onUpdate }: CronOverviewTabProps) {
     try {
       let schedule;
       if (scheduleKind === "every") {
-        schedule = { kind: "every" as const, everyMs: Number(everySeconds) * 1000, tz: timezone !== "UTC" ? timezone : "" };
+        schedule = { kind: "every" as const, everyMs: Number(everySeconds) * 1000, tz: normalizedTimezone !== "UTC" ? normalizedTimezone ?? "" : "" };
       } else if (scheduleKind === "cron") {
-        schedule = { kind: "cron" as const, expr: cronExpr, tz: timezone !== "UTC" ? timezone : "" };
+        schedule = { kind: "cron" as const, expr: cronExpr, tz: normalizedTimezone !== "UTC" ? normalizedTimezone ?? "" : "" };
       } else {
-        schedule = { kind: "at" as const, atMs: job.schedule.atMs ?? Date.now() + 60000, tz: timezone !== "UTC" ? timezone : "" };
+        schedule = { kind: "at" as const, atMs: job.schedule.atMs ?? Date.now() + 60000, tz: normalizedTimezone !== "UTC" ? normalizedTimezone ?? "" : "" };
       }
       const patch: import("../hooks/use-cron").CronJobPatch = {
         schedule,

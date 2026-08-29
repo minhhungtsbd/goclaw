@@ -31,6 +31,13 @@ function parseOffsetMinutes(offset: string): number {
 type TzOption = { value: string; label: string };
 let _cachedTimezones: TzOption[] | undefined;
 
+// Go's tzdata and the agent tools use Asia/Ho_Chi_Minh. Browsers commonly
+// canonicalize it back to the legacy Asia/Saigon identifier, so keep one value
+// at the UI/API boundary while accepting existing jobs that use the alias.
+const PREFERRED_TIMEZONE_ALIASES: Record<string, string> = {
+  "Asia/Saigon": "Asia/Ho_Chi_Minh",
+};
+
 /** Minimal fallback when Intl.supportedValuesOf is unavailable. */
 const FALLBACK_TIMEZONES: string[] = [
   "UTC", "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
@@ -40,10 +47,13 @@ const FALLBACK_TIMEZONES: string[] = [
   "Pacific/Auckland",
 ];
 
-/** Resolve to canonical IANA name (drops deprecated aliases like Asia/Saigon → Asia/Ho_Chi_Minh). */
-function canonicalizeTimezone(tz: string): string | null {
+/** Normalize a supported timezone to the identifier persisted by GoClaw. */
+export function normalizeIanaTimezone(tz: string): string | null {
+  const preferred = PREFERRED_TIMEZONE_ALIASES[tz];
+  if (preferred) return preferred;
   try {
-    return new Intl.DateTimeFormat("en-US", { timeZone: tz }).resolvedOptions().timeZone;
+    const resolved = new Intl.DateTimeFormat("en-US", { timeZone: tz }).resolvedOptions().timeZone;
+    return PREFERRED_TIMEZONE_ALIASES[resolved] ?? resolved;
   } catch {
     return null;
   }
@@ -61,10 +71,11 @@ export function getAllIanaTimezones(): TzOption[] {
   }
   // Chrome may omit "UTC" from the list
   if (!tzNames.includes("UTC")) tzNames = ["UTC", ...tzNames];
-  // Canonicalize + dedupe so deprecated aliases (e.g. Asia/Saigon) collapse into their canonical form.
+  // Normalize + dedupe so browser-specific aliases collapse into GoClaw's
+  // persisted identifier (for example Asia/Saigon -> Asia/Ho_Chi_Minh).
   const canonical = new Set<string>();
   for (const tz of tzNames) {
-    const c = canonicalizeTimezone(tz);
+    const c = normalizeIanaTimezone(tz);
     if (c) canonical.add(c);
   }
   const entries = Array.from(canonical).map((tz: string) => {
@@ -82,8 +93,10 @@ let _cachedTzSet: Set<string> | undefined;
 
 /** Check if a value is a valid IANA timezone from the dynamic list. */
 export function isValidIanaTimezone(tz: string): boolean {
+  const normalized = normalizeIanaTimezone(tz);
+  if (!normalized) return false;
   if (!_cachedTzSet) {
     _cachedTzSet = new Set(getAllIanaTimezones().map((t) => t.value));
   }
-  return _cachedTzSet.has(tz);
+  return _cachedTzSet.has(normalized);
 }

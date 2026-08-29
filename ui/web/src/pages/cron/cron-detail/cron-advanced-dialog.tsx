@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ConfigGroupHeader } from "@/components/shared/config-group-header";
 import { Combobox } from "@/components/ui/combobox";
-import { getAllIanaTimezones, isValidIanaTimezone } from "@/lib/constants";
+import { getAllIanaTimezones, isValidIanaTimezone, normalizeIanaTimezone } from "@/lib/constants";
 import { toast } from "@/stores/use-toast-store";
 import { useChannels } from "@/pages/channels/hooks/use-channels";
 import { useWs } from "@/hooks/use-ws";
@@ -35,7 +35,7 @@ interface CronAdvancedDialogProps {
 
 function deriveDefaults(job: CronJob): CronAdvancedFormData {
   return {
-    timezone: job.schedule.tz ?? "UTC",
+    timezone: normalizeIanaTimezone(job.schedule.tz ?? "UTC") ?? "UTC",
     deliver: job.deliver ?? false,
     channel: job.deliverChannel ?? "",
     to: job.deliverTo ?? "",
@@ -95,7 +95,8 @@ export function CronAdvancedDialog({ open, onOpenChange, job, onUpdate }: CronAd
       return;
     }
     const data = form.getValues();
-    if (data.timezone && data.timezone !== "UTC" && !isValidIanaTimezone(data.timezone)) {
+    const normalizedTimezone = normalizeIanaTimezone(data.timezone);
+    if (data.timezone && data.timezone !== "UTC" && (!normalizedTimezone || !isValidIanaTimezone(data.timezone))) {
       toast.error(t("detail.invalidTimezone", "Invalid timezone"));
       return;
     }
@@ -104,7 +105,7 @@ export function CronAdvancedDialog({ open, onOpenChange, job, onUpdate }: CronAd
       await onUpdate(job.id, {
         schedule: {
           ...job.schedule,
-          tz: data.timezone !== "UTC" ? data.timezone : "",
+          tz: normalizedTimezone !== "UTC" ? normalizedTimezone ?? "" : "",
         },
         deliver: data.deliver,
         deliverChannel: data.deliver ? data.channel.trim() || undefined : undefined,
