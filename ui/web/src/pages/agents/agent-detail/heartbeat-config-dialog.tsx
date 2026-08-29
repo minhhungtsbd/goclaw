@@ -183,7 +183,7 @@ export function HeartbeatConfigDialog({
         lightContext: values.lightContext,
         activeHoursStart: values.activeHoursStart || undefined,
         activeHoursEnd: values.activeHoursEnd || undefined,
-        timezone: normalizedTimezone,
+        timezone: normalizedTimezone ?? undefined,
         channel: values.channel || undefined,
         chatId: values.chatId || undefined,
         model: values.hbModel || undefined,
