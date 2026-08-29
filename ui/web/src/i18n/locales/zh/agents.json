@@ -794,7 +794,7 @@
     },
     "modelFallback": {
       "title": "模型回退",
-      "description": "主模型不可用时，按优先顺序尝试备用 provider/model。",
+      "description": "按优先顺序尝试兼容的备用 provider/model。缺少所需工具或视觉能力、或返回无效响应的路由会被安全跳过。",
       "enabled": "已启用",
       "primary": "主模型",
       "providerPlaceholder": "选择 provider",

@@ -276,6 +276,16 @@ func (h *ProvidersHandler) registerInMemory(p *store.LLMProviderData) providerRu
 		h.providerReg.RegisterForTenant(p.TenantID, prov)
 		return providerRuntimeRegistered
 	}
+	if p.ProviderType == store.ProviderGeminiWeb2API {
+		base := p.APIBase
+		if base == "" {
+			base = store.GeminiWeb2APIDefaultAPIBase
+		}
+		prov := providers.NewOpenAIProvider(p.Name, p.APIKey, base, store.GeminiWeb2APIDefaultModel).
+			WithProviderType(p.ProviderType)
+		h.providerReg.RegisterForTenant(p.TenantID, prov)
+		return providerRuntimeRegistered
+	}
 	// Vertex supports ADC (empty api_key) — handle before the generic key guard.
 	if p.ProviderType == store.ProviderVertex {
 		vsettings := store.ParseVertexProviderSettings(p.Settings)
@@ -408,6 +418,11 @@ func openAIProviderDefaults(providerType, apiBase string) (string, string) {
 			apiBase = store.MiniMaxDefaultAPIBase
 		}
 		return apiBase, store.MiniMaxDefaultModel
+	case store.ProviderGeminiWeb2API:
+		if apiBase == "" {
+			apiBase = store.GeminiWeb2APIDefaultAPIBase
+		}
+		return apiBase, store.GeminiWeb2APIDefaultModel
 	default:
 		return apiBase, ""
 	}
@@ -450,6 +465,7 @@ var localURLProviderTypes = map[string]bool{
 	store.ProviderOllama:             true,
 	store.ProviderACP:                true,
 	store.ProviderAntigravityCLIHost: true,
+	store.ProviderGeminiWeb2API:      true,
 }
 
 // allowedLocalHosts are the only hosts permitted for local provider types.
@@ -537,6 +553,15 @@ func validateProviderURL(rawURL string, providerType string) error {
 	// This prevents using the local-type escape hatch to reach internal services
 	// or cloud metadata endpoints.
 	if localURLProviderTypes[providerType] {
+		if providerType == store.ProviderGeminiWeb2API {
+			for _, a := range []string{"localhost", "127.0.0.1", "::1"} {
+				if strings.EqualFold(host, a) {
+					return nil
+				}
+			}
+			slog.Warn("security.provider_url.gemini_web2api_denied", "host", host)
+			return fmt.Errorf("provider type %q only allows loopback URLs, got host %q", providerType, host)
+		}
 		for _, a := range allowedLocalHosts {
 			if strings.EqualFold(host, a) {
 				return nil

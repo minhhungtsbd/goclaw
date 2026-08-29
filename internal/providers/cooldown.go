@@ -11,8 +11,8 @@ type CooldownTracker struct {
 	mu          sync.Mutex
 	entries     map[string]*cooldownEntry
 	maxKeys     int
-	lastCleanup time.Time             // amortize TTL cleanup
-	nowFn       func() time.Time      // for testing; defaults to time.Now
+	lastCleanup time.Time        // amortize TTL cleanup
+	nowFn       func() time.Time // for testing; defaults to time.Now
 }
 
 type cooldownEntry struct {
@@ -34,6 +34,7 @@ var cooldownDurations = map[FailoverReason]time.Duration{
 	FailoverTimeout:       15 * time.Second,
 	FailoverModelNotFound: 1 * time.Hour,
 	FailoverFormat:        5 * time.Minute,
+	FailoverInvalidOutput: 5 * time.Minute,
 	FailoverUnknown:       30 * time.Second,
 }
 

@@ -12,6 +12,7 @@ const (
 	ProviderAnthropicNative    = "anthropic_native"
 	ProviderOpenAICompat       = "openai_compat"
 	ProviderGeminiNative       = "gemini_native"
+	ProviderGeminiWeb2API      = "gemini_web2api" // Optional in-container Gemini Web compatibility runtime
 	ProviderOpenRouter         = "openrouter"
 	ProviderAIMLAPI            = "aimlapi"
 	ProviderGroq               = "groq"
@@ -62,6 +63,9 @@ const (
 	KimiCodingDefaultAPIBase    = "https://api.kimi.com/coding/v1"
 	KimiCodingDefaultModel      = "kimi-k2-turbo-preview"
 	KimiCodingRequiredUserAgent = "claude-code/0.1.0"
+
+	GeminiWeb2APIDefaultAPIBase = "http://127.0.0.1:8081/v1"
+	GeminiWeb2APIDefaultModel   = "gemini-3.6-flash"
 )
 
 // Vertex AI constants live in internal/providers/vertex.go to avoid a store→providers import cycle
@@ -73,6 +77,7 @@ var ValidProviderTypes = map[string]bool{
 	ProviderAnthropicNative:    true,
 	ProviderOpenAICompat:       true,
 	ProviderGeminiNative:       true,
+	ProviderGeminiWeb2API:      true,
 	ProviderOpenRouter:         true,
 	ProviderAIMLAPI:            true,
 	ProviderGroq:               true,

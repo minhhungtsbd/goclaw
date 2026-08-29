@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
 // stubResolver returns a net.LookupHost-compatible function that maps known
@@ -279,10 +281,27 @@ func TestValidateProviderURL_LocalTypeAllowedHosts(t *testing.T) {
 		{"http://host.docker.internal:11434/v1", "ollama"},
 		{"http://localhost:9090", "acp"},
 		{"http://127.0.0.1:9090", "acp"},
+		{"http://127.0.0.1:8081/v1", store.ProviderGeminiWeb2API},
 	}
 	for _, a := range allowed {
 		if err := validateProviderURL(a.url, a.providerType); err != nil {
 			t.Errorf("expected %s / %s to be allowed, got: %v", a.url, a.providerType, err)
+		}
+	}
+}
+
+func TestValidateProviderURL_GeminiWeb2APILoopbackOnly(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	allowPrivateProviderURLsFn = func() bool { return false }
+
+	for _, raw := range []string{
+		"http://169.254.169.254/latest/meta-data",
+		"http://10.0.0.8:8081/v1",
+		"http://host.docker.internal:8081/v1",
+		"https://example.com/v1",
+	} {
+		if err := validateProviderURL(raw, store.ProviderGeminiWeb2API); err == nil {
+			t.Errorf("validateProviderURL(%q) = nil, want loopback-only rejection", raw)
 		}
 	}
 }

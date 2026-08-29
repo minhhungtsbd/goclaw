@@ -478,7 +478,7 @@ Override body:
 }
 ```
 
-**Supported types:** `anthropic_native`, `openai_compat`, `chatgpt_oauth`, `gemini_native`, `dashscope`, `bailian`, `minimax`, `claude_cli`, `acp`
+**Supported types:** `anthropic_native`, `openai_compat`, `chatgpt_oauth`, `gemini_native`, `gemini_web2api`, `dashscope`, `bailian`, `minimax`, `claude_cli`, `acp`
 
 Reconnect response:
 

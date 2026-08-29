@@ -3,6 +3,7 @@
 # ENABLE_EMBEDUI controls whether the web UI is built and embedded.
 # Must be declared before first FROM to use in stage selector.
 ARG ENABLE_EMBEDUI=false
+ARG ENABLE_GEMINI_WEB2API=false
 
 # ── Stage 0: Build Web UI ──
 # BuildKit skips this stage entirely when ENABLE_EMBEDUI=false
@@ -22,6 +23,19 @@ FROM web-builder AS embedui-true
 FROM busybox AS embedui-false
 RUN mkdir -p /app/dist
 FROM embedui-${ENABLE_EMBEDUI} AS web-dist
+
+# Optional Gemini Web2API runtime. The source and license are pinned to an
+# immutable upstream commit and verified by BuildKit checksums.
+FROM busybox AS gemini-web2api-false
+RUN mkdir -p /runtime
+FROM busybox AS gemini-web2api-true
+ADD --checksum=sha256:08f74438bb3b73b196e6422893411602ab55606731ae4315ce11d63fc1a1b3c5 \
+    https://raw.githubusercontent.com/Sophomoresty/gemini-web2api/2bb988bfcbb82a7fab5d2c99aa5560ff40d64f7e/gemini_web2api.py \
+    /runtime/gemini_web2api.py
+ADD --checksum=sha256:1126322e2cc8d165adc4c792eeb195717de2bcc7b39be1ce77959d78e87ef685 \
+    https://raw.githubusercontent.com/Sophomoresty/gemini-web2api/2bb988bfcbb82a7fab5d2c99aa5560ff40d64f7e/LICENSE \
+    /runtime/LICENSE
+FROM gemini-web2api-${ENABLE_GEMINI_WEB2API} AS gemini-web2api-runtime
 
 # ── Stage 1: Build Go ──
 FROM golang:1.26-bookworm AS builder
@@ -74,6 +88,7 @@ ARG ENABLE_PYTHON=false
 ARG ENABLE_NODE=false
 ARG ENABLE_FULL_SKILLS=false
 ARG ENABLE_CLAUDE_CLI=false
+ARG ENABLE_GEMINI_WEB2API=false
 
 # Copy pinned Python deps (cleaned up after install).
 # requirements-base.txt: shared deps for ENABLE_PYTHON and ENABLE_FULL_SKILLS.
@@ -109,6 +124,10 @@ RUN set -eux; \
         npm install -g --cache /tmp/npm-cache @anthropic-ai/claude-code@^2.1.91; \
         rm -rf /tmp/npm-cache; \
     fi; \
+    if [ "$ENABLE_GEMINI_WEB2API" = "true" ]; then \
+        apk add --no-cache python3 py3-pip; \
+        pip3 install --no-cache-dir --break-system-packages 'httpx~=0.28.1'; \
+    fi; \
     rm -f /tmp/requirements-base.txt /tmp/requirements-skills.txt
 
 # Non-root user
@@ -121,6 +140,8 @@ COPY --from=builder /out/pkg-helper /app/pkg-helper
 COPY --from=builder /src/migrations/ /app/migrations/
 COPY --from=builder /src/skills/ /app/bundled-skills/
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+COPY --from=gemini-web2api-runtime /runtime/ /app/runtime/gemini-web2api/
+COPY docker/gemini-web2api.config.json /app/runtime/gemini-web2api/config.json
 
 # Fix Windows git clone issues:
 # 1. CRLF line endings in shell scripts (Windows git adds \r)
@@ -163,6 +184,9 @@ ENV GOCLAW_CONFIG=/app/config.json \
     GOCLAW_DATA_DIR=/app/data \
     GOCLAW_SKILLS_DIR=/app/skills \
     GOCLAW_MIGRATIONS_DIR=/app/migrations \
+    GOCLAW_GEMINI_WEB2API_ENABLED=false \
+    GOCLAW_GEMINI_WEB2API_PORT=8081 \
+    GOCLAW_GEMINI_WEB2API_CONFIG=/app/runtime/gemini-web2api/config.json \
     GOCLAW_HOST=0.0.0.0 \
     GOCLAW_PORT=18790
 

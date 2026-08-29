@@ -71,6 +71,7 @@ export function ProviderFormDialog({ open, onOpenChange, onSubmit, existingProvi
   const isCLI = providerType === "claude_cli";
   const isACP = providerType === "acp";
   const isAntigravity = providerType === "antigravity_cli_host";
+  const isGeminiWeb2API = providerType === "gemini_web2api";
 
   // Reset form when dialog opens
   useEffect(() => {
@@ -130,6 +131,9 @@ export function ProviderFormDialog({ open, onOpenChange, onSubmit, existingProvi
       if (!name || providerType !== "chatgpt_oauth") {
         setValue("name", suggestUniqueProviderAlias(existingProviders));
       }
+    } else if (v === "gemini_web2api") {
+      if (!name || providerType !== "gemini_web2api") setValue("name", "gemini-web2api");
+      setValue("apiKey", "");
     } else {
       if (name === DEFAULT_CODEX_OAUTH_ALIAS) setValue("name", "");
     }
@@ -234,7 +238,7 @@ export function ProviderFormDialog({ open, onOpenChange, onSubmit, existingProvi
                   errors={errors}
                   providerType={providerType}
                   control={control}
-                  showApiKey={!isAntigravity}
+                  showApiKey={!isAntigravity && !isGeminiWeb2API}
                 />
               )}
 

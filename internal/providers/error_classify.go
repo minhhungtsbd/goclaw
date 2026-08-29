@@ -20,6 +20,8 @@ const (
 	FailoverTimeout       FailoverReason = "timeout"
 	FailoverModelNotFound FailoverReason = "model_not_found"
 	FailoverContentPolicy FailoverReason = "content_policy"
+	FailoverCapability    FailoverReason = "capability_mismatch"
+	FailoverInvalidOutput FailoverReason = "invalid_response"
 	FailoverUnknown       FailoverReason = "unknown"
 )
 
@@ -137,6 +139,10 @@ func (c *DefaultClassifier) Classify(err error, statusCode int, body string) Fai
 func ClassifyHTTPError(classifier ErrorClassifier, err error) FailoverClassification {
 	if err == nil {
 		return classifyReason(FailoverUnknown)
+	}
+	var contractErr *FallbackContractError
+	if errors.As(err, &contractErr) {
+		return classifyReason(contractErr.Reason)
 	}
 	var httpErr *HTTPError
 	if errors.As(err, &httpErr) {

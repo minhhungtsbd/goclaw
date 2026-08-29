@@ -332,6 +332,19 @@ func registerProvidersFromDB(registry *providers.Registry, provStore store.Provi
 			slog.Info("registered provider from DB", "name", p.Name, "type", p.ProviderType)
 			continue
 		}
+		// Gemini Web2API is an optional loopback runtime in the same container.
+		// It intentionally does not require an API key when bound to 127.0.0.1.
+		if p.ProviderType == store.ProviderGeminiWeb2API {
+			base := p.APIBase
+			if base == "" {
+				base = store.GeminiWeb2APIDefaultAPIBase
+			}
+			prov := providers.NewOpenAIProvider(p.Name, p.APIKey, base, store.GeminiWeb2APIDefaultModel).
+				WithProviderType(p.ProviderType)
+			registry.RegisterForTenant(p.TenantID, prov)
+			slog.Info("registered provider from DB", "name", p.Name, "type", p.ProviderType)
+			continue
+		}
 		// Vertex supports ADC (empty api_key) — handle before the generic key guard.
 		if p.ProviderType == store.ProviderVertex {
 			vsettings := store.ParseVertexProviderSettings(p.Settings)
@@ -472,6 +485,11 @@ func openAIProviderDefaults(providerType, apiBase string) (string, string) {
 			apiBase = store.MiniMaxDefaultAPIBase
 		}
 		return apiBase, store.MiniMaxDefaultModel
+	case store.ProviderGeminiWeb2API:
+		if apiBase == "" {
+			apiBase = store.GeminiWeb2APIDefaultAPIBase
+		}
+		return apiBase, store.GeminiWeb2APIDefaultModel
 	default:
 		return apiBase, ""
 	}

@@ -61,6 +61,37 @@ func TestProvidersHandlerRegisterInMemoryAppliesCodexPoolDefaults(t *testing.T) 
 	}
 }
 
+func TestProvidersHandlerRegisterInMemoryGeminiWeb2APIWithoutAPIKey(t *testing.T) {
+	providerReg := providers.NewRegistry(nil)
+	handler := NewProvidersHandler(newMockProviderStore(), newMockSecretsStore(), providerReg, "")
+
+	provider := &store.LLMProviderData{
+		BaseModel:    store.BaseModel{ID: uuid.New()},
+		TenantID:     uuid.New(),
+		Name:         "gemini-web2api",
+		ProviderType: store.ProviderGeminiWeb2API,
+		Enabled:      true,
+	}
+
+	if got := handler.registerInMemory(provider); got != providerRuntimeRegistered {
+		t.Fatalf("registerInMemory() = %v, want registered", got)
+	}
+	runtimeProvider, err := providerReg.GetForTenant(provider.TenantID, provider.Name)
+	if err != nil {
+		t.Fatalf("GetForTenant() error = %v", err)
+	}
+	openAI, ok := runtimeProvider.(*providers.OpenAIProvider)
+	if !ok {
+		t.Fatalf("runtime provider = %T, want *providers.OpenAIProvider", runtimeProvider)
+	}
+	if got := openAI.APIBase(); got != store.GeminiWeb2APIDefaultAPIBase {
+		t.Fatalf("APIBase() = %q, want %q", got, store.GeminiWeb2APIDefaultAPIBase)
+	}
+	if got := openAI.DefaultModel(); got != store.GeminiWeb2APIDefaultModel {
+		t.Fatalf("DefaultModel() = %q, want %q", got, store.GeminiWeb2APIDefaultModel)
+	}
+}
+
 // TestProvidersHandlerRegisterInMemoryUsesDBNameForAnthropic guards the onboarding verify flow:
 // when an Anthropic provider is created via HTTP with a custom name, the in-memory registry
 // must key the provider by that DB name — not the hardcoded "anthropic" default. Otherwise

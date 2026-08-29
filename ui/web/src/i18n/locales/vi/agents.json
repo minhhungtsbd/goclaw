@@ -794,7 +794,7 @@
     },
     "modelFallback": {
       "title": "Fallback model",
-      "description": "Thử các cặp provider/model dự phòng theo thứ tự ưu tiên khi model chính không khả dụng.",
+      "description": "Thử các cặp provider/model dự phòng tương thích theo thứ tự ưu tiên. Route thiếu hỗ trợ tool/ảnh hoặc trả kết quả không hợp lệ sẽ được bỏ qua an toàn.",
       "enabled": "Đã bật",
       "primary": "Chính",
       "providerPlaceholder": "Chọn provider",

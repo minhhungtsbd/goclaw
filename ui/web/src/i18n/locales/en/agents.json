@@ -809,7 +809,7 @@
     },
     "modelFallback": {
       "title": "Model Fallback",
-      "description": "Try backup provider/model pairs in priority order when the primary model is unavailable.",
+      "description": "Try compatible backup provider/model pairs in priority order. Routes missing required tool or vision support, and invalid responses, are skipped safely.",
       "enabled": "Enabled",
       "primary": "Primary",
       "providerPlaceholder": "Select provider",
