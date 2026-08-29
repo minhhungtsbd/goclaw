@@ -7,8 +7,19 @@ import (
 
 var taggedThinkingOpenRe = regexp.MustCompile(`(?is)<\s*(?:redacted_thinking|think(?:ing)?|thought|antthinking)\b[^>]*>`)
 var taggedThinkingCloseRe = regexp.MustCompile(`(?is)</\s*(?:redacted_thinking|think(?:ing)?|thought|antthinking)\s*>`)
+var escapedTaggedThinkingTagRe = regexp.MustCompile(`(?is)\\+\s*(</?\s*(?:redacted_thinking|think(?:ing)?|thought|antthinking)\b[^>]*>)`)
+
+func normalizeEscapedTaggedThinkingTags(content string) string {
+	return escapedTaggedThinkingTagRe.ReplaceAllStringFunc(content, func(match string) string {
+		if idx := strings.IndexByte(match, '<'); idx >= 0 {
+			return match[idx:]
+		}
+		return match
+	})
+}
 
 func splitTaggedThinkingContent(content, existingThinking string) (string, string) {
+	content = normalizeEscapedTaggedThinkingTags(content)
 	openLoc := taggedThinkingOpenRe.FindStringIndex(content)
 	if openLoc == nil {
 		// Some OpenAI-compatible reasoning models omit the opening tag and emit

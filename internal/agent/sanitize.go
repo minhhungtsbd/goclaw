@@ -252,8 +252,21 @@ var thinkingTagPatterns = []*regexp.Regexp{
 var orphanThinkingClosePattern = regexp.MustCompile(
 	`(?is)</\s*(?:redacted_thinking|think(?:ing)?|thought|antthinking)\s*>`,
 )
+var escapedThinkingTagPattern = regexp.MustCompile(
+	`(?is)\\+\s*(</?\s*(?:redacted_thinking|think(?:ing)?|thought|antthinking)\b[^>]*>)`,
+)
+
+func normalizeEscapedThinkingTags(content string) string {
+	return escapedThinkingTagPattern.ReplaceAllStringFunc(content, func(match string) string {
+		if idx := strings.IndexByte(match, '<'); idx >= 0 {
+			return match[idx:]
+		}
+		return match
+	})
+}
 
 func stripThinkingTags(content string) string {
+	content = normalizeEscapedThinkingTags(content)
 	lower := strings.ToLower(content)
 	if !strings.Contains(lower, "<think") && !strings.Contains(lower, "<thought") &&
 		!strings.Contains(lower, "<antthinking") && !strings.Contains(lower, "<redacted_thinking") &&

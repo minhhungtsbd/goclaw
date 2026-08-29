@@ -26,3 +26,14 @@ func TestSplitThinkTags_OrphanClosingTagRemovesAdditionalClosers(t *testing.T) {
 		t.Fatalf("Answer = %q, want %q", got.Answer, "Visible answer")
 	}
 }
+
+func TestSplitThinkTags_EscapedOrphanClosingTag(t *testing.T) {
+	got := SplitThinkTags("Chủ nhân chào, cần đáp lại thân thiện.\\</think>\nChào anh!")
+
+	if got.Thinking != "Chủ nhân chào, cần đáp lại thân thiện." {
+		t.Fatalf("Thinking = %q, want escaped prefix as reasoning", got.Thinking)
+	}
+	if got.Answer != "Chào anh!" {
+		t.Fatalf("Answer = %q, want visible answer", got.Answer)
+	}
+}

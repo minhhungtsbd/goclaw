@@ -12,6 +12,19 @@ var thinkOpenRe = regexp.MustCompile(`(?i)<\s*(?:think(?:ing)?|thought|antthinki
 // thinkCloseRe matches closing think tags.
 var thinkCloseRe = regexp.MustCompile(`(?i)</\s*(?:think(?:ing)?|thought|antthinking)\s*>`)
 
+// Some fallback providers escape the closing tag as \</think>. Normalize the
+// escape before parsing so internal reasoning cannot leak into the answer.
+var escapedThinkTagRe = regexp.MustCompile(`(?i)\\+\s*(</?\s*(?:think(?:ing)?|thought|antthinking)\b[^>]*>)`)
+
+func normalizeEscapedThinkTags(text string) string {
+	return escapedThinkTagRe.ReplaceAllStringFunc(text, func(match string) string {
+		if idx := strings.IndexByte(match, '<'); idx >= 0 {
+			return match[idx:]
+		}
+		return match
+	})
+}
+
 // ThinkTagSplit holds the result of splitting think-tagged content.
 type ThinkTagSplit struct {
 	Thinking string // content inside <think> tags (empty if no tags found)
@@ -25,6 +38,7 @@ type ThinkTagSplit struct {
 // Returns empty Thinking if no tags are found. Handles multiple tag pairs
 // and accumulates all thinking/answer segments.
 func SplitThinkTags(text string) ThinkTagSplit {
+	text = normalizeEscapedThinkTags(text)
 	lower := strings.ToLower(text)
 	// Some OpenAI-compatible reasoning models omit the opening tag and emit
 	// "private reasoning</think>visible answer". Treat everything before the

@@ -113,3 +113,11 @@ func TestSanitizeAssistantContent_OrphanClosingThinkTag(t *testing.T) {
 		t.Errorf("SanitizeAssistantContent() = %q, want visible answer", got)
 	}
 }
+
+func TestSanitizeAssistantContent_EscapedOrphanClosingThinkTag(t *testing.T) {
+	input := "Internal reasoning that must not leak.\\</think>\nDạ em chào anh ạ."
+	got := SanitizeAssistantContent(input)
+	if got != "Dạ em chào anh ạ." {
+		t.Errorf("SanitizeAssistantContent() = %q, want visible answer", got)
+	}
+}
