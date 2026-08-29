@@ -99,6 +99,10 @@
     "requested": "запрошено",
     "effective": "фактически",
     "fallback": "резервное",
+    "fallbackAttempts": "Попытки резервных моделей",
+    "fallbackFailed": "ошибка",
+    "fallbackSuccess": "успешно",
+    "fallbackSelected": "Выбрано:",
     "modelDefault": "по умолчанию для модели",
     "supportedLevels": "поддерживается:",
     "sourceValue": {

@@ -61,6 +61,18 @@ export interface SpanData {
       supported_levels?: string[];
       used_provider_default?: boolean;
     };
+    model_fallback?: {
+      attempts?: Array<{
+        provider_name?: string;
+        model?: string;
+        status?: string;
+        reason?: string;
+        error?: string;
+        streamed?: boolean;
+      }>;
+      selected_provider_name?: string;
+      selected_model?: string;
+    };
   };
   created_at: string;
 }

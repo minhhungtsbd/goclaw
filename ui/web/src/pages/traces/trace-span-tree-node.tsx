@@ -77,6 +77,7 @@ function SpanDetailPanel({ span }: { span: SpanData }) {
   const { t } = useTranslation("traces");
   const tz = useUiStore((s) => s.timezone);
   const reasoning = span.metadata?.reasoning;
+  const modelFallback = span.metadata?.model_fallback;
 
   return (
     <div className="max-h-[50vh] space-y-2 overflow-y-auto border-t px-3 py-2">
@@ -114,6 +115,31 @@ function SpanDetailPanel({ span }: { span: SpanData }) {
           {reasoning.supported_levels?.length ? <div className="mt-1">{t("span.supportedLevels")} {reasoning.supported_levels.join(", ")}</div> : null}
         </div>
       )}
+      {modelFallback?.attempts?.length ? (
+        <div className="rounded-md border border-amber-400/30 bg-amber-500/5 p-2 text-xs">
+          <div className="font-medium text-foreground">{t("span.fallbackAttempts")}</div>
+          {modelFallback.attempts.map((attempt, index) => {
+            const succeeded = attempt.status === "success";
+            return (
+              <div key={`${attempt.provider_name}-${attempt.model}-${index}`} className="mt-1.5 border-t border-border/60 pt-1.5 first:border-t-0">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Badge variant={succeeded ? "success" : "destructive"} className="text-xs">
+                    {succeeded ? t("span.fallbackSuccess") : t("span.fallbackFailed")}
+                  </Badge>
+                  <span className="font-mono">{attempt.provider_name || "?"}/{attempt.model || "?"}</span>
+                  {attempt.reason ? <span className="text-muted-foreground">({attempt.reason})</span> : null}
+                </div>
+                {attempt.error ? <div className="mt-1 break-all text-red-300">{attempt.error}</div> : null}
+              </div>
+            );
+          })}
+          {modelFallback.selected_provider_name ? (
+            <div className="mt-2 text-muted-foreground">
+              {t("span.fallbackSelected")} <span className="font-mono text-foreground">{modelFallback.selected_provider_name}/{modelFallback.selected_model}</span>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {span.input_preview && <TracePreviewBlock label={t("span.input")} content={span.input_preview} />}
       {span.output_preview && <TracePreviewBlock label={t("span.output")} content={span.output_preview} />}
       {span.error && <p className="break-all text-xs text-red-300">{span.error}</p>}

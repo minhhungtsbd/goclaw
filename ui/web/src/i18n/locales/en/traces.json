@@ -99,6 +99,10 @@
     "requested": "requested",
     "effective": "effective",
     "fallback": "fallback",
+    "fallbackAttempts": "Model fallback attempts",
+    "fallbackFailed": "failed",
+    "fallbackSuccess": "success",
+    "fallbackSelected": "Selected:",
     "modelDefault": "model default",
     "supportedLevels": "supported:",
     "sourceValue": {

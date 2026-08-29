@@ -46,6 +46,13 @@ func (r *webhookRouter) webhookRoute() (string, http.Handler) {
 	return "", nil
 }
 
+// ClaimWebhookRoute mounts the shared Facebook webhook independently of the
+// currently enabled channel instances. This keeps the route available when a
+// Facebook channel is enabled after the gateway HTTP mux has already started.
+func ClaimWebhookRoute() (string, http.Handler) {
+	return globalRouter.webhookRoute()
+}
+
 // ServeHTTP is the shared handler for all Facebook page webhooks.
 // Routes each entry to the matching channel instance by page_id.
 //

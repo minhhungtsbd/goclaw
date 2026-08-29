@@ -56,6 +56,10 @@
     "requested": "요청됨",
     "effective": "실효",
     "fallback": "대체",
+    "fallbackAttempts": "모델 대체 시도",
+    "fallbackFailed": "실패",
+    "fallbackSuccess": "성공",
+    "fallbackSelected": "선택됨:",
     "modelDefault": "모델 기본값",
     "supportedLevels": "지원됨:",
     "sourceValue": {

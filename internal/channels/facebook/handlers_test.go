@@ -127,6 +127,20 @@ func TestWebhookHandler_ReturnsRouteFirstCallOnly(t *testing.T) {
 	}
 }
 
+func TestClaimWebhookRoute_WithoutEnabledInstance(t *testing.T) {
+	globalRouter = &webhookRouter{instances: make(map[string]*Channel)}
+
+	path, handler := ClaimWebhookRoute()
+	if path != webhookPath || handler == nil {
+		t.Fatalf("ClaimWebhookRoute() = %q / %v, want %q and handler", path, handler, webhookPath)
+	}
+
+	path, handler = ClaimWebhookRoute()
+	if path != "" || handler != nil {
+		t.Fatalf("second ClaimWebhookRoute() = %q / %v, want empty", path, handler)
+	}
+}
+
 // TestHandleAPIError_MapsToHealthStates verifies handleAPIError dispatches
 // based on error classification. Uses MarkFailed/MarkDegraded observable
 // channel health state as the post-condition.

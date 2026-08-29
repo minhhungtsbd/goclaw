@@ -99,6 +99,10 @@
     "requested": "yêu cầu",
     "effective": "thực tế",
     "fallback": "fallback",
+    "fallbackAttempts": "Các lần thử model dự phòng",
+    "fallbackFailed": "lỗi",
+    "fallbackSuccess": "thành công",
+    "fallbackSelected": "Đã chọn:",
     "modelDefault": "mặc định model",
     "supportedLevels": "hỗ trợ:",
     "sourceValue": {

@@ -249,15 +249,25 @@ var thinkingTagPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?is)<antthinking\b[^>]*>.*?</antthinking\s*>`),
 }
 
+var orphanThinkingClosePattern = regexp.MustCompile(
+	`(?is)</\s*(?:redacted_thinking|think(?:ing)?|thought|antthinking)\s*>`,
+)
+
 func stripThinkingTags(content string) string {
 	lower := strings.ToLower(content)
 	if !strings.Contains(lower, "<think") && !strings.Contains(lower, "<thought") &&
-		!strings.Contains(lower, "<antthinking") && !strings.Contains(lower, "<redacted_thinking") {
+		!strings.Contains(lower, "<antthinking") && !strings.Contains(lower, "<redacted_thinking") &&
+		!strings.Contains(lower, "</think") && !strings.Contains(lower, "</thought") &&
+		!strings.Contains(lower, "</antthinking") && !strings.Contains(lower, "</redacted_thinking") {
 		return content
 	}
 	result := content
 	for _, pat := range thinkingTagPatterns {
 		result = pat.ReplaceAllString(result, "")
+	}
+	if closeLoc := orphanThinkingClosePattern.FindStringIndex(result); closeLoc != nil {
+		result = result[closeLoc[1]:]
+		result = orphanThinkingClosePattern.ReplaceAllString(result, "")
 	}
 	return strings.TrimSpace(result)
 }

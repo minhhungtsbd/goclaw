@@ -94,6 +94,10 @@
     "requested": "请求",
     "effective": "实际",
     "fallback": "fallback",
+    "fallbackAttempts": "模型回退尝试",
+    "fallbackFailed": "失败",
+    "fallbackSuccess": "成功",
+    "fallbackSelected": "已选择：",
     "modelDefault": "模型默认",
     "supportedLevels": "支持：",
     "sourceValue": {

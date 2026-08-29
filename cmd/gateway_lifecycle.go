@@ -12,6 +12,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/cache"
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/bitrix24"
+	"github.com/nextlevelbuilder/goclaw/internal/channels/facebook"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"github.com/nextlevelbuilder/goclaw/internal/edition"
 	"github.com/nextlevelbuilder/goclaw/internal/heartbeat"
@@ -365,6 +366,13 @@ func (d *gatewayDeps) runLifecycle(
 	for _, route := range d.channelMgr.WebhookHandlers() {
 		mux.Handle(route.Path, route.Handler)
 		slog.Info("webhook route mounted on gateway", "path", route.Path)
+	}
+
+	// Facebook channels can be enabled after startup. Mount the shared router
+	// even when no Facebook instance was enabled while the mux was built.
+	if path, handler := facebook.ClaimWebhookRoute(); path != "" && handler != nil {
+		mux.Handle(path, handler)
+		slog.Info("webhook route mounted on gateway", "path", path)
 	}
 
 	// Bitrix24: also claim+mount the shared webhook router directly, even if

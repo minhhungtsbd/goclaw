@@ -9,12 +9,18 @@ var taggedThinkingOpenRe = regexp.MustCompile(`(?is)<\s*(?:redacted_thinking|thi
 var taggedThinkingCloseRe = regexp.MustCompile(`(?is)</\s*(?:redacted_thinking|think(?:ing)?|thought|antthinking)\s*>`)
 
 func splitTaggedThinkingContent(content, existingThinking string) (string, string) {
-	lower := strings.ToLower(content)
-	if !strings.Contains(lower, "<think") &&
-		!strings.Contains(lower, "<thought") &&
-		!strings.Contains(lower, "<antthinking") &&
-		!strings.Contains(lower, "<redacted_thinking") {
-		return content, existingThinking
+	openLoc := taggedThinkingOpenRe.FindStringIndex(content)
+	if openLoc == nil {
+		// Some OpenAI-compatible reasoning models omit the opening tag and emit
+		// only: "private reasoning</think>visible answer". Treat the prefix as
+		// thinking instead of leaking it to the customer.
+		closeLoc := taggedThinkingCloseRe.FindStringIndex(content)
+		if closeLoc == nil {
+			return content, existingThinking
+		}
+		thinking := content[:closeLoc[0]]
+		answer := taggedThinkingCloseRe.ReplaceAllString(content[closeLoc[1]:], "")
+		return answer, appendTaggedThinking(existingThinking, thinking)
 	}
 
 	var answer strings.Builder

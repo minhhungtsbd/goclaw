@@ -2109,6 +2109,27 @@ func TestObserveStage_MovesTaggedThinkingIntoFinalThinking(t *testing.T) {
 	}
 }
 
+func TestObserveStage_MovesOrphanClosingThinkPrefixIntoFinalThinking(t *testing.T) {
+	t.Parallel()
+	stage := NewObserveStage(&PipelineDeps{})
+	state := defaultState()
+	state.Think.LastResponse = &providers.ChatResponse{
+		Content:  "Private reasoning in English.\n</think>\nDạ em đã tiếp nhận yêu cầu ạ.",
+		Thinking: "native reasoning",
+	}
+
+	err := stage.Execute(context.Background(), state)
+	if err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if state.Observe.FinalContent != "\nDạ em đã tiếp nhận yêu cầu ạ." {
+		t.Errorf("FinalContent = %q", state.Observe.FinalContent)
+	}
+	if state.Observe.FinalThinking != "native reasoning\nPrivate reasoning in English." {
+		t.Errorf("FinalThinking = %q", state.Observe.FinalThinking)
+	}
+}
+
 func TestObserveStage_FinalContent_SetWhenNoToolCalls(t *testing.T) {
 	t.Parallel()
 	deps := &PipelineDeps{}

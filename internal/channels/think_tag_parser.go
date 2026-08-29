@@ -26,6 +26,18 @@ type ThinkTagSplit struct {
 // and accumulates all thinking/answer segments.
 func SplitThinkTags(text string) ThinkTagSplit {
 	lower := strings.ToLower(text)
+	// Some OpenAI-compatible reasoning models omit the opening tag and emit
+	// "private reasoning</think>visible answer". Treat everything before the
+	// first closing tag as reasoning so it cannot remain in the answer stream.
+	if !thinkOpenRe.MatchString(text) {
+		if closeLoc := thinkCloseRe.FindStringIndex(text); closeLoc != nil {
+			return ThinkTagSplit{
+				Thinking: text[:closeLoc[0]],
+				Answer:   thinkCloseRe.ReplaceAllString(text[closeLoc[1]:], ""),
+				Found:    true,
+			}
+		}
+	}
 	// Fast path: no think-like tags at all
 	if !strings.Contains(lower, "<think") &&
 		!strings.Contains(lower, "<thought") &&
