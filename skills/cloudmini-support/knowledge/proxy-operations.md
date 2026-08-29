@@ -50,7 +50,9 @@ Khi khách yêu cầu khôi phục hoặc gia hạn lại Proxy hết hạn đã
 
 ## Thuộc tính kỹ thuật
 
-- Residential Proxy hiện hỗ trợ chọn ISP, không hỗ trợ chọn chi tiết Bang/Thành phố trừ khi policy/hệ thống thay đổi.
+- **Residential Static** và **Budget Residential Static** là hai gói riêng biệt. Luôn giữ nguyên chữ `Budget` khi đọc tên gói và đối chiếu chính sách; không rút gọn cả hai thành “Residential Static”.
+- Khi đặt **Residential Static**, khách không chọn được Bang/State/Region. Trang đặt hàng chỉ cho chọn **Local** và **tên ISP**; không hứa chọn chi tiết Bang hoặc Thành phố.
+- Quy tắc đặt hàng trên không tự động áp dụng cho **Budget Residential Static** nếu tài liệu hoặc giao diện không xác nhận như vậy.
 - BudgetV4 và Budget Residential Static mặc định dùng HTTPS 50100 và SOCKS5 50101.
 - GeoIP có thể khác giữa database; có thể đối chiếu https://www.iplocation.net/ip-lookup nhưng không cam kết mọi nguồn cùng thành phố.
 - Không kết luận IP không dùng được chỉ vì có mặt trên một blacklist. Spamhaus SBL chủ yếu liên quan uy tín chống spam/email.

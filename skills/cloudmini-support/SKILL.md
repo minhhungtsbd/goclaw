@@ -9,6 +9,14 @@ description: Kho tri thức chuẩn để hỗ trợ khách hàng Cloudmini về
 
 Nguồn tri thức chuẩn cho agent hỗ trợ khách hàng Cloudmini qua Facebook Messenger và các kênh chat. Dùng để nhận diện dịch vụ, tra cứu chính sách, hướng dẫn thao tác, chẩn đoán bước đầu và quyết định khi nào phải chuyển Admin/Kỹ thuật.
 
+## Quy tắc nhanh bắt buộc khi khách hỏi chính sách PrivateV4
+
+- Khi khách đã nêu rõ gói **PrivateV4** và chỉ hỏi quy định đổi/hủy, phải đọc `{baseDir}/knowledge/refund-cancellation.md` rồi trả lời ngay theo chính sách; không bắt khách cung cấp IP/email chỉ để được biết chính sách chung.
+- PrivateV4 cho phép khách **tự thay thế IP tại Quản lý Proxy**, phí **20.000đ/IP**.
+- PrivateV4 cho phép khách **tự hủy**, hoàn **80% giá trị thời gian còn lại** vào số dư Cloudmini.
+- Việc tài khoản bên thứ ba của khách bị khóa hoặc khách chỉ muốn IP mới không có nghĩa Proxy lỗi, nhưng khách vẫn được chủ động thay IP PrivateV4 có phí. Tuyệt đối không trả lời rằng lý do này “không được hỗ trợ đổi IP”.
+- Chỉ cần IP/email khi phải kiểm tra một dịch vụ cụ thể, đối chiếu quyền tài khoản, xử lý lỗi thao tác hoặc chuyển Admin. Không gọi `live_check` cho câu hỏi chính sách hay trường hợp tài khoản bên thứ ba bị khóa.
+
 ## ️ CHI TIẾT CÔNG CỤ TRA CỨU: `cloudmini_proxy_check` (CUSTOM TOOL)
 
 ### 1. Mục đích & Bản chất
@@ -24,9 +32,12 @@ Nguồn tri thức chuẩn cho agent hỗ trợ khách hàng Cloudmini qua Faceb
 - Chỉ khi chưa có email trong toàn bộ cuộc trò chuyện VÀ khách có yêu cầu khôi phục/gia hạn IP Mới xin email tài khoản Cloudmini của khách hàng.
 
 ### 3. Diễn giải kết quả & Logic xử lý (Returns & Logic)
-* **`service_status == "active"`**: IP đang gắn với dịch vụ hoạt động bình thường.
-* **`service_status == "deleted"`** (hoặc `expire == null`): IP đã bị xóa khỏi hệ thống hoặc hết hạn.
+* **`service_status == "active"`**: Dịch vụ còn hạn và IP đang gắn với dịch vụ.
+* **`service_status == "expired"`**: Dịch vụ đã hết hạn nhưng bản ghi/IP vẫn còn trên hệ thống. Không coi đây là lỗi kết nối và không gọi `live_check`; hướng dẫn khách kiểm tra khả năng tự gia hạn.
+* **`service_status == "deleted"`** (hoặc `expire == null`): IP đã bị xóa và không còn gắn với dịch vụ nào.
 * **`service_status == "unavailable"`**: IP **vẫn đang gắn với dịch vụ** nhưng `account_email` không khớp. Không áp dụng trạng thái này cho IP `deleted`/`expire == null`.
+* **`service_status == "unknown"`**: API có hạn nhưng không đọc được định dạng. Không tự kết luận còn hạn/hết hạn; chuyển kiểm tra khi cần.
+* **`plan_family`**: Nhóm gói đã chuẩn hóa. `residential_static` và `budget_residential_static` là hai gói khác nhau; không áp dụng chính sách của gói thường cho gói có chữ `Budget`.
 * **`is_reseller == true`**: Tài khoản thuộc danh sách **Reseller**. Bắt buộc kiểm tra danh sách Reseller (`minhchi12@gmail.com`, `proxy@mkt.city`, `lamithan@gmail.com`...). Khách Reseller được ưu tiên hỗ trợ, được phép bỏ qua các hạn chế hủy/hoàn/đổi IP thông thường và ưu tiên chuyển thẳng cho Admin (`escalate_to_admin`) khi có yêu cầu.
 * **`cancellation_policy`**: Chỉ có sau khi `account_email_matches == true`. Đây là kết luận chính sách có cấu trúc cho thao tác hủy:
   - `not_supported`: không hỗ trợ hủy/hoàn theo nhu cầu. Không tạo Admin handoff chỉ vì trang web báo không hủy được; phải thông báo đúng chính sách gói.
@@ -109,6 +120,10 @@ Luôn xử lý theo thứ tự sau; **không được tạo Admin handoff ở b�
 #### BƯỚC 3: ĐIỀU HƯỚNG THEO NHÁNH DỊCH VỤ (SAU KHI ĐÃ CÓ EMAIL VÀ PHÂN LOẠI)
 
 ##### ️ NHÁNH 1: DỊCH VỤ PROXY
+- **Trường hợp A0 — Dịch vụ đã hết hạn nhưng chưa bị xóa (`service_status == "expired"`)**:
+- Báo đúng trạng thái hết hạn và hướng dẫn khách kiểm tra nút Gia hạn tại Quản lý Proxy.
+- Không gọi `live_check`, không nói IP đang lỗi và không tạo Admin handoff nếu khách chưa báo thao tác gia hạn bị lỗi hoặc chưa yêu cầu thao tác thủ công.
+
 - **Trường hợp A1 — IP đã bị xóa (`service_status == "deleted"` hoặc `expire == null`)**:
 - Thông báo IP Proxy đã bị xóa/hết hạn.
 - Nếu khách yêu cầu khôi phục, chấp nhận tạo ticket cho email tài khoản khách đã cung cấp dù IP trước đây được đăng ký bằng tài khoản khác. Không đối chiếu/tiết lộ email chủ cũ; email hiện tại là tài khoản nhận khôi phục. Chỉ Admin xác nhận IP cũ còn tài nguyên và có thể khôi phục.
@@ -168,6 +183,12 @@ Luôn xử lý theo thứ tự sau; **không được tạo Admin handoff ở b�
 * **Turn 1 Output**: `{"status": "success"}`
 * **Turn 2 Output**:
 > *"Dạ em đã ghi nhận và chuyển thông tin IP `103.149.28.50` đến bộ phận Admin/Kỹ thuật để kiểm tra chuyên sâu cho anh rồi ạ. Bên em sẽ cập nhật lại anh ngay khi có kết quả nhé."*
+
+### Ví dụ 3: Khách chỉ hỏi đổi IP PrivateV4 do tài khoản bên thứ ba bị khóa
+* **User**: `"Proxy của em là PrivateV4, acc bị die nên em muốn đổi IP được không?"`
+* **Không gọi** `live_check`, không yêu cầu IP/email chỉ để trả lời chính sách.
+* **Response**:
+> *"Dạ được ạ. Với gói PrivateV4, anh/chị có thể vào Quản lý Proxy, chọn IP cần đổi rồi chọn Thao tác → Thay thế IP. Phí thay là 20.000đ/IP. Nếu không muốn tiếp tục sử dụng, anh/chị cũng có thể tự hủy và hệ thống hoàn 80% giá trị thời gian còn lại vào số dư Cloudmini ạ."*
 
 ---
 

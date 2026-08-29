@@ -37,9 +37,15 @@ Nếu email tài khoản Cloudmini của khách nằm trong danh sách **Reselle
 
 ### PrivateV4 — 50.000đ/tháng/IP
 
-- Khách tự đổi hoặc hủy tại Quản lý Proxy.
-- Đổi theo nhu cầu: 20.000đ/IP.
-- Hủy: hoàn 80% giá trị thời gian còn lại vào số dư Cloudmini.
+- Khách tự đổi hoặc hủy tại **Quản lý Proxy**.
+- Đổi theo nhu cầu: chọn IP → **Thao tác → Thay thế IP**, phí **20.000đ/IP**.
+- Hủy: khách tự thao tác tại trang quản lý, hoàn **80% giá trị thời gian còn lại** vào số dư Cloudmini.
+- Tài khoản bên thứ ba bị khóa, khách muốn đổi mục đích sử dụng hoặc đơn giản muốn IP mới đều không phải lỗi Proxy, nhưng vẫn là nhu cầu thay IP có phí hợp lệ của PrivateV4. Không được từ chối quyền thay IP chỉ vì lý do này.
+- Khi khách chỉ hỏi chính sách và đã nêu rõ PrivateV4, trả lời trực tiếp theo các quy định trên. Chỉ xin IP/email nếu cần kiểm tra dịch vụ cụ thể hoặc khách báo thao tác trên web bị lỗi.
+
+Mẫu phản hồi:
+
+> Dạ, gói PrivateV4 hỗ trợ anh/chị tự thay IP tại Quản lý Proxy → chọn IP → Thao tác → Thay thế IP, phí 20.000đ/IP ạ. Nếu không muốn tiếp tục sử dụng, anh/chị cũng có thể tự hủy và được hoàn 80% giá trị thời gian còn lại vào số dư Cloudmini.
 
 ### BudgetV4 — 40.000đ/tháng/IP
 
@@ -112,7 +118,7 @@ Nếu chưa rõ gói:
 
 Sau khi xác định:
 
-- Residential Static: thông báo không đổi/hủy theo nhu cầu.
+- Residential Static: thông báo không đổi/hủy theo nhu cầu; không áp dụng cho Budget Residential Static.
 - PrivateV4: hướng dẫn tự đổi hoặc hủy.
 - BudgetV4/Budget Residential Static: ghi nhận để Admin xem xét đổi thủ công, không cam kết nếu lặp lại/lạm dụng.
 - PrivateV6: không hủy/hoàn theo nhu cầu; có lỗi thực tế thì chuyển kiểm tra.
