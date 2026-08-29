@@ -308,12 +308,20 @@ func requiresDeterministicCloudminiHandoff(state *RunState) bool {
 	if state.Cloudmini.ScopeAmbiguous || len(state.Cloudmini.ServiceFacts) == 0 {
 		return false
 	}
+	lower := strings.ToLower(state.Input.Message)
+	restore := containsAny(lower, "khôi phục", "khoi phuc", "phục hồi", "phuc hoi")
+	customerEmailKnown := latestCloudminiCustomerEmail(state.Messages.History()) != ""
 	allVerified := true
 	anyDeleted := false
 	allCancellationEligible := true
 	allVPS := true
 	for _, fact := range state.Cloudmini.ServiceFacts {
-		allVerified = allVerified && fact.AccountEmailMatches
+		// A deleted IP is no longer attached to any active service. For a restore
+		// request, the supplied customer email identifies the destination account;
+		// it is not required to match the former service owner.
+		identityEligible := fact.AccountEmailMatches ||
+			(restore && fact.Status == "deleted" && customerEmailKnown)
+		allVerified = allVerified && identityEligible
 		anyDeleted = anyDeleted || fact.Status == "deleted"
 		allCancellationEligible = allCancellationEligible &&
 			fact.CancellationPolicy != "" && fact.CancellationPolicy != "not_supported"
@@ -322,9 +330,7 @@ func requiresDeterministicCloudminiHandoff(state *RunState) bool {
 	if !allVerified {
 		return false
 	}
-	lower := strings.ToLower(state.Input.Message)
-	restoreOrRenew := containsAny(lower, "khôi phục", "khoi phuc", "phục hồi", "phuc hoi", "gia hạn", "gia han")
-	if restoreOrRenew && anyDeleted {
+	if restore && anyDeleted {
 		return true
 	}
 	cancelFailed := containsAny(lower, "hủy", "huỷ", "huy") &&

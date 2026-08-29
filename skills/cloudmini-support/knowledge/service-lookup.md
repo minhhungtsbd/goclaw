@@ -14,7 +14,7 @@ Kết quả có thể cho biết:
 - email tài khoản Cloudmini (`user_email`) để đối chiếu và handoff nội bộ.
 
 Quy tắc:
-1. Nếu khách đã cung cấp email, truyền qua `account_email` và dùng `account_email_matches` để đối chiếu.
+1. Nếu khách đã cung cấp email, truyền qua `account_email`. Chỉ dùng `account_email_matches` làm điều kiện sở hữu khi IP còn gắn với dịch vụ; không dùng trường này để chặn yêu cầu khôi phục IP `deleted`/`expire: null`.
 2. Không hỏi lại loại Proxy/VPS hoặc gói khi API đã xác định được.
 3. Khi API trả về trường `region` (ví dụ: `"region": "Việt Nam - Viettel"`), hãy sử dụng thông tin này để tư vấn khách hàng hoặc xác nhận vị trí địa lý/nhà mạng của gói dịch vụ mà không cần hỏi lại khách hàng.
 4. Không hiển thị, đọc lại hoặc xác nhận email API với khách; email chỉ dùng nội bộ hoặc trong `escalate_to_admin`.
@@ -44,5 +44,7 @@ Khi yêu cầu cần Admin/Kỹ thuật, đưa vào `escalate_to_admin`:
 Khi service_info trả expire: null cùng service_status: "deleted", IP đó đã bị xóa và không còn gắn với dịch vụ Cloudmini nào.
 
 - Không dùng live_check để kết luận lỗi kết nối cho IP này.
+- Khi khách yêu cầu khôi phục, không so sánh email khách với email chủ sở hữu cũ. Email khách cung cấp là tài khoản nhận khôi phục và vẫn phải có trong handoff.
+- Không tiết lộ email chủ cũ và không từ chối chỉ vì `account_email_matches` là false hoặc không có.
 - Xác định đúng luồng khôi phục Proxy hoặc VPS theo gói nếu API còn trả plan; không tự cam kết khả năng khôi phục.
-- Khi cần Admin xử lý, handoff gồm IP, gói nếu có, email đã được đối chiếu và yêu cầu của khách.
+- Khi cần Admin xử lý, handoff gồm IP, gói nếu có, email tài khoản nhận khôi phục và yêu cầu của khách.

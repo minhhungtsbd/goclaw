@@ -21,11 +21,12 @@ Tại Quản lý Proxy, khách xem IP, Port, Username, Password; thao tác nhi�
 
 Khi khách yêu cầu khôi phục hoặc gia hạn lại Proxy hết hạn đã bị xóa:
 
-1. **GATE 1 — Xin email tài khoản**: Kiểm tra xem trong cuộc trò chuyện khách đã cung cấp **email tài khoản Cloudmini** chưa. NẾU CHƯA CÓ EMAIL, TUYỆT ĐỐI KHÔNG GỌI TOOL TRA CỨU, KHÔNG KẾT LUẬN TRẠNG THÁI VÀ CẤM NÓI HẠN DÙNG CỦA IP. Phải phản hồi ngay hỏi xin email tài khoản Cloudmini trước.
-2. **GATE 2 — Tra cứu IP**: Sau khi ĐÃ CÓ EMAIL KHÁCH HÀNG, gọi tool `cloudmini_proxy_check(operation: "service_info", ip: "<IP>", account_email: "<email_khach>")`.
+1. **GATE 1 — Email tài khoản nhận khôi phục**: Tái sử dụng email khách đã cung cấp trong hội thoại. Nếu chưa có, vẫn được gọi `service_info` để xác định IP đã xóa hay còn hoạt động, nhưng phải xin email trước khi tạo ticket. Email này xác định tài khoản nhận dịch vụ khôi phục.
+2. **GATE 2 — Tra cứu IP**: Gọi `cloudmini_proxy_check(operation: "service_info", ip: "<IP>", account_email: "<email_khach>")` khi đã có email; nếu chưa có email thì gọi không kèm `account_email` rồi xin email trước bước handoff.
 3. **GATE 3 — Phân loại & Đối chiếu email nội bộ**:
    - **Trường hợp 1 — IP KHÔNG có liên kết dịch vụ active nào (`service_status == "deleted"` hoặc không gắn dịch vụ)**:
-     - Thông báo cho khách rằng IP có khả năng khôi phục/gia hạn được.
+     - Không đối chiếu email khách với email chủ sở hữu cũ. IP đã tách khỏi dịch vụ active nên email khách cung cấp là tài khoản nhận khôi phục, kể cả IP trước đây do tài khoản khác đăng ký.
+     - Không tiết lộ email chủ cũ. Thông báo Admin cần kiểm tra IP cũ còn tài nguyên và khả năng khôi phục thực tế.
      - Gọi `escalate_to_admin` để tạo case chuyển Admin xử lý.
      - Chỉ xác nhận đã chuyển case sau khi `escalate_to_admin` thành công; áp dụng mốc thời gian ở mục **Thời gian thay IP Proxy**, không hứa hoàn tất sớm hơn.
    - **Trường hợp 2 — IP ĐANG gắn với 1 dịch vụ đang hoạt động (`service_status == "active"`)**:
@@ -45,6 +46,7 @@ Khi khách yêu cầu khôi phục hoặc gia hạn lại Proxy hết hạn đã
 
 - Miễn phí nếu còn khả năng khôi phục.
 - Vẫn cần email tài khoản và danh sách IP để Admin kiểm tra.
+- Email là tài khoản nhận khôi phục; với IP đã xóa không yêu cầu email này khớp chủ sở hữu cũ.
 
 ## Thuộc tính kỹ thuật
 

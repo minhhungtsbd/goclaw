@@ -268,6 +268,18 @@ func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, reseller
 
 			classNote := getServiceClassificationNote(items[i].Plan)
 			isResStatic := isResidentialStaticPlan(items[i].Plan)
+			if items[i].ServiceStatus == "deleted" {
+				// Deleted IPs are detached from every active service. The customer's
+				// email is the destination account for a restore request, not an
+				// ownership check against the former service record.
+				items[i].AccountEmailMatches = nil
+				if isResStatic {
+					items[i].StatusNote = "IP đã bị xóa và không còn gắn với dịch vụ nào; khi khách yêu cầu khôi phục, KHÔNG đối chiếu email chủ sở hữu cũ." + classNote + " [QUY TẮC KHÔI PHỤC GÓI RESIDENTIAL STATIC]: BẮT BUỘC thông báo khách phí khôi phục IP cũ là 25.000đ/IP (nếu còn tài nguyên IP cũ) và YÊU CẦU KHÁCH NẠP ĐỦ SỐ DƯ TÀI KHOẢN CLOUDMINI = TỔNG (GIÁ CƯỚC PROXY + PHÍ KHÔI PHỤC 25.000đ/IP) để Admin tiến hành khôi phục thủ công. Email khách cung cấp là tài khoản nhận khôi phục."
+				} else {
+					items[i].StatusNote = "IP đã bị xóa và không còn gắn với dịch vụ nào; khi khách yêu cầu khôi phục, KHÔNG đối chiếu email chủ sở hữu cũ." + classNote + " Email khách cung cấp là tài khoản nhận khôi phục. Thông báo dịch vụ đã bị xóa/hết hạn và chuyển Admin kiểm tra khả năng khôi phục."
+				}
+				continue
+			}
 
 			if expectedEmail != "" {
 				if rawUserEmail != "" {
@@ -284,12 +296,6 @@ func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, reseller
 							items[i].StatusNote = "IP thuộc tài khoản Reseller của khách hàng." + classNote + " Được phép ưu tiên hỗ trợ và chuyển Admin theo yêu cầu."
 							items[i].CancellationPolicy = "admin_review"
 							items[i].CancellationInstruction = "ƯU TIÊN RESELLER BẮT BUỘC: Không hướng dẫn khách tự hủy, đổi, gia hạn hoặc khôi phục theo chính sách gói thông thường. Phải gọi escalate_to_admin để Admin xử lý thủ công sau khi email đã xác minh khớp."
-						} else if items[i].ServiceStatus == "deleted" {
-							if isResStatic {
-								items[i].StatusNote = "IP đã bị xóa đúng tài khoản của khách hàng." + classNote + " [QUY TẮC KHÔI PHỤC GÓI RESIDENTIAL STATIC]: BẮT BUỘC thông báo khách phí khôi phục IP cũ là 25.000đ/IP (nếu còn tài nguyên IP cũ) và YÊU CẦU KHÁCH NẠP ĐỦ SỐ DƯ TÀI KHOẢN CLOUDMINI = TỔNG (GIÁ CƯỚC PROXY + PHÍ KHÔI PHỤC 25.000đ/IP) để Admin tiến hành khôi phục thủ công."
-							} else {
-								items[i].StatusNote = "IP đã bị xóa đúng tài khoản của khách hàng." + classNote + " Thông báo dịch vụ đã bị xóa/hết hạn và chuyển Admin kiểm tra khả năng khôi phục."
-							}
 						} else if items[i].ServiceStatus == "expired" {
 							items[i].StatusNote = "Dịch vụ đã hết hạn đúng tài khoản của khách hàng nhưng vẫn còn bản ghi trên hệ thống." + classNote + " Hướng dẫn khách kiểm tra khả năng tự gia hạn trong trang quản lý; không coi đây là lỗi kết nối và không gọi live_check."
 						} else {
@@ -309,12 +315,6 @@ func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, reseller
 					items[i].ServiceStatus = "active"
 					items[i].StatusNote = "IP đang có thông tin dịch vụ." + classNote + " YÊU CẦU BẮT BUỘC BƯỚC 2: Nếu trong toàn bộ cuộc trò chuyện CHƯA CÓ email của khách hàng, BẮT BUỘC phải hỏi xin email tài khoản Cloudmini của khách trước hết. KHÔNG ĐƯỢC đưa ra hướng dẫn kỹ thuật chuyên sâu hay kết luận hỗ trợ khi chưa có email."
 					items[i].Expire = nil // Redact expiry until email is supplied & verified
-				} else if items[i].ServiceStatus == "deleted" {
-					if isResStatic {
-						items[i].StatusNote = "IP đã bị xóa." + classNote + " [QUY TẮC KHÔI PHỤC GÓI RESIDENTIAL STATIC]: BẮT BUỘC thông báo khách phí khôi phục IP cũ là 25.000đ/IP (nếu còn tài nguyên IP cũ) và YÊU CẦU KHÁCH NẠP ĐỦ SỐ DƯ TÀI KHOẢN CLOUDMINI = TỔNG (GIÁ CƯỚC PROXY + PHÍ KHÔI PHỤC 25.000đ/IP) để Admin tiến hành khôi phục thủ công."
-					} else {
-						items[i].StatusNote = "IP đã bị xóa." + classNote + " Thông báo dịch vụ đã bị xóa/hết hạn và chuyển Admin kiểm tra khả năng khôi phục."
-					}
 				}
 			}
 		}

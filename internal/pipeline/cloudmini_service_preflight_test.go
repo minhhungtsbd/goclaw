@@ -270,6 +270,42 @@ func TestCloudminiServicePreflightRequiresHandoffForVerifiedDeletedRecovery(t *t
 	}
 }
 
+func TestCloudminiServicePreflightAllowsDeletedRecoveryForDifferentFormerOwner(t *testing.T) {
+	state := NewRunState(&RunInput{RunID: "run-deleted-other-owner", Message: "Khôi phục 178.218.146.11 giúp em"}, nil, "", nil)
+	state.Messages.SetHistory([]providers.Message{{Role: "user", Content: "Email nhận khôi phục là customer@example.com"}})
+	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
+	stage := NewCloudminiServicePreflightStage(&PipelineDeps{
+		ExecuteToolCall: func(_ context.Context, _ *RunState, tc providers.ToolCall) ([]providers.Message, error) {
+			return []providers.Message{{Role: "tool", ToolCallID: tc.ID, Content: `{"services":[{"ip":"178.218.146.11","plan":"PrivateV4","expire":null,"service_status":"deleted","account_email_matches":false}]}`}}, nil
+		},
+	})
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	if !state.Cloudmini.HandoffRequired {
+		t.Fatal("deleted IP restore must allow a different destination account email")
+	}
+}
+
+func TestCloudminiServicePreflightStillRejectsActiveServiceEmailMismatch(t *testing.T) {
+	state := NewRunState(&RunInput{RunID: "run-active-other-owner", Message: "Khôi phục 178.218.146.11 giúp em"}, nil, "", nil)
+	state.Messages.SetHistory([]providers.Message{{Role: "user", Content: "Email của em là customer@example.com"}})
+	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
+	stage := NewCloudminiServicePreflightStage(&PipelineDeps{
+		ExecuteToolCall: func(_ context.Context, _ *RunState, tc providers.ToolCall) ([]providers.Message, error) {
+			return []providers.Message{{Role: "tool", ToolCallID: tc.ID, Content: `{"services":[{"ip":"178.218.146.11","plan":"PrivateV4","expire":"2099-09-01T00:00:00Z","service_status":"active","account_email_matches":false}]}`}}, nil
+		},
+	})
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	if state.Cloudmini.HandoffRequired {
+		t.Fatal("active service must still require an account email match")
+	}
+}
+
 func TestCloudminiServicePreflightChecksLiveAfterServiceIdentifiesProxy(t *testing.T) {
 	state := NewRunState(&RunInput{RunID: "run-live", Message: "94.103.56.231 lỗi ạ"}, nil, "", nil)
 	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}

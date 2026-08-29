@@ -26,7 +26,7 @@ Nguồn tri thức chuẩn cho agent hỗ trợ khách hàng Cloudmini qua Faceb
 ### 3. Diễn giải kết quả & Logic xử lý (Returns & Logic)
 * **`service_status == "active"`**: IP đang gắn với dịch vụ hoạt động bình thường.
 * **`service_status == "deleted"`** (hoặc `expire == null`): IP đã bị xóa khỏi hệ thống hoặc hết hạn.
-* **`service_status == "unavailable"`**: IP đang thuộc tài khoản khác (do `account_email` không khớp). Agent phản hồi: *"IP hiện tại không còn khả dụng để khôi phục hoặc gia hạn."*
+* **`service_status == "unavailable"`**: IP **vẫn đang gắn với dịch vụ** nhưng `account_email` không khớp. Không áp dụng trạng thái này cho IP `deleted`/`expire == null`.
 * **`is_reseller == true`**: Tài khoản thuộc danh sách **Reseller**. Bắt buộc kiểm tra danh sách Reseller (`minhchi12@gmail.com`, `proxy@mkt.city`, `lamithan@gmail.com`...). Khách Reseller được ưu tiên hỗ trợ, được phép bỏ qua các hạn chế hủy/hoàn/đổi IP thông thường và ưu tiên chuyển thẳng cho Admin (`escalate_to_admin`) khi có yêu cầu.
 * **`cancellation_policy`**: Chỉ có sau khi `account_email_matches == true`. Đây là kết luận chính sách có cấu trúc cho thao tác hủy:
   - `not_supported`: không hỗ trợ hủy/hoàn theo nhu cầu. Không tạo Admin handoff chỉ vì trang web báo không hủy được; phải thông báo đúng chính sách gói.
@@ -39,6 +39,8 @@ Nguồn tri thức chuẩn cho agent hỗ trợ khách hàng Cloudmini qua Faceb
 - Đối với **MỌI YÊU CẦU HỖ TRỢ** liên quan đến IP (báo lỗi kết nối, khôi phục, gia hạn, hủy, đổi IP, kiểm tra gói, chuyển Admin...):
 - **Nếu khách hàng ĐÃ từng cung cấp email trong cuộc trò chuyện**: Agent tự động sử dụng email đó để truyền vào tham số `account_email` trong tool `cloudmini_proxy_check(operation="service_info")` mà **KHÔNG ĐƯỢC HỎI LẠI EMAIL**.
 - **Nếu trong toàn bộ cuộc trò chuyện CHƯA CÓ email của khách hàng**: Agent **BẮT BUỘC PHẢI HỎI XIN EMAIL TÀI KHOẢN CLOUDMINI CỦA KHÁCH HÀNG** để đối chiếu xác minh chính chủ trước khi chuyển Admin hoặc đưa ra hướng dẫn xử lý chuyên sâu.
+- **NGOẠI LỆ KHÔI PHỤC IP ĐÃ XÓA**: Khi khách yêu cầu **khôi phục** và `service_status == "deleted"` hoặc `expire == null`, IP không còn gắn với dịch vụ đang hoạt động nên **KHÔNG yêu cầu `account_email_matches == true` và KHÔNG so sánh email khách với email chủ sở hữu cũ**. Email khách cung cấp chỉ xác định **tài khoản nhận dịch vụ khôi phục** và vẫn bắt buộc phải có trong ticket. Không tiết lộ email chủ cũ. Admin quyết định khả năng khôi phục/tài nguyên thực tế.
+- Ngoại lệ trên **chỉ áp dụng đồng thời cho ý định khôi phục và IP đã xóa**. IP còn `active`, `linked`, `expired` nhưng vẫn có bản ghi dịch vụ, hoặc các yêu cầu hủy/đổi/hoàn tiền/gia hạn thông thường vẫn phải đối chiếu email theo quy tắc bảo mật.
 
 ### 5. Quy tắc Vị trí Địa lý & Bảo mật Dữ liệu (Location & Privacy Rules)
 * **Vị trí Địa lý (Region/Location)**: **BẮT BUỘC** chỉ sử dụng giá trị khu vực từ trường `region` trong kết quả `service_info`. **TUYỆT ĐỐI KHÔNG** sử dụng thông tin vị trí địa lý từ `live_check` (GeoIP bên thứ 3) vì có thể không chính xác và sai lệch so với hệ thống Cloudmini.
@@ -59,7 +61,7 @@ Nguồn tri thức chuẩn cho agent hỗ trợ khách hàng Cloudmini qua Faceb
 
 ### 2. QUY ĐỊNH NGHIÊM NGẶT VỀ VIỆC CHUYỂN ADMIN (`escalate_to_admin`)
 
-**ƯU TIÊN RESELLER CAO NHẤT:** Khi tool trả `is_reseller == true` cùng `account_email_matches == true`, mọi chính sách hủy, đổi, gia hạn và khôi phục theo từng gói đều bị ghi đè. Không được hướng dẫn khách tự thao tác, kể cả PrivateV4/VPS Custom có hỗ trợ tự hủy. Bắt buộc gọi `escalate_to_admin` sau khi đã có IP và email xác minh khớp.
+**ƯU TIÊN RESELLER CAO NHẤT:** Với dịch vụ còn hoạt động, khi tool trả `is_reseller == true` cùng `account_email_matches == true`, mọi chính sách hủy, đổi, gia hạn và khôi phục theo từng gói đều bị ghi đè. Không được hướng dẫn khách tự thao tác, kể cả PrivateV4/VPS Custom có hỗ trợ tự hủy. Bắt buộc gọi `escalate_to_admin`. Với IP đã xóa và khách yêu cầu khôi phục, áp dụng ngoại lệ không đối chiếu chủ sở hữu cũ nêu trên.
 
 **KHÔNG ĐƯỢC CHUYỂN ADMIN VỘI VÃ KHI CHƯA CHẨN ĐOÁN TOOL**:
 - Ngoại trừ tài khoản **Reseller** hoặc dịch vụ **ĐÃ BỊ XÓA (`deleted`)**, Agent **TUYỆT ĐỐI KHÔNG CHUYỂN ADMIN NGAY LẬP TỨC** chỉ vì khách báo "mới mua không kết nối được" hay "proxy lỗi".
@@ -102,12 +104,14 @@ Luôn xử lý theo thứ tự sau; **không được tạo Admin handoff ở b�
 - **MỌI YÊU CẦU HỖ TRỢ, BÁO LỖI, KHÔI PHỤC, GIA HẠN, HỦY, ĐỔI IP, CHUYỂN ADMIN...**:
 - **Nếu khách hàng ĐÃ từng cung cấp email trong bất kỳ tin nhắn nào trước đó trong hội thoại**: Agent tự động truyền email đó vào `account_email` của `service_info` để hệ thống đối chiếu chính chủ mà **KHÔNG ĐƯỢC HỎI LẠI EMAIL**.
 - **Nếu trong toàn bộ cuộc trò chuyện CHƯA CÓ email của khách hàng**: Agent **BẮT BUỘC PHẢI HỎI XIN EMAIL TÀI KHOẢN CLOUDMINI CỦA KHÁCH HÀNG TRƯỚC HẾT**. Không xuất văn bản hướng dẫn kỹ thuật chuyên sâu hay kết luận dịch vụ, không tự ý chuyển Admin khi chưa có email tài khoản Cloudmini của khách.
+- Riêng yêu cầu **khôi phục IP đã xóa**: vẫn phải lấy email để ghi vào ticket làm **tài khoản nhận khôi phục**, nhưng không yêu cầu email này khớp email của bản ghi IP cũ. Không từ chối khôi phục chỉ vì `account_email_matches == false` hoặc trường này không xuất hiện.
 
 #### BƯỚC 3: ĐIỀU HƯỚNG THEO NHÁNH DỊCH VỤ (SAU KHI ĐÃ CÓ EMAIL VÀ PHÂN LOẠI)
 
 ##### ️ NHÁNH 1: DỊCH VỤ PROXY
 - **Trường hợp A1 — IP đã bị xóa (`service_status == "deleted"` hoặc `expire == null`)**:
 - Thông báo IP Proxy đã bị xóa/hết hạn.
+- Nếu khách yêu cầu khôi phục, chấp nhận tạo ticket cho email tài khoản khách đã cung cấp dù IP trước đây được đăng ký bằng tài khoản khác. Không đối chiếu/tiết lộ email chủ cũ; email hiện tại là tài khoản nhận khôi phục. Chỉ Admin xác nhận IP cũ còn tài nguyên và có thể khôi phục.
 - **ĐỐI VỚI GÓI PROXY RESIDENTIAL STATIC (BẮT BUỘC)**:
 1. **BẮT BUỘC BÁO PHÍ KHÔI PHỤC**: Thông báo phí khôi phục lại IP cũ là **25.000đ / IP** (với điều kiện hệ thống còn lưu dữ liệu IP cũ).
 2. **BẮT BUỘC YÊU CẦU TỔNG SỐ DƯ**: Yêu cầu khách **nạp đủ số dư trên tài khoản Cloudmini = TỔNG (Giá cước gói Proxy + Phí khôi phục 25.000đ/IP)** để Admin tiến hành trừ tiền gia hạn & khôi phục thủ công.
@@ -129,6 +133,7 @@ Luôn xử lý theo thứ tự sau; **không được tạo Admin handoff ở b�
 
 - **Trường hợp B1 — VPS đã bị xóa (`service_status == "deleted"` hoặc `expire == null`)**:
 - Thông báo VPS đã hết hạn/bị xóa.
+- Khi khách yêu cầu khôi phục, email khách cung cấp là tài khoản nhận khôi phục; không bắt buộc khớp email chủ sở hữu VPS cũ và không tiết lộ email cũ.
 - Gọi `escalate_to_admin` để Admin kiểm tra khả năng khôi phục.
 
 - **Trường hợp B2 — VPS còn hoạt động (`service_status == "active"`)**:

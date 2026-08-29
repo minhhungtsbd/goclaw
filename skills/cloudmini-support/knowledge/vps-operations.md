@@ -5,7 +5,7 @@
 - Khi khách cung cấp IP VPS, dùng `cloudmini_proxy_check` với `service_info` để xác định gói và hạn trước khi hỏi lại hoặc áp dụng chính sách.
 - Với Custom, Mini, Promo và YT còn hiệu lực: có thể hướng dẫn luồng đổi/hủy theo chính sách hoặc chuyển Admin cho yêu cầu nâng cấp cấu hình. Không tự hứa Admin duyệt nâng cấp hay có tài nguyên.
 - Với NN1-NN6: không đổi IP/VPS, không hủy/hoàn theo nhu cầu.
-- Nếu VPS hết hạn/đã xóa hoặc API không trả dữ liệu, không tự xác nhận khả năng khôi phục; chuyển Admin kèm IP, kết quả API và email nội bộ đã đối chiếu nếu có.
+- Nếu VPS hết hạn/đã xóa hoặc API không trả dữ liệu, không tự xác nhận khả năng khôi phục; chuyển Admin kèm IP, kết quả API và email tài khoản nhận khôi phục. Với VPS đã xóa, không yêu cầu email này khớp chủ sở hữu cũ.
 - Không đọc hoặc tiết lộ email API cho khách. Nếu khách đã gửi email, dùng kết quả `account_email_matches` để đối chiếu nội bộ.
 
 ## Mật khẩu
@@ -22,7 +22,7 @@ Mật khẩu VPS không gửi qua email. Khách lấy hoặc đặt lại mật 
 ## Gia hạn và khôi phục
 
 - VPS còn hạn trong tài khoản: khách tự gia hạn nếu đủ số dư.
-- VPS đã xóa: dùng IP tra `service_info` nếu có; tái sử dụng email khách đã gửi hoặc email API cho handoff nội bộ, chuyển Admin kiểm tra; không cam kết khôi phục.
+- VPS đã xóa: dùng IP tra `service_info` nếu có; tái sử dụng email khách đã gửi làm tài khoản nhận khôi phục, không đối chiếu với email chủ sở hữu cũ, rồi chuyển Admin kiểm tra; không cam kết khôi phục và không tiết lộ email cũ.
 
 ## Thời gian thay VPS hoặc IP VPS
 

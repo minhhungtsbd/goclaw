@@ -81,6 +81,22 @@ func TestCloudminiProxyCheckMarksNullExpiryAsDeleted(t *testing.T) {
 	}
 }
 
+func TestCloudminiProxyCheckDeletedRestoreIgnoresFormerOwnerEmail(t *testing.T) {
+	got, err := sanitizeCloudminiProxyResponse("service_info", "191.101.251.120", "new-owner@example.com", nil, []byte(`{"error":false,"msg":"Success","data":[{"ip":"191.101.251.120","expire":null,"plan":"PrivateV4","user_email":"former-owner@example.com"}]}`))
+	if err != nil {
+		t.Fatalf("sanitizeCloudminiProxyResponse: %v", err)
+	}
+	if strings.Contains(got, "former-owner@example.com") || strings.Contains(got, `"account_email_matches":false`) {
+		t.Fatalf("deleted service must not compare or expose former owner email: %s", got)
+	}
+	if strings.Contains(got, `"service_status":"unavailable"`) {
+		t.Fatalf("deleted IP must remain eligible for restore review: %s", got)
+	}
+	if !strings.Contains(got, "KHÔNG đối chiếu email chủ sở hữu cũ") || !strings.Contains(got, "tài khoản nhận khôi phục") {
+		t.Fatalf("deleted restore instruction missing: %s", got)
+	}
+}
+
 func TestCloudminiProxyCheckRedactsExpiryAndEmailWhenNoAccountEmail(t *testing.T) {
 	got, err := sanitizeCloudminiProxyResponse("service_info", "46.203.160.119", "", nil, []byte(`{"error":false,"msg":"Success","data":[{"id":1,"ip":"46.203.160.119","expire":"2099-08-17","plan":"Residential Static","user_email":"mtanh97@gmail.com"}]}`))
 	if err != nil {
