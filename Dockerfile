@@ -159,7 +159,14 @@ RUN set -eux; \
     done
 
 RUN chmod +x /app/docker-entrypoint.sh && \
-    chmod 755 /app/pkg-helper && chown root:root /app/pkg-helper
+    chmod 755 /app/pkg-helper && chown root:root /app/pkg-helper && \
+    chmod 0644 /app/runtime/gemini-web2api/config.json && \
+    if [ -f /app/runtime/gemini-web2api/gemini_web2api.py ]; then \
+        chmod 0644 /app/runtime/gemini-web2api/gemini_web2api.py; \
+    fi && \
+    if [ -f /app/runtime/gemini-web2api/LICENSE ]; then \
+        chmod 0644 /app/runtime/gemini-web2api/LICENSE; \
+    fi
 
 # Create data directories.
 # .runtime has split ownership: root owns the dir (so pkg-helper can write apk-packages),
