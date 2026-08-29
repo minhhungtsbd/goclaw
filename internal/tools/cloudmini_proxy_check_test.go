@@ -81,6 +81,19 @@ func TestCloudminiProxyCheckMarksNullExpiryAsDeleted(t *testing.T) {
 	}
 }
 
+func TestCloudminiProxyCheckNullExpiryOverridesActiveUpstreamStatus(t *testing.T) {
+	got, err := sanitizeCloudminiProxyResponse("service_info", "92.113.182.109", "", nil, []byte(`{"error":false,"msg":"Success","data":[{"id":1,"ip":"92.113.182.109","expire":null,"plan":"Residential Static","service_status":"active","user_email":"former-owner@example.com"}]}`))
+	if err != nil {
+		t.Fatalf("sanitizeCloudminiProxyResponse: %v", err)
+	}
+	if !strings.Contains(got, `"service_status":"deleted"`) {
+		t.Fatalf("null expiry must override upstream active status: %s", got)
+	}
+	if strings.Contains(got, `"service_status":"active"`) {
+		t.Fatalf("stale active status must not survive null expiry: %s", got)
+	}
+}
+
 func TestCloudminiProxyCheckDeletedRestoreIgnoresFormerOwnerEmail(t *testing.T) {
 	got, err := sanitizeCloudminiProxyResponse("service_info", "191.101.251.120", "new-owner@example.com", nil, []byte(`{"error":false,"msg":"Success","data":[{"ip":"191.101.251.120","expire":null,"plan":"PrivateV4","user_email":"former-owner@example.com"}]}`))
 	if err != nil {
