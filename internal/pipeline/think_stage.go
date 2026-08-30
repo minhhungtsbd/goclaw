@@ -6,12 +6,16 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/pkg/protocol"
 )
 
-const maxTruncRetries = 3
+const (
+	maxTruncRetries            = 3
+	responseSafetyRetryTimeout = 90 * time.Second
+)
 
 // ThinkStage runs per iteration. Calls LLM, handles truncation retries,
 // accumulates usage, returns BreakLoop when response has no tool calls.
@@ -145,21 +149,21 @@ func (s *ThinkStage) Execute(ctx context.Context, state *RunState) error {
 		mentionedTicket = adminHandoffMentionedTicket(resp.Content)
 	}
 	requiresStatusCheck := len(resp.ToolCalls) == 0 && adminHandoffStatusNeedsCheck(state, resp.Content)
-	verifiedTicket, hasVerifiedTicket := adminHandoffVerifiedStatus(state, mentionedTicket)
-	requiresHandoff := state.Cloudmini.HandoffRequired && state.Tool.AdminHandoffTicket == "" &&
-		!requiresStatusCheck && !(hasVerifiedTicket && verifiedTicket.Status == "pending")
 	unsupportedClaim := len(resp.ToolCalls) == 0 && unsupportedAdminHandoffClaim(resp.Content, state)
 	cloudminiGuardViolation := len(resp.ToolCalls) == 0 && cloudminiResponseViolatesGuard(state, resp.Content)
 	adminHandoffReplyViolation := len(resp.ToolCalls) == 0 && adminHandoffResponseViolatesGuard(state, resp.Content)
-	if len(resp.ToolCalls) == 0 && (requiresStatusCheck || requiresHandoff || unsupportedClaim || cloudminiGuardViolation || adminHandoffReplyViolation) {
+	if len(resp.ToolCalls) == 0 && (requiresStatusCheck || unsupportedClaim || cloudminiGuardViolation || adminHandoffReplyViolation) {
 		state.Think.HandoffClaimRetries++
 		retryReq := req
+		var retryResp *providers.ChatResponse
+		var retryErr error
+		canRetry := true
 		if requiresStatusCheck {
 			retryReq.Tools = onlyToolDefinition(req.Tools, "admin_handoff_status")
-			retryReq.Options = cloneRequestOptions(req.Options)
-			retryReq.Options[providers.OptToolChoice] = "required"
-		} else if requiresHandoff {
-			retryReq.Tools = onlyToolDefinition(req.Tools, "escalate_to_admin")
+			if len(retryReq.Tools) == 0 {
+				canRetry = false
+				retryErr = fmt.Errorf("required safety tool admin_handoff_status is unavailable")
+			}
 			retryReq.Options = cloneRequestOptions(req.Options)
 			retryReq.Options[providers.OptToolChoice] = "required"
 		}
@@ -168,7 +172,11 @@ func (s *ThinkStage) Execute(ctx context.Context, state *RunState) error {
 			Content: "[CLOUDMINI RESPONSE SAFETY CHECK] " + cloudminiResponseGuardInstruction(state) + "\n\n" +
 				adminHandoffTruthInstruction(state, mentionedTicket),
 		})
-		retryResp, retryErr := s.deps.CallLLM(ctx, state, retryReq)
+		if canRetry {
+			retryCtx, cancel := context.WithTimeout(ctx, responseSafetyRetryTimeout)
+			retryResp, retryErr = s.deps.CallLLM(retryCtx, state, retryReq)
+			cancel()
+		}
 		if retryErr == nil && retryResp != nil {
 			if retryResp.Usage != nil {
 				AddUsage(&state.Think.TotalUsage, *retryResp.Usage)
@@ -179,7 +187,7 @@ func (s *ThinkStage) Execute(ctx context.Context, state *RunState) error {
 			resp = retryResp
 		}
 		if retryErr != nil || resp == nil || len(resp.ToolCalls) == 0 &&
-			(requiresStatusCheck || requiresHandoff || unsupportedAdminHandoffClaim(resp.Content, state) || cloudminiResponseViolatesGuard(state, resp.Content) || adminHandoffResponseViolatesGuard(state, resp.Content)) {
+			(requiresStatusCheck || unsupportedAdminHandoffClaim(resp.Content, state) || cloudminiResponseViolatesGuard(state, resp.Content) || adminHandoffResponseViolatesGuard(state, resp.Content)) {
 			fallback := adminHandoffStatusFallback(state, mentionedTicket)
 			if mentionedTicket == "" && (cloudminiGuardViolation || adminHandoffReplyViolation || (resp != nil && cloudminiResponseViolatesGuard(state, resp.Content)) || (resp != nil && adminHandoffResponseViolatesGuard(state, resp.Content))) {
 				fallback = cloudminiSafeGuardResponse(state)
@@ -259,7 +267,7 @@ func (s *ThinkStage) Execute(ctx context.Context, state *RunState) error {
 	}
 	state.Messages.AppendPending(assistantMsg)
 
-	s.emitToolIterationBlockReply(ctx, resp)
+	s.emitToolIterationBlockReply(state, resp)
 
 	return nil
 }
@@ -355,13 +363,19 @@ func isEmptyLengthResponse(resp *providers.ChatResponse) bool {
 		len(resp.Images) == 0
 }
 
-func (s *ThinkStage) emitToolIterationBlockReply(_ context.Context, resp *providers.ChatResponse) {
+func (s *ThinkStage) emitToolIterationBlockReply(state *RunState, resp *providers.ChatResponse) {
 	content := resp.Content
 	source := protocol.BlockReplySourceLLMProgress
 	if len(resp.ToolCalls) > 0 {
 		source = protocol.BlockReplySourceToolAnnouncement
 	}
 	if strings.TrimSpace(content) == "" {
+		return
+	}
+	// Tool-iteration text is delivered immediately on non-streaming channels.
+	// Never expose a ticket or claim an Admin handoff before the handoff tool has
+	// completed; FinalizeStage owns the single, truthful customer confirmation.
+	if responseCallsTool(resp, "escalate_to_admin") || adminHandoffTicketPattern.MatchString(content) || unsupportedAdminHandoffClaim(content, state) {
 		return
 	}
 	if s.deps.EmitBlockReplyWithSource != nil {
@@ -371,6 +385,18 @@ func (s *ThinkStage) emitToolIterationBlockReply(_ context.Context, resp *provid
 	if s.deps.EmitBlockReply != nil {
 		s.deps.EmitBlockReply(content)
 	}
+}
+
+func responseCallsTool(resp *providers.ChatResponse, name string) bool {
+	if resp == nil {
+		return false
+	}
+	for _, call := range resp.ToolCalls {
+		if call.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // maybeInjectNudge injects iteration budget warnings at 70% and 90%.

@@ -87,13 +87,12 @@ type AdminHandoffStatusFact struct {
 // CloudminiState is scoped to one pipeline run. It keeps deterministic service
 // facts out of shared agent state so concurrent customer sessions cannot leak.
 type CloudminiState struct {
-	RequestIPs      []string
-	ScopeAmbiguous  bool
-	OutageCIDRs     []string
-	HandoffRequired bool
-	EmailRequired   bool
-	EmailMismatch   bool
-	ServiceFacts    []CloudminiServiceFact
+	RequestIPs     []string
+	ScopeAmbiguous bool
+	OutageCIDRs    []string
+	EmailRequired  bool
+	EmailMismatch  bool
+	ServiceFacts   []CloudminiServiceFact
 }
 
 type CloudminiServiceFact struct {

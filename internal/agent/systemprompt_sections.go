@@ -252,8 +252,9 @@ func buildSkillsHybridSection(pinnedSummary string, hasSearch, hasManage bool) [
 			"Pinned skills (always available — scan these first):",
 			pinnedSummary,
 			"",
-			"Pinned skills shown as `<skill_instructions name=\"...\">` already contain their full SKILL.md content inline — use it directly, no `use_skill`/`read_file` round trip needed. "+
+			"Pinned skills shown as `<skill_instructions name=\"...\" location=\"...\">` already contain their full SKILL.md content inline — use it directly, no `use_skill`/`read_file` round trip needed. "+
 				"Pinned skills shown as `<skill>` (pointer only, too large to inline) still need `use_skill` then `read_file` with the exact `<location>`.",
+			"When an inline skill references a relative file, resolve it against the directory containing that skill's `location` and pass the resulting absolute path to `read_file`; never resolve skill resources against the workspace.",
 			"",
 		)
 	}

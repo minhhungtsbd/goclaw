@@ -172,7 +172,6 @@ func refreshCloudminiDeterministicState(state *RunState, accountEmail string) {
 			break
 		}
 	}
-	state.Cloudmini.HandoffRequired = requiresDeterministicCloudminiHandoff(state)
 }
 
 func cloudminiToolStringArg(arguments map[string]any, key string) string {
@@ -392,47 +391,6 @@ func captureCloudminiServiceFacts(state *RunState, messages []providers.Message)
 		}
 	}
 	return captured
-}
-
-func requiresDeterministicCloudminiHandoff(state *RunState) bool {
-	if state.Cloudmini.ScopeAmbiguous || len(state.Cloudmini.ServiceFacts) == 0 {
-		return false
-	}
-	lower := strings.ToLower(cloudminiSupportIntentText(state))
-	restore := containsAny(lower, "khôi phục", "khoi phuc", "phục hồi", "phuc hoi")
-	customerEmailKnown := latestCloudminiCustomerEmailForState(state) != ""
-	allVerified := true
-	anyDeleted := false
-	allCancellationEligible := true
-	allVPS := true
-	for _, fact := range state.Cloudmini.ServiceFacts {
-		// A deleted IP is no longer attached to any active service. For a restore
-		// request, the supplied customer email identifies the destination account;
-		// it is not required to match the former service owner.
-		identityEligible := fact.AccountEmailMatches ||
-			(restore && fact.Status == "deleted" && customerEmailKnown)
-		allVerified = allVerified && identityEligible
-		anyDeleted = anyDeleted || fact.Status == "deleted"
-		allCancellationEligible = allCancellationEligible &&
-			fact.CancellationPolicy != "" && fact.CancellationPolicy != "not_supported"
-		allVPS = allVPS && (fact.PlanFamily == "vps" || strings.Contains(strings.ToLower(fact.Plan), "vps"))
-	}
-	if !allVerified {
-		return false
-	}
-	if restore && anyDeleted {
-		return true
-	}
-	cancelFailed := containsAny(lower, "hủy", "huỷ", "huy") &&
-		containsAny(lower, "lỗi", "loi", "không được", "khong duoc", "không thể", "khong the", "thất bại", "that bai")
-	if cancelFailed && allCancellationEligible {
-		return true
-	}
-	if containsAny(lower, "nâng cấp", "nang cap") && allVPS {
-		return true
-	}
-	replaceOrRefund := containsAny(lower, "thay thế", "thay the", "đổi ip", "doi ip", "hoàn tiền", "hoan tien")
-	return replaceOrRefund && len(state.Cloudmini.OutageCIDRs) > 0
 }
 
 func isCloudminiServiceRequest(state *RunState) bool {

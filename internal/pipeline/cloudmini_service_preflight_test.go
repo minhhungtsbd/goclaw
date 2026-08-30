@@ -251,7 +251,7 @@ func TestCloudminiServicePreflightResolvesExplicitContinuationCount(t *testing.T
 	}
 }
 
-func TestCloudminiServicePreflightRequiresHandoffForVerifiedDeletedRecovery(t *testing.T) {
+func TestCloudminiServicePreflightCapturesVerifiedDeletedRecoveryFacts(t *testing.T) {
 	state := NewRunState(&RunInput{RunID: "run-recovery", Message: "Khôi phục 178.218.146.11 giúp em"}, nil, "", nil)
 	state.Messages.SetHistory([]providers.Message{{Role: "user", Content: "Email tài khoản Cloudmini của em là customer@example.com"}})
 	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
@@ -262,9 +262,6 @@ func TestCloudminiServicePreflightRequiresHandoffForVerifiedDeletedRecovery(t *t
 	})
 	if err := stage.Execute(context.Background(), state); err != nil {
 		t.Fatalf("preflight: %v", err)
-	}
-	if !state.Cloudmini.HandoffRequired {
-		t.Fatal("verified recovery for expire=null service must require Admin handoff")
 	}
 	if len(state.Cloudmini.ServiceFacts) != 1 || state.Cloudmini.ServiceFacts[0].Status != "deleted" {
 		t.Fatalf("service facts = %#v", state.Cloudmini.ServiceFacts)
@@ -282,7 +279,7 @@ func TestCloudminiServicePreflightRequiresEmailBeforeRecoveryDecision(t *testing
 	if err := stage.Execute(context.Background(), state); err != nil {
 		t.Fatalf("preflight: %v", err)
 	}
-	if !state.Cloudmini.EmailRequired || state.Cloudmini.HandoffRequired {
+	if !state.Cloudmini.EmailRequired {
 		t.Fatalf("email gate state = %#v", state.Cloudmini)
 	}
 	if !strings.Contains(state.Messages.System().Content, "Chỉ yêu cầu email tài khoản") {
@@ -309,9 +306,6 @@ func TestCloudminiServicePreflightRechecksPreviousIPAfterEmailReply(t *testing.T
 	}
 	if len(calls) != 1 || calls[0].Arguments["ip"] != "178.218.146.11" || calls[0].Arguments["account_email"] != "customer@example.com" {
 		t.Fatalf("calls = %#v", calls)
-	}
-	if state.Cloudmini.HandoffRequired {
-		t.Fatal("active service email mismatch must not create handoff")
 	}
 	if !strings.Contains(state.Messages.System().Content, "Không nói IP thuộc tài khoản khác") {
 		t.Fatalf("mismatch guard missing: email_mismatch=%v system=%q", state.Cloudmini.EmailMismatch, state.Messages.System().Content)
@@ -345,7 +339,7 @@ func TestAdminHandoffResponseGuardRequiresOneTicketReply(t *testing.T) {
 	}
 }
 
-func TestCloudminiServicePreflightAllowsDeletedRecoveryForDifferentFormerOwner(t *testing.T) {
+func TestCloudminiServicePreflightTreatsDeletedRecoveryEmailAsDestination(t *testing.T) {
 	state := NewRunState(&RunInput{RunID: "run-deleted-other-owner", Message: "Khôi phục 178.218.146.11 giúp em"}, nil, "", nil)
 	state.Messages.SetHistory([]providers.Message{{Role: "user", Content: "Email nhận khôi phục là customer@example.com"}})
 	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
@@ -358,8 +352,8 @@ func TestCloudminiServicePreflightAllowsDeletedRecoveryForDifferentFormerOwner(t
 	if err := stage.Execute(context.Background(), state); err != nil {
 		t.Fatalf("preflight: %v", err)
 	}
-	if !state.Cloudmini.HandoffRequired {
-		t.Fatal("deleted IP restore must allow a different destination account email")
+	if state.Cloudmini.EmailMismatch {
+		t.Fatal("deleted IP restore email is a destination account, not a former-owner match")
 	}
 }
 
@@ -376,7 +370,7 @@ func TestCloudminiServicePreflightStillRejectsActiveServiceEmailMismatch(t *test
 	if err := stage.Execute(context.Background(), state); err != nil {
 		t.Fatalf("preflight: %v", err)
 	}
-	if state.Cloudmini.HandoffRequired {
+	if !state.Cloudmini.EmailMismatch {
 		t.Fatal("active service must still require an account email match")
 	}
 }
@@ -415,7 +409,7 @@ func TestCloudminiServicePreflightDoesNotForceCancellationHandoffWhenUnsupported
 	if err := stage.Execute(context.Background(), state); err != nil {
 		t.Fatalf("preflight: %v", err)
 	}
-	if state.Cloudmini.HandoffRequired {
-		t.Fatal("not_supported cancellation must be answered from policy without forced handoff")
+	if len(state.Cloudmini.ServiceFacts) != 1 || state.Cloudmini.ServiceFacts[0].CancellationPolicy != "not_supported" {
+		t.Fatalf("cancellation policy facts = %#v", state.Cloudmini.ServiceFacts)
 	}
 }

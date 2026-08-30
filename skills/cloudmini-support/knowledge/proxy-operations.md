@@ -27,7 +27,7 @@ Khi khách yêu cầu khôi phục hoặc gia hạn lại Proxy hết hạn đã
    - **Trường hợp 1 — IP KHÔNG có liên kết dịch vụ active nào (`service_status == "deleted"` hoặc không gắn dịch vụ)**:
      - Không đối chiếu email khách với email chủ sở hữu cũ. IP đã tách khỏi dịch vụ active nên email khách cung cấp là tài khoản nhận khôi phục, kể cả IP trước đây do tài khoản khác đăng ký.
      - Không tiết lộ email chủ cũ. Thông báo Admin cần kiểm tra IP cũ còn tài nguyên và khả năng khôi phục thực tế.
-     - Gọi `escalate_to_admin` để tạo case chuyển Admin xử lý.
+     - Đọc chính sách đúng gói ở bên dưới và hoàn tất mọi điều kiện tiên quyết trước khi gọi `escalate_to_admin`. Không tự động tạo ticket chỉ vì trạng thái là `deleted`.
      - Chỉ xác nhận đã chuyển case sau khi `escalate_to_admin` thành công; áp dụng mốc thời gian ở mục **Thời gian thay IP Proxy**, không hứa hoàn tất sớm hơn.
    - **Trường hợp 2 — IP ĐANG gắn với 1 dịch vụ đang hoạt động (`service_status == "active"`)**:
      - **Định danh & Đối chiếu email nội bộ**: So sánh email dịch vụ `user_email` (từ kết quả tool) với email tài khoản khách hàng đã cung cấp:
@@ -39,7 +39,7 @@ Khi khách yêu cầu khôi phục hoặc gia hạn lại Proxy hết hạn đã
 - Phí khôi phục: **25.000đ/proxy**.
 - Chỉ Proxy bị xóa trong vòng **3 ngày trở lại** mới có thể yêu cầu khôi phục.
 - Hướng dẫn khách nạp đủ số dư vào tài khoản Cloudmini để Admin tiến hành khôi phục.
-- Sau khi khách cung cấp email, danh sách IP và đã nạp đủ số dư, chuyển Admin kiểm tra và xử lý.
+- Chỉ sau khi khách cung cấp email, danh sách IP và **xác nhận đã nạp đủ số dư**, mới gọi `escalate_to_admin` để chuyển Admin kiểm tra và xử lý.
 - Khi chuyển Admin xong, chỉ xác nhận case đã được tiếp nhận; áp dụng mốc thời gian ở mục **Thời gian thay IP Proxy** và không hứa hoàn tất sớm hơn.
 
 ### Proxy khác

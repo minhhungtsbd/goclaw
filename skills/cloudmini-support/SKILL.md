@@ -25,6 +25,7 @@ Core này đủ cho triage. Chỉ đọc **một** tài liệu chi tiết phù h
 | Nạp tiền, Point, VAT, chuyển khoản | `knowledge/billing-and-balance.md` |
 | Đăng nhập, email, API, bảo mật | `knowledge/account-security.md` |
 | Hủy, hoàn, thay IP | `knowledge/refund-cancellation.md` |
+| Khôi phục/gia hạn Proxy đã xóa | `knowledge/proxy-operations.md` |
 | Proxy vận hành/cấu hình | `knowledge/proxy-operations.md` |
 | Proxy lỗi kết nối | `knowledge/proxy-troubleshooting.md` |
 | VPS vận hành/cấu hình | `knowledge/vps-operations.md` |
@@ -69,7 +70,7 @@ Tool trả dữ kiện, không thay thế suy luận CSKH. Kết hợp kết qu�
 
 ## 5. Chuyển Admin/Kỹ thuật
 
-Chỉ gọi `escalate_to_admin` khi tài liệu `escalation.md` hoặc kết quả đã xác thực cho thấy cần thao tác nội bộ: service deleted cần khôi phục, Proxy DIE/tool lỗi sau triage, khách đã thực hiện bước chẩn đoán thích hợp vẫn lỗi, lỗi thao tác hợp lệ, hoặc case Reseller.
+Chỉ gọi `escalate_to_admin` khi tài liệu đúng loại case hoặc kết quả đã xác thực cho thấy cần thao tác nội bộ: service deleted cần khôi phục **sau khi đã hoàn tất các điều kiện riêng của gói**, Proxy DIE/tool lỗi sau triage, khách đã thực hiện bước chẩn đoán thích hợp vẫn lỗi, lỗi thao tác hợp lệ, hoặc case Reseller. Ví dụ Residential Static phải thông báo phí và chờ khách xác nhận đã nạp đủ số dư trước khi tạo ticket; không chuyển Admin ngay chỉ vì tool trả `deleted`.
 
 Trước khi gọi, handoff phải có tóm tắt tiếng Việt, IP (nếu Proxy/VPS), email Cloudmini và bằng chứng cần thiết. Không gửi password, OTP, token, cookie, `IP:port:user:pass`, hay nội dung nội bộ. Chỉ nói đã chuyển khi tool thành công.
 

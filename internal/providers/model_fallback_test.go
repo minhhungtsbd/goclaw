@@ -303,6 +303,31 @@ func TestModelFallbackProviderSkipsCandidateWithoutRequiredCapability(t *testing
 	}
 }
 
+func TestModelFallbackProviderPreservesVisionRequirementAcrossAllCandidates(t *testing.T) {
+	noVision := ProviderCapabilities{Streaming: true, ToolCalling: true, StreamWithTools: true, Vision: false}
+	primary := &testFallbackProvider{name: "primary", model: "primary-model", caps: &noVision}
+	backup := &testFallbackProvider{name: "backup", model: "backup-model", caps: &noVision}
+	provider := NewModelFallbackProvider(FallbackCandidate{
+		ProviderName: "primary", Provider: primary, Model: "primary-model",
+	}, []FallbackCandidate{
+		{ProviderName: "backup", Provider: backup, Model: "backup-model"},
+	}, 0, false)
+
+	_, err := provider.Chat(context.Background(), ChatRequest{Messages: []Message{{
+		Role: "user", Content: "Đọc ảnh này", Images: []ImageContent{{MimeType: "image/png", Data: "abc=="}},
+	}}})
+	if err == nil {
+		t.Fatal("Chat() error = nil, want explicit failure when every candidate lacks vision")
+	}
+	var summary *FailoverSummaryError
+	if !errors.As(err, &summary) {
+		t.Fatalf("Chat() error = %T, want FailoverSummaryError", err)
+	}
+	if primary.calls != 0 || backup.calls != 0 {
+		t.Fatalf("incompatible candidates reached transport: primary=%d backup=%d", primary.calls, backup.calls)
+	}
+}
+
 func TestModelFallbackProviderRejectsMissingRequiredToolCall(t *testing.T) {
 	primary := &testFallbackProvider{
 		name: "primary", model: "primary-model",

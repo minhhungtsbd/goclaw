@@ -193,40 +193,79 @@ func TestThinkStageForcesStatusCheckBeforeHistoricalTicketClaim(t *testing.T) {
 	}
 }
 
-func TestThinkStageForcesHandoffToolForDeterministicManualCase(t *testing.T) {
+func TestThinkStageDoesNotForceHandoffFromCloudminiFacts(t *testing.T) {
 	var calls int
-	handoffTool := providers.ToolDefinition{Function: &providers.ToolFunctionSchema{Name: "escalate_to_admin"}}
-	otherTool := providers.ToolDefinition{Function: &providers.ToolFunctionSchema{Name: "cloudmini_proxy_check"}}
 	deps := &PipelineDeps{
 		Config: PipelineConfig{MaxIterations: 10, MaxTokens: 1000},
-		BuildFilteredTools: func(_ *RunState) ([]providers.ToolDefinition, error) {
-			return []providers.ToolDefinition{otherTool, handoffTool}, nil
-		},
-		CallLLM: func(_ context.Context, _ *RunState, req providers.ChatRequest) (*providers.ChatResponse, error) {
+		CallLLM: func(_ context.Context, _ *RunState, _ providers.ChatRequest) (*providers.ChatResponse, error) {
 			calls++
-			if calls == 1 {
-				return &providers.ChatResponse{Content: "Em sẽ kiểm tra thêm.", FinishReason: "stop"}, nil
-			}
-			if req.Options[providers.OptToolChoice] != "required" {
-				t.Fatalf("tool_choice = %#v, want required", req.Options[providers.OptToolChoice])
-			}
-			if len(req.Tools) != 1 || req.Tools[0].Function == nil || req.Tools[0].Function.Name != "escalate_to_admin" {
-				t.Fatalf("retry tools = %#v", req.Tools)
-			}
-			return &providers.ChatResponse{
-				FinishReason: "tool_calls",
-				ToolCalls:    []providers.ToolCall{{ID: "handoff-1", Name: "escalate_to_admin", Arguments: map[string]any{"summary": "Khôi phục proxy"}}},
-			}, nil
+			return &providers.ChatResponse{Content: "Anh vui lòng nạp đủ số dư rồi nhắn lại để em chuyển xử lý ạ.", FinishReason: "stop"}, nil
 		},
 	}
 	stage := NewThinkStage(deps)
 	state := defaultState()
-	state.Cloudmini.HandoffRequired = true
+	state.Input.Message = "Khôi phục 23.92.146.245"
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{{IP: "23.92.146.245", Plan: "Residential Static", Status: "deleted"}}
 	if err := stage.Execute(context.Background(), state); err != nil {
 		t.Fatalf("Execute() error: %v", err)
 	}
-	if calls != 2 || stage.Result() != Continue || len(state.Think.LastResponse.ToolCalls) != 1 {
+	if calls != 1 || stage.Result() != BreakLoop || state.Think.LastResponse == nil {
 		t.Fatalf("calls=%d result=%v response=%#v", calls, stage.Result(), state.Think.LastResponse)
+	}
+}
+
+func TestThinkStageStatusCheckFailsClosedWhenToolUnavailable(t *testing.T) {
+	var calls int
+	deps := &PipelineDeps{
+		Config: PipelineConfig{MaxIterations: 10, MaxTokens: 1000},
+		BuildFilteredTools: func(_ *RunState) ([]providers.ToolDefinition, error) {
+			return []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: "cloudmini_proxy_check"}}}, nil
+		},
+		CallLLM: func(_ context.Context, _ *RunState, _ providers.ChatRequest) (*providers.ChatResponse, error) {
+			calls++
+			return &providers.ChatResponse{Content: "Mã Ticket-000282 vẫn đang chờ xử lý.", FinishReason: "stop"}, nil
+		},
+	}
+	stage := NewThinkStage(deps)
+	state := defaultState()
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("LLM calls = %d, want 1 when required status tool is unavailable", calls)
+	}
+	if got := state.Think.LastResponse.Content; !strings.Contains(got, "chưa thể xác minh trạng thái") {
+		t.Fatalf("fallback content = %q", got)
+	}
+}
+
+func TestThinkStageSafetyRetryHasDeadline(t *testing.T) {
+	var calls int
+	deps := &PipelineDeps{
+		Config: PipelineConfig{MaxIterations: 10, MaxTokens: 1000},
+		CallLLM: func(ctx context.Context, _ *RunState, _ providers.ChatRequest) (*providers.ChatResponse, error) {
+			calls++
+			if calls == 1 {
+				return &providers.ChatResponse{Content: "Em đã chuyển Kỹ thuật. Mã tiếp nhận CMH-INVALID.", FinishReason: "stop"}, nil
+			}
+			deadline, ok := ctx.Deadline()
+			if !ok {
+				t.Fatal("safety retry context has no deadline")
+			}
+			remaining := time.Until(deadline)
+			if remaining <= 0 || remaining > responseSafetyRetryTimeout {
+				t.Fatalf("safety retry deadline remaining = %v", remaining)
+			}
+			return nil, context.DeadlineExceeded
+		},
+	}
+	stage := NewThinkStage(deps)
+	state := defaultState()
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if calls != 2 || strings.Contains(state.Think.LastResponse.Content, "CMH-") {
+		t.Fatalf("calls=%d response=%#v", calls, state.Think.LastResponse)
 	}
 }
 
@@ -356,6 +395,54 @@ func TestThinkStage_GeneratedToolCallContent_PreservesNaturalProgress(t *testing
 	}
 	if gotSource != protocol.BlockReplySourceToolAnnouncement {
 		t.Fatalf("block reply source = %q, want %q", gotSource, protocol.BlockReplySourceToolAnnouncement)
+	}
+}
+
+func TestThinkStage_ToolCallContentSuppressesUnverifiedHandoffClaim(t *testing.T) {
+	t.Parallel()
+	var gotContent string
+	deps := &PipelineDeps{
+		Config: PipelineConfig{MaxIterations: 10, MaxTokens: 1000},
+		CallLLM: func(_ context.Context, _ *RunState, _ providers.ChatRequest) (*providers.ChatResponse, error) {
+			return &providers.ChatResponse{
+				Content:      "Dạ em đã chuyển yêu cầu đến Admin, mã Ticket-999999 ạ.",
+				FinishReason: "tool_calls",
+				ToolCalls: []providers.ToolCall{{
+					ID: "handoff-1", Name: "escalate_to_admin", Arguments: map[string]any{"summary": "Khôi phục Proxy"},
+				}},
+			}, nil
+		},
+		EmitBlockReplyWithSource: func(content, _ string) { gotContent = content },
+	}
+	stage := NewThinkStage(deps)
+	if err := stage.Execute(context.Background(), defaultState()); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if gotContent != "" {
+		t.Fatalf("unsafe handoff announcement was emitted: %q", gotContent)
+	}
+}
+
+func TestThinkStage_ToolCallContentSuppressesHandoffClaimWithoutTicket(t *testing.T) {
+	t.Parallel()
+	var emitted bool
+	deps := &PipelineDeps{
+		Config: PipelineConfig{MaxIterations: 10, MaxTokens: 1000},
+		CallLLM: func(_ context.Context, _ *RunState, _ providers.ChatRequest) (*providers.ChatResponse, error) {
+			return &providers.ChatResponse{
+				Content:      "Dạ em sẽ chuyển Kỹ thuật kiểm tra ngay ạ.",
+				FinishReason: "tool_calls",
+				ToolCalls:    []providers.ToolCall{{ID: "handoff-1", Name: "escalate_to_admin"}},
+			}, nil
+		},
+		EmitBlockReplyWithSource: func(string, string) { emitted = true },
+	}
+	stage := NewThinkStage(deps)
+	if err := stage.Execute(context.Background(), defaultState()); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if emitted {
+		t.Fatal("handoff claim without a real ticket was emitted as a block reply")
 	}
 }
 
@@ -3547,7 +3634,7 @@ func TestToolStage_Sequential_DefersNonToolMessages(t *testing.T) {
 		t.Fatalf("pending len = %d, want 4", len(pending))
 	}
 	// First 3 must be tool role
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if pending[i].Role != "tool" {
 			t.Errorf("pending[%d].Role = %q, want tool", i, pending[i].Role)
 		}
@@ -3600,7 +3687,7 @@ func TestToolStage_Parallel_DefersNonToolMessages(t *testing.T) {
 	if len(pending) != 4 {
 		t.Fatalf("pending len = %d, want 4", len(pending))
 	}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if pending[i].Role != "tool" {
 			t.Errorf("pending[%d].Role = %q, want tool", i, pending[i].Role)
 		}

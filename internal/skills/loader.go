@@ -471,7 +471,9 @@ const skillInlineTotalMaxBytes = skillInlineMaxBytes * 3
 
 // BuildPinnedSummary generates an XML summary for only the pinned skill
 // names, with each skill's full SKILL.md content (frontmatter stripped)
-// inlined directly via <skill_instructions>. Skills whose content exceeds
+// inlined directly via <skill_instructions location="...">. The location lets
+// models resolve referenced resource files against the skill directory instead
+// of the active workspace. Skills whose content exceeds
 // skillInlineMaxBytes, or that would push the combined total over
 // skillInlineTotalMaxBytes, fall back to a pointer-only <skill> entry
 // (name/description/location) so the agent can use_skill+read_file instead.
@@ -509,7 +511,7 @@ func (l *Loader) BuildPinnedSummary(ctx context.Context, pinnedNames []string) s
 		content = strings.TrimSpace(content)
 		fits := ok && len(content) <= skillInlineMaxBytes && totalInlined+len(content) <= skillInlineTotalMaxBytes
 		if fits {
-			lines = append(lines, fmt.Sprintf("  <skill_instructions name=%q>", s.Name))
+			lines = append(lines, fmt.Sprintf("  <skill_instructions name=\"%s\" location=\"%s\">", escapeXML(s.Name), escapeXML(s.Path)))
 			lines = append(lines, content)
 			lines = append(lines, "  </skill_instructions>")
 			totalInlined += len(content)

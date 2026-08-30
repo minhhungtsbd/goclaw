@@ -41,6 +41,20 @@ func TestRecordAdminHandoffResultKeepsPendingReplyAcrossMergedRetry(t *testing.T
 	}
 }
 
+func TestRecordAdminHandoffResultMergedTicketDoesNotCreateSecondConfirmation(t *testing.T) {
+	state := NewRunState(&RunInput{}, nil, "", nil)
+	call := providers.ToolCall{Name: "escalate_to_admin"}
+	recordAdminHandoffResult(state, call, []providers.Message{{
+		Role: "tool", Content: `{"status":"merged","ticket_id":"Ticket-000244"}`,
+	}})
+	if state.Tool.AdminHandoffTicket != "Ticket-000244" {
+		t.Fatalf("ticket = %q", state.Tool.AdminHandoffTicket)
+	}
+	if state.Tool.AdminHandoffCustomerReplyRequired {
+		t.Fatal("merged ticket unexpectedly requested a second automatic customer confirmation")
+	}
+}
+
 func TestAdminHandoffTruthInstructionUsesExistingTicket(t *testing.T) {
 	state := NewRunState(&RunInput{}, nil, "", nil)
 	state.Tool.AdminHandoffTicket = "Ticket-000245"

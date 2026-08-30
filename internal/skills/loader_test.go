@@ -779,7 +779,8 @@ func TestLoader_BuildPinnedSummary_InlinesFullContent(t *testing.T) {
 	if !strings.Contains(summary, "THIS IS THE FULL BODY CONTENT that must appear inline.") {
 		t.Fatalf("expected full body content inlined, got: %s", summary)
 	}
-	if !strings.Contains(summary, `<skill_instructions name="My Skill">`) {
+	skillPath := filepath.Join(ws, "skills", "my-skill", "SKILL.md")
+	if !strings.Contains(summary, `<skill_instructions name="My Skill" location="`+skillPath+`">`) {
 		t.Fatalf("expected <skill_instructions> wrapper, got: %s", summary)
 	}
 	if strings.Contains(summary, "<note>") {

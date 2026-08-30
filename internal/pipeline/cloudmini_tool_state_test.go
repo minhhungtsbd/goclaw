@@ -28,7 +28,7 @@ func TestToolStageCapturesCloudminiStateAfterLLMServiceInfo(t *testing.T) {
 	if len(state.Cloudmini.ServiceFacts) != 1 || state.Cloudmini.ServiceFacts[0].Status != "deleted" {
 		t.Fatalf("ServiceFacts = %#v", state.Cloudmini.ServiceFacts)
 	}
-	if state.Cloudmini.EmailRequired || state.Cloudmini.EmailMismatch || !state.Cloudmini.HandoffRequired {
+	if state.Cloudmini.EmailRequired || state.Cloudmini.EmailMismatch {
 		t.Fatalf("Cloudmini guards = %#v", state.Cloudmini)
 	}
 }
@@ -46,7 +46,7 @@ func TestToolStageCapturesEmailGateAfterLLMServiceInfo(t *testing.T) {
 	if err := stage.Execute(context.Background(), state); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if !state.Cloudmini.EmailRequired || state.Cloudmini.HandoffRequired {
+	if !state.Cloudmini.EmailRequired {
 		t.Fatalf("Cloudmini guards = %#v", state.Cloudmini)
 	}
 	if !strings.Contains(state.Messages.System().Content, "CLOUDMINI EMAIL GATE") {
