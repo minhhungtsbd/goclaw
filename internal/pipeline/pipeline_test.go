@@ -143,6 +143,34 @@ func TestNewDefaultPipeline_PrunesBeforeThink(t *testing.T) {
 	}
 }
 
+func TestNewDefaultPipelineDoesNotAutomaticallyCallCloudminiTool(t *testing.T) {
+	var toolCalls int
+	deps := PipelineDeps{
+		Config: PipelineConfig{MaxIterations: 1, ContextWindow: 8_000, MaxTokens: 512},
+		BuildMessages: func(_ context.Context, input *RunInput, _ []providers.Message, _ string) ([]providers.Message, error) {
+			return []providers.Message{{Role: "system", Content: "Cloudmini support"}, {Role: "user", Content: input.Message}}, nil
+		},
+		BuildFilteredTools: func(_ *RunState) ([]providers.ToolDefinition, error) {
+			return []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}, nil
+		},
+		ExecuteToolCall: func(context.Context, *RunState, providers.ToolCall) ([]providers.Message, error) {
+			toolCalls++
+			return nil, nil
+		},
+		CallLLM: func(context.Context, *RunState, providers.ChatRequest) (*providers.ChatResponse, error) {
+			return &providers.ChatResponse{Content: "Em cần email Cloudmini để kiểm tra đúng dịch vụ ạ.", FinishReason: "stop"}, nil
+		},
+	}
+	state := buildMinimalRunState()
+	state.Input.Message = "Proxy 191.101.251.120 bị lỗi"
+	if _, err := NewDefaultPipeline(deps).Run(context.Background(), state); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if toolCalls != 0 {
+		t.Fatalf("automatic Cloudmini calls = %d, want 0; the LLM must decide from the pinned skill", toolCalls)
+	}
+}
+
 func TestPipeline_FinalizeRunsOnce(t *testing.T) {
 	t.Parallel()
 	finalize := newMockStageNoResult("finalize")

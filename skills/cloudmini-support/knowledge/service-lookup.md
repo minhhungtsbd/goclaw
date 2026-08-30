@@ -12,32 +12,35 @@ Kết quả có thể cho biết:
 - IP, gói (`plan`) và hạn (`expire`);
 - nhóm gói chuẩn hóa (`plan_family`) để phân biệt chính xác `residential_static` với `budget_residential_static`;
 - khu vực/nhà mạng (`region`, ví dụ: `"region": "Việt Nam - Viettel"`);
-- email tài khoản Cloudmini (`user_email`) để đối chiếu và handoff nội bộ.
+- kết quả xác minh email qua `account_email_matches`; tool không trả email hệ thống cho LLM.
 
 Quy tắc:
-1. Nếu khách đã cung cấp email, truyền qua `account_email`. Chỉ dùng `account_email_matches` làm điều kiện sở hữu khi IP còn gắn với dịch vụ; không dùng trường này để chặn yêu cầu khôi phục IP `deleted`/`expire: null`.
+1. Nếu khách đã cung cấp email, truyền qua `account_email`. Chỉ dùng `account_email_matches` để xác minh khi IP còn gắn với dịch vụ; với IP `deleted`/`expire: null`, email khách cung cấp là tài khoản nhận khôi phục và tool không đối chiếu với chủ cũ.
 2. Không hỏi lại loại Proxy/VPS hoặc gói khi API đã xác định được.
 3. Khi API trả về trường `region` (ví dụ: `"region": "Việt Nam - Viettel"`), hãy sử dụng thông tin này để tư vấn khách hàng hoặc xác nhận vị trí địa lý/nhà mạng của gói dịch vụ mà không cần hỏi lại khách hàng.
-4. Không hiển thị, đọc lại hoặc xác nhận email API với khách; email chỉ dùng nội bộ hoặc trong `escalate_to_admin`.
+4. Không hiển thị, đọc lại hoặc suy đoán email hệ thống. Khi cần handoff, chỉ dùng email do khách đã cung cấp trong hội thoại.
 5. Dùng `plan` cùng các file chính sách để xác định điều kiện đổi/hủy/nâng cấp. Không tự suy ra chính sách ngoài tài liệu.
 6. Phân biệt trạng thái: `active` là còn hạn; `expired` là hết hạn nhưng bản ghi còn tồn tại; `deleted`/`expire: null` là đã xóa khỏi dịch vụ; `unknown` là không đọc được hạn. Không gộp `expired` và `deleted` thành một trạng thái.
 7. Với `expired`, không gọi `live_check`; hướng dẫn khách kiểm tra khả năng tự gia hạn. Với `deleted`, áp dụng luồng khôi phục và không khẳng định có thể khôi phục nếu chưa có Admin xác nhận.
 8. Nếu API không có dữ liệu hoặc lỗi, không kết luận IP không thuộc Cloudmini. Xin bằng chứng không nhạy cảm hoặc chuyển Admin khi cần thao tác thủ công.
+9. Nếu API trả `service_status: "email_required"`, chỉ xin email tài khoản Cloudmini. Không nêu plan, region, expire, trạng thái, quyền sở hữu, phí hoặc khả năng khôi phục/gia hạn trước khi có email.
+10. Nếu API trả `service_status: "not_verified"`, đây là kết quả không xác minh được theo email đã cung cấp, không phải bằng chứng để nói IP thuộc tài khoản khác. Không tiết lộ hoặc suy đoán nguyên nhân; không gọi `live_check`. Với yêu cầu khôi phục/gia hạn, chỉ trả lời ngắn gọn rằng hiện chưa thể hỗ trợ.
 
 ## live_check
 
-Dùng sau `service_info` cho case Proxy không kết nối, Check Live lỗi hoặc cần kiểm tra vị trí GeoIP.
+Chỉ dùng sau `service_info` khi khách báo Proxy không kết nối và kết quả vừa xác minh đúng email, dịch vụ Proxy đang `active`. Không dùng cho VPS, `expired`, `deleted`, `not_verified`, câu hỏi chính sách hoặc yêu cầu xác định vị trí.
 
-- Kết quả trả về vị trí IP để đối chiếu kỹ thuật.
+- Kết quả chỉ cho biết Proxy đang LIVE hay DIE tại thời điểm kiểm tra.
+- Không dùng `live_check` hoặc GeoIP để kết luận location; vị trí/nhà mạng chỉ lấy từ `region` của `service_info`.
 - Không kết luận lỗi do khách, ứng dụng, nền tảng bên thứ ba hoặc Cloudmini chỉ từ một lần kiểm tra.
-- Khi `live_check` lỗi hoặc kết quả không giải thích được lỗi thực tế, chuyển Admin/Kỹ thuật với IP, gói/hạn từ `service_info`, phần mềm đang dùng và ảnh/nội dung lỗi.
+- Khi kết quả LIVE, đọc `proxy-troubleshooting.md` và hướng dẫn bước phù hợp trước khi chuyển xử lý. Khi DIE, tool lỗi hoặc khách đã thử các bước phù hợp nhưng vẫn lỗi, đọc `escalation.md` rồi chuyển Admin/Kỹ thuật nếu đủ dữ kiện.
 
 ## Handoff
 
 Khi yêu cầu cần Admin/Kỹ thuật, đưa vào `escalate_to_admin`:
 - yêu cầu của khách;
 - IP, gói, hạn và region API trả về;
-- email tài khoản từ API hoặc email khách đã cung cấp, chỉ trong nội dung nội bộ;
+- email Cloudmini do khách đã cung cấp, chỉ trong nội dung nội bộ;
 - kết quả `live_check` nếu có;
 - lỗi, ảnh và các bước đã thử.
 

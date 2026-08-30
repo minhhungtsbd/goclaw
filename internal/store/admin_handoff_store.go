@@ -68,6 +68,10 @@ type AdminHandoffStore interface {
 	// preserves one customer case while appending later related requests.
 	CreateOrMerge(context.Context, *AdminHandoff) (*AdminHandoff, error)
 	Get(context.Context, uuid.UUID) (*AdminHandoff, error)
+	// GetByTicketNumberForSource resolves a public ticket only within the
+	// current tenant, agent, channel, and customer chat. This prevents an
+	// agent from probing or disclosing another customer's handoff.
+	GetByTicketNumberForSource(context.Context, int64, uuid.UUID, string, string) (*AdminHandoff, error)
 	ListPending(context.Context, uuid.UUID, string, string, int) ([]AdminHandoff, error)
 	MarkCompleted(context.Context, uuid.UUID, string) (*AdminHandoff, error)
 	MarkDismissed(context.Context, uuid.UUID) (*AdminHandoff, error)

@@ -69,6 +69,19 @@ type ToolState struct {
 	Deliverables       []string      // tool output content for team task results
 	LoopKilled         bool          // set when loop detector triggers critical
 	AdminHandoffTicket string        // non-empty only after escalate_to_admin created or merged a ticket
+	// AdminHandoffStatuses contains historical tickets verified by the read-only
+	// status tool during this run. Keys are lower-case public ticket IDs.
+	AdminHandoffStatuses map[string]AdminHandoffStatusFact
+	// True when a newly-created handoff still needs one final customer response
+	// containing the ticket ID. The handoff tool itself does not send that response.
+	AdminHandoffCustomerReplyRequired bool
+}
+
+type AdminHandoffStatusFact struct {
+	TicketID   string
+	Status     string
+	Service    string
+	RelatedIPs []string
 }
 
 // CloudminiState is scoped to one pipeline run. It keeps deterministic service
@@ -78,12 +91,15 @@ type CloudminiState struct {
 	ScopeAmbiguous  bool
 	OutageCIDRs     []string
 	HandoffRequired bool
+	EmailRequired   bool
+	EmailMismatch   bool
 	ServiceFacts    []CloudminiServiceFact
 }
 
 type CloudminiServiceFact struct {
 	IP                  string
 	Plan                string
+	PlanFamily          string
 	Status              string
 	AccountEmailMatches bool
 	CancellationPolicy  string

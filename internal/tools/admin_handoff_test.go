@@ -3,8 +3,10 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -12,8 +14,14 @@ import (
 )
 
 type testAdminHandoffStore struct {
-	created     *store.AdminHandoff
-	mergeResult *store.AdminHandoff
+	created       *store.AdminHandoff
+	mergeResult   *store.AdminHandoff
+	lookupResult  *store.AdminHandoff
+	lookupErr     error
+	lookupTicket  int64
+	lookupAgent   uuid.UUID
+	lookupChannel string
+	lookupChatID  string
 }
 
 func (s *testAdminHandoffStore) Create(_ context.Context, handoff *store.AdminHandoff) error {
@@ -34,16 +42,15 @@ func (s *testAdminHandoffStore) CreateOrMerge(_ context.Context, handoff *store.
 	return handoff, nil
 }
 
-func TestAdminHandoffToolPreservesCustomerRoutingMetadata(t *testing.T) {
+func TestAdminHandoffToolDefersCustomerReplyToPipeline(t *testing.T) {
 	handoffStore := &testAdminHandoffStore{}
 	tool := NewAdminHandoffTool(handoffStore)
-	tool.SetChannelSender(func(context.Context, string, string, string) error { return nil })
-	var gotMetadata map[string]string
-	tool.SetChannelMetadataSender(func(_ context.Context, channel, chatID, content string, metadata map[string]string) error {
-		if channel != "facebook" || chatID != "customer-1" || !strings.Contains(content, "Ticket-123456") {
-			t.Fatalf("unexpected customer confirmation: %s/%s %q", channel, chatID, content)
+	var sent []string
+	tool.SetChannelSender(func(_ context.Context, channel, chatID, content string) error {
+		if channel != "telegram" || chatID != "-5570031702" {
+			t.Fatalf("unexpected handoff destination: %s/%s", channel, chatID)
 		}
-		gotMetadata = metadata
+		sent = append(sent, content)
 		return nil
 	})
 	ctx := store.WithTenantID(context.Background(), store.MasterTenantID)
@@ -63,8 +70,11 @@ func TestAdminHandoffToolPreservesCustomerRoutingMetadata(t *testing.T) {
 	if result.IsError || !result.Silent {
 		t.Fatalf("result = %#v", result)
 	}
-	if gotMetadata["fb_mode"] != "messenger" {
-		t.Fatalf("routing metadata = %#v", gotMetadata)
+	if len(sent) != 1 || !strings.Contains(sent[0], "Ticket-123456") {
+		t.Fatalf("handoff messages = %#v", sent)
+	}
+	if !strings.Contains(result.ForLLM, `"customer_notification":"deferred"`) {
+		t.Fatalf("customer reply was not deferred: %s", result.ForLLM)
 	}
 }
 
@@ -96,6 +106,11 @@ func TestAdminHandoffToolDoesNotResendMergedCase(t *testing.T) {
 func (*testAdminHandoffStore) Get(context.Context, uuid.UUID) (*store.AdminHandoff, error) {
 	return nil, nil
 }
+func (s *testAdminHandoffStore) GetByTicketNumberForSource(_ context.Context, ticket int64, agentID uuid.UUID, channel, chatID string) (*store.AdminHandoff, error) {
+	s.lookupTicket, s.lookupAgent = ticket, agentID
+	s.lookupChannel, s.lookupChatID = channel, chatID
+	return s.lookupResult, s.lookupErr
+}
 func (*testAdminHandoffStore) ListPending(context.Context, uuid.UUID, string, string, int) ([]store.AdminHandoff, error) {
 	return nil, nil
 }
@@ -106,6 +121,56 @@ func (*testAdminHandoffStore) MarkDismissed(context.Context, uuid.UUID) (*store.
 	return nil, nil
 }
 func (*testAdminHandoffStore) MarkDeliveryFailed(context.Context, uuid.UUID) error { return nil }
+
+func TestAdminHandoffStatusToolScopesAndSanitizesResult(t *testing.T) {
+	agentID := uuid.New()
+	closedAt := time.Date(2026, 8, 30, 5, 1, 42, 0, time.UTC)
+	handoffStore := &testAdminHandoffStore{lookupResult: &store.AdminHandoff{
+		TicketNumber: 282, AgentID: agentID, SourceChannel: "facebook", SourceChatID: "customer-1",
+		Status: "dismissed", Service: "Proxy PrivateV4", Identifiers: []string{"103.239.67.131", "secret@example.com"},
+		Summary: "Khách cần kiểm tra 103.239.67.131; token abc", CreatedAt: closedAt.Add(-time.Hour), CompletedAt: &closedAt,
+	}}
+	tool := NewAdminHandoffStatusTool(handoffStore)
+	ctx := store.WithTenantID(context.Background(), store.MasterTenantID)
+	ctx = store.WithAgentAudio(ctx, store.AgentAudioSnapshot{AgentID: agentID})
+	ctx = WithToolChannel(ctx, "facebook")
+	ctx = WithToolChatID(ctx, "customer-1")
+
+	result := tool.Execute(ctx, map[string]any{"ticket_id": "Ticket-000282"})
+	if result.IsError || !result.Silent {
+		t.Fatalf("result = %#v", result)
+	}
+	if handoffStore.lookupTicket != 282 || handoffStore.lookupAgent != agentID || handoffStore.lookupChannel != "facebook" || handoffStore.lookupChatID != "customer-1" {
+		t.Fatalf("lookup scope = ticket=%d agent=%s route=%s/%s", handoffStore.lookupTicket, handoffStore.lookupAgent, handoffStore.lookupChannel, handoffStore.lookupChatID)
+	}
+	if !strings.Contains(result.ForLLM, `"status":"dismissed"`) || !strings.Contains(result.ForLLM, "103.239.67.131") || !strings.Contains(result.ForLLM, "đã đóng") {
+		t.Fatalf("status payload = %s", result.ForLLM)
+	}
+	if strings.Contains(result.ForLLM, "secret@example.com") || strings.Contains(result.ForLLM, "token abc") {
+		t.Fatalf("status payload leaked internal details: %s", result.ForLLM)
+	}
+}
+
+func TestAdminHandoffStatusToolDoesNotRevealOutOfScopeTicket(t *testing.T) {
+	handoffStore := &testAdminHandoffStore{lookupErr: errors.New("not found")}
+	tool := NewAdminHandoffStatusTool(handoffStore)
+	ctx := store.WithTenantID(context.Background(), store.MasterTenantID)
+	ctx = store.WithAgentAudio(ctx, store.AgentAudioSnapshot{AgentID: uuid.New()})
+	ctx = WithToolChannel(ctx, "facebook")
+	ctx = WithToolChatID(ctx, "customer-1")
+	result := tool.Execute(ctx, map[string]any{"ticket_id": "Ticket-000282"})
+	if result.IsError || !result.Silent || !strings.Contains(result.ForLLM, `"status":"unavailable"`) || strings.Contains(result.ForLLM, "tenant") {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestAdminHandoffStatusToolRejectsMalformedTicket(t *testing.T) {
+	tool := NewAdminHandoffStatusTool(&testAdminHandoffStore{})
+	result := tool.Execute(context.Background(), map[string]any{"ticket_id": "282"})
+	if !result.IsError || !strings.Contains(result.ForLLM, "Ticket-000000") {
+		t.Fatalf("result = %#v", result)
+	}
+}
 
 func TestParseAdminHandoffConfig(t *testing.T) {
 	cfg, ok := ParseAdminHandoffConfig(json.RawMessage(`{"admin_handoff":{"enabled":true,"channel":" telegram ","chat_id":" -5570031702 ","admin_user_ids":["1602998514"," 1602998514 ",""]}}`))
@@ -163,8 +228,8 @@ func TestAdminHandoffToolSendsOnlyConfiguredDestination(t *testing.T) {
 	if result.IsError {
 		t.Fatalf("Execute() error = %s", result.ForLLM)
 	}
-	if len(sent) != 2 {
-		t.Fatalf("sent messages = %d, want 2", len(sent))
+	if len(sent) != 1 {
+		t.Fatalf("sent messages = %d, want only the Admin handoff", len(sent))
 	}
 	if sent[0].channel != "telegram" || sent[0].chatID != "-5570031702" {
 		t.Fatalf("admin handoff sent to %s/%s, want configured destination", sent[0].channel, sent[0].chatID)
@@ -172,8 +237,8 @@ func TestAdminHandoffToolSendsOnlyConfiguredDestination(t *testing.T) {
 	if !strings.Contains(sent[0].content, "#449329") || !strings.Contains(sent[0].content, "Mã ticket: Ticket-123456") || !strings.Contains(sent[0].content, "Ưu tiên: Cao") || strings.Contains(sent[0].content, "facebook / customer-1") {
 		t.Fatalf("handoff content missing expected context: %s", sent[0].content)
 	}
-	if sent[1].channel != "facebook" || sent[1].chatID != "customer-1" || !strings.Contains(sent[1].content, "Ticket-123456") {
-		t.Fatalf("customer confirmation = %#v", sent[1])
+	if !strings.Contains(result.ForLLM, `"customer_notification":"deferred"`) || !strings.Contains(result.ForLLM, "Ticket-123456") {
+		t.Fatalf("deferred customer response = %s", result.ForLLM)
 	}
 	if handoffStore.created == nil || handoffStore.created.SourceMetadata["fb_mode"] != "messenger" {
 		t.Fatalf("source metadata = %#v", handoffStore.created)
@@ -193,6 +258,8 @@ func TestValidateAdminHandoffDetails(t *testing.T) {
 		{name: "proxy requires IP", service: "Proxy PrivateV4", summary: "Khách báo lỗi", identifiers: []string{"customer@example.com"}, wantErr: true},
 		{name: "proxy requires email", service: "Proxy PrivateV4", summary: "Khách báo lỗi IP 191.101.251.120", identifiers: []string{"191.101.251.120"}, wantErr: true},
 		{name: "proxy with required details", service: "Proxy PrivateV4", summary: "Khách báo lỗi", identifiers: []string{"191.101.251.120", "customer@example.com"}},
+		{name: "rejects proxy credentials", service: "Proxy PrivateV4", summary: "Khách báo lỗi", identifiers: []string{"191.101.251.120:8080:username:password", "customer@example.com"}, wantErr: true},
+		{name: "rejects token", service: "Proxy PrivateV4", summary: "Khách gửi api token abc", identifiers: []string{"191.101.251.120", "customer@example.com"}, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

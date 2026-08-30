@@ -87,10 +87,20 @@ func (s *ToolStage) Execute(ctx context.Context, state *RunState) error {
 
 		msgs, err := s.deps.ExecuteToolCall(ctx, state, tc)
 		if err != nil {
+			// A successful Admin handoff must always reach the customer even if a
+			// later tool in the same model turn fails. FinalizeStage will synthesize
+			// the pending ticket confirmation.
+			if adminHandoffCustomerReplyPending(state) {
+				appendDeferredMessages(state, deferredNonTool)
+				s.result = BreakLoop
+				return nil
+			}
 			return fmt.Errorf("execute tool %s: %w", tc.Name, err)
 		}
 		appendToolBatchMessages(state, msgs, &deferredNonTool)
 		recordAdminHandoffResult(state, tc, msgs)
+		recordAdminHandoffStatusResult(state, tc, msgs)
+		recordCloudminiProxyCheckResult(state, tc, msgs)
 		state.Tool.TotalToolCalls++
 
 		// Hook: async PostToolUse — fire and forget with detached context.
@@ -162,6 +172,7 @@ func (s *ToolStage) preflightToolCalls(ctx context.Context, state *RunState, too
 }
 
 func (s *ToolStage) preflightToolCall(ctx context.Context, state *RunState, tc providers.ToolCall) (providers.ToolCall, *providers.Message) {
+	prepareCloudminiToolState(state, tc)
 	if ok, reason := validateCloudminiCurrentRequestToolCall(state, tc); !ok {
 		return tc, &providers.Message{
 			Role:       "tool",
@@ -332,6 +343,8 @@ func (s *ToolStage) executeParallel(ctx context.Context, state *RunState, prefli
 		processed := s.deps.ProcessToolResult(ctx, state, tc, r.msg, r.rawData)
 		appendToolBatchMessages(state, processed, &deferredNonTool)
 		recordAdminHandoffResult(state, tc, processed)
+		recordAdminHandoffStatusResult(state, tc, processed)
+		recordCloudminiProxyCheckResult(state, tc, processed)
 		state.Tool.TotalToolCalls++
 
 		// Hook: async PostToolUse for parallel path — fire and forget.

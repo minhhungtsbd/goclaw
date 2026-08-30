@@ -67,6 +67,17 @@ func (s *ThinkStage) Execute(ctx context.Context, state *RunState) error {
 	}
 	resp, err := s.deps.CallLLM(ctx, state, req)
 	if err != nil {
+		// The Admin handoff already succeeded, so a provider error/cancellation
+		// must not turn the customer-visible result into an empty response. Finish
+		// locally with the real ticket and let Observe/Finalize persist it.
+		if adminHandoffCustomerReplyPending(state) {
+			state.Think.LastResponse = &providers.ChatResponse{
+				Content:      adminHandoffCustomerConfirmation(state.Tool.AdminHandoffTicket),
+				FinishReason: "stop",
+			}
+			s.result = BreakLoop
+			return nil
+		}
 		// Central hard-ceiling guard rejected the concrete request AFTER the
 		// callback appended its final directive/retry/reasoning mutations (which
 		// prepareFinalRequest could not see). Re-enter the full reduction chain
@@ -119,26 +130,43 @@ func (s *ThinkStage) Execute(ctx context.Context, state *RunState) error {
 			state.Think.LastUsage = *resp.Usage
 		}
 	}
+	if adminHandoffCustomerReplyPending(state) && len(resp.ToolCalls) == 0 && strings.TrimSpace(resp.Content) == "" {
+		resp = &providers.ChatResponse{
+			Content:      adminHandoffCustomerConfirmation(state.Tool.AdminHandoffTicket),
+			FinishReason: "stop",
+		}
+	}
 
-	// A model must never claim that an Admin handoff happened unless this run
-	// actually created or merged a ticket. Retry once with an explicit truth
-	// constraint; if the retry still invents a handoff, return a safe statement.
-	requiresHandoff := state.Cloudmini.HandoffRequired && state.Tool.AdminHandoffTicket == ""
-	unsupportedClaim := len(resp.ToolCalls) == 0 && unsupportedAdminHandoffClaim(resp.Content, state.Tool.AdminHandoffTicket)
-	if len(resp.ToolCalls) == 0 && (requiresHandoff || unsupportedClaim) {
+	// A model may cite a historical ticket only after the read-only status tool
+	// verifies it for this exact customer route. A pending historical ticket also
+	// blocks creation of a duplicate handoff.
+	mentionedTicket := adminHandoffTicketNeedingCheck(state, resp.Content)
+	if mentionedTicket == "" {
+		mentionedTicket = adminHandoffMentionedTicket(resp.Content)
+	}
+	requiresStatusCheck := len(resp.ToolCalls) == 0 && adminHandoffStatusNeedsCheck(state, resp.Content)
+	verifiedTicket, hasVerifiedTicket := adminHandoffVerifiedStatus(state, mentionedTicket)
+	requiresHandoff := state.Cloudmini.HandoffRequired && state.Tool.AdminHandoffTicket == "" &&
+		!requiresStatusCheck && !(hasVerifiedTicket && verifiedTicket.Status == "pending")
+	unsupportedClaim := len(resp.ToolCalls) == 0 && unsupportedAdminHandoffClaim(resp.Content, state)
+	cloudminiGuardViolation := len(resp.ToolCalls) == 0 && cloudminiResponseViolatesGuard(state, resp.Content)
+	adminHandoffReplyViolation := len(resp.ToolCalls) == 0 && adminHandoffResponseViolatesGuard(state, resp.Content)
+	if len(resp.ToolCalls) == 0 && (requiresStatusCheck || requiresHandoff || unsupportedClaim || cloudminiGuardViolation || adminHandoffReplyViolation) {
 		state.Think.HandoffClaimRetries++
 		retryReq := req
-		if requiresHandoff {
+		if requiresStatusCheck {
+			retryReq.Tools = onlyToolDefinition(req.Tools, "admin_handoff_status")
+			retryReq.Options = cloneRequestOptions(req.Options)
+			retryReq.Options[providers.OptToolChoice] = "required"
+		} else if requiresHandoff {
 			retryReq.Tools = onlyToolDefinition(req.Tools, "escalate_to_admin")
 			retryReq.Options = cloneRequestOptions(req.Options)
 			retryReq.Options[providers.OptToolChoice] = "required"
 		}
 		retryReq.Messages = append(append([]providers.Message(nil), req.Messages...), providers.Message{
 			Role: "system",
-			Content: "[ADMIN HANDOFF TRUTH CHECK] No Admin handoff ticket has been created in this run. " +
-				"Do not say that a request was sent/transferred and do not invent CMH/Ticket codes. " +
-				"Review the current AGENTS.md operational notice and the Cloudmini tool result. " +
-				"If Admin action is genuinely required, call `escalate_to_admin`; otherwise answer the customer directly without claiming a handoff.",
+			Content: "[CLOUDMINI RESPONSE SAFETY CHECK] " + cloudminiResponseGuardInstruction(state) + "\n\n" +
+				adminHandoffTruthInstruction(state, mentionedTicket),
 		})
 		retryResp, retryErr := s.deps.CallLLM(ctx, state, retryReq)
 		if retryErr == nil && retryResp != nil {
@@ -151,9 +179,13 @@ func (s *ThinkStage) Execute(ctx context.Context, state *RunState) error {
 			resp = retryResp
 		}
 		if retryErr != nil || resp == nil || len(resp.ToolCalls) == 0 &&
-			(requiresHandoff || unsupportedAdminHandoffClaim(resp.Content, state.Tool.AdminHandoffTicket)) {
+			(requiresStatusCheck || requiresHandoff || unsupportedAdminHandoffClaim(resp.Content, state) || cloudminiResponseViolatesGuard(state, resp.Content) || adminHandoffResponseViolatesGuard(state, resp.Content)) {
+			fallback := adminHandoffStatusFallback(state, mentionedTicket)
+			if mentionedTicket == "" && (cloudminiGuardViolation || adminHandoffReplyViolation || (resp != nil && cloudminiResponseViolatesGuard(state, resp.Content)) || (resp != nil && adminHandoffResponseViolatesGuard(state, resp.Content))) {
+				fallback = cloudminiSafeGuardResponse(state)
+			}
 			resp = &providers.ChatResponse{
-				Content:      "Em đã ghi nhận thông tin nhưng hệ thống chưa tạo được ticket Admin, nên em chưa thể xác nhận yêu cầu đã được chuyển xử lý ạ.",
+				Content:      fallback,
 				FinishReason: "stop",
 			}
 		}

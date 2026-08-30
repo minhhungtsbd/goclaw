@@ -44,10 +44,9 @@ func ParseAdminHandoffConfig(raw json.RawMessage) (AdminHandoffConfig, bool) {
 // AdminHandoffTool sends an auditable, bounded support case to the configured
 // internal admin group. It intentionally has no channel or target arguments.
 type AdminHandoffTool struct {
-	sender          ChannelSender
-	metadataSender  ChannelMetadataSender
-	tenantChecker   ChannelTenantChecker
-	store           store.AdminHandoffStore
+	sender        ChannelSender
+	tenantChecker ChannelTenantChecker
+	store         store.AdminHandoffStore
 }
 
 func NewAdminHandoffTool(handoffStore store.AdminHandoffStore) *AdminHandoffTool {
@@ -55,9 +54,6 @@ func NewAdminHandoffTool(handoffStore store.AdminHandoffStore) *AdminHandoffTool
 }
 
 func (t *AdminHandoffTool) SetChannelSender(sender ChannelSender) { t.sender = sender }
-func (t *AdminHandoffTool) SetChannelMetadataSender(sender ChannelMetadataSender) {
-	t.metadataSender = sender
-}
 func (t *AdminHandoffTool) SetChannelTenantChecker(checker ChannelTenantChecker) {
 	t.tenantChecker = checker
 }
@@ -65,7 +61,7 @@ func (t *AdminHandoffTool) SetChannelTenantChecker(checker ChannelTenantChecker)
 func (t *AdminHandoffTool) Name() string { return "escalate_to_admin" }
 
 func (t *AdminHandoffTool) Description() string {
-	return "Tạo và gửi yêu cầu xử lý nội bộ đến nhóm Admin đã cấu hình cho agent. Chỉ dùng khi cần Admin hoặc Kỹ thuật thao tác thủ công. Luôn có email tài khoản trong identifiers; nếu liên quan Proxy hoặc VPS thì phải có cả IP và email. Summary và identifiers phải viết ngắn gọn bằng tiếng Việt có dấu; không ghi mật khẩu, token, cookie, OTP hoặc API key. Tool tự gửi mã Ticket cho khách chỉ sau khi tạo và gửi handoff thành công."
+	return "Tạo và gửi yêu cầu xử lý nội bộ đến nhóm Admin đã cấu hình cho agent. Chỉ dùng khi cần Admin hoặc Kỹ thuật thao tác thủ công. Luôn có email tài khoản trong identifiers; nếu liên quan Proxy hoặc VPS thì phải có cả IP và email. Summary và identifiers phải viết ngắn gọn bằng tiếng Việt có dấu; không ghi mật khẩu, token, cookie, OTP hoặc API key. Tool chỉ gửi handoff đến nhóm Admin; sau khi tool thành công, hãy gộp mã Ticket và xác nhận ngắn gọn vào một response duy nhất gửi khách, không gọi tool hoặc gửi xác nhận riêng lần nữa."
 }
 
 func (t *AdminHandoffTool) Parameters() map[string]any {
@@ -177,27 +173,22 @@ func (t *AdminHandoffTool) Execute(ctx context.Context, args map[string]any) *Re
 		}
 		return ErrorResult(fmt.Sprintf("admin handoff delivery failed: %v", err))
 	}
-	confirmation := fmt.Sprintf("Dạ, em đã ghi nhận và chuyển yêu cầu đến bộ phận Admin/Kỹ thuật. Mã theo dõi của anh là %s. Bên em sẽ cập nhật lại anh khi có kết quả ạ.", handoff.Reference())
-	if err := t.sendCustomerConfirmation(ctx, handoff, confirmation); err != nil {
-		return SilentResult(fmt.Sprintf(`{"status":"sent","destination":"admin_handoff","ticket_id":%q,"customer_notified":false,"instruction":"The Admin handoff succeeded but the automatic customer notification failed. Do not retry escalate_to_admin. Send one concise Vietnamese confirmation with the ticket ID to the customer now."}`, handoff.Reference()))
-	}
-	return SilentResult(fmt.Sprintf(`{"status":"sent","destination":"admin_handoff","ticket_id":%q,"customer_notified":true,"instruction":"Ticket has already been sent to the customer. Do not send another acknowledgement."}`, handoff.Reference()))
-}
-
-func (t *AdminHandoffTool) sendCustomerConfirmation(ctx context.Context, handoff *store.AdminHandoff, content string) error {
-	if t.metadataSender != nil {
-		return t.metadataSender(ctx, handoff.SourceChannel, handoff.SourceChatID, content, handoff.SourceMetadata)
-	}
-	return t.sender(ctx, handoff.SourceChannel, handoff.SourceChatID, content)
+	return SilentResult(fmt.Sprintf(`{"status":"sent","destination":"admin_handoff","ticket_id":%q,"customer_notification":"deferred","instruction":"Handoff đã gửi thành công. Không gửi xác nhận riêng trong tool. Response cuối phải gộp một tin nhắn tiếng Việt ngắn gọn cho khách và bao gồm mã Ticket này."}`, handoff.Reference()))
 }
 
 var (
-	adminHandoffIPPattern    = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b|(?i)\b[0-9a-f]{0,4}:[0-9a-f:]+\b`)
-	adminHandoffEmailPattern = regexp.MustCompile(`(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b`)
+	adminHandoffIPPattern     = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b|(?i)\b[0-9a-f]{0,4}:[0-9a-f:]+\b`)
+	adminHandoffEmailPattern  = regexp.MustCompile(`(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b`)
+	adminHandoffSecretPattern = regexp.MustCompile(`(?i)\b(?:password|pass(?:word)?|pwd|otp|token|cookie|api[ _-]?key|private[ _-]?key)\b|\b(?:\d{1,3}\.){3}\d{1,3}:\d{1,5}:[^:\s]+:[^:\s]+`)
 )
 
 func validateAdminHandoffDetails(service, summary string, identifiers []string) error {
 	allDetails := append(append([]string{}, identifiers...), summary)
+	for _, detail := range allDetails {
+		if adminHandoffSecretPattern.MatchString(detail) {
+			return fmt.Errorf("Admin handoff must not contain passwords, OTPs, tokens, cookies, API keys, or Proxy user/password strings; include only the IP and Cloudmini account email")
+		}
+	}
 	if !containsAdminHandoffEmail(allDetails) {
 		return fmt.Errorf("email tài khoản là bắt buộc khi tạo Admin handoff; hãy xin hoặc dùng email đã có trong cuộc trò chuyện")
 	}

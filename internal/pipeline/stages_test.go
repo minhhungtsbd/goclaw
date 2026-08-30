@@ -95,6 +95,27 @@ func TestThinkStage_NoToolCalls_ReturnsBreakLoop(t *testing.T) {
 	}
 }
 
+func TestThinkStageFallsBackToPendingAdminTicketWhenLLMFails(t *testing.T) {
+	deps := &PipelineDeps{
+		Config: PipelineConfig{MaxIterations: 10, MaxTokens: 1000},
+		CallLLM: func(context.Context, *RunState, providers.ChatRequest) (*providers.ChatResponse, error) {
+			return nil, errors.New("provider unavailable")
+		},
+	}
+	stage := NewThinkStage(deps)
+	state := defaultState()
+	state.Tool.AdminHandoffTicket = "Ticket-000246"
+	state.Tool.AdminHandoffCustomerReplyRequired = true
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if stage.Result() != BreakLoop || state.Think.LastResponse == nil ||
+		!strings.Contains(state.Think.LastResponse.Content, "Ticket-000246") {
+		t.Fatalf("fallback response = %#v, result = %v", state.Think.LastResponse, stage.Result())
+	}
+}
+
 func TestThinkStageRetriesInventedAdminHandoffClaim(t *testing.T) {
 	var calls int
 	deps := &PipelineDeps{
@@ -135,8 +156,40 @@ func TestThinkStageBlocksRepeatedInventedAdminHandoffClaim(t *testing.T) {
 	if err := stage.Execute(context.Background(), state); err != nil {
 		t.Fatalf("Execute() error: %v", err)
 	}
-	if got := state.Think.LastResponse.Content; !strings.Contains(got, "chưa tạo được ticket") {
+	if got := state.Think.LastResponse.Content; !strings.Contains(got, "chưa thể xác minh trạng thái") {
 		t.Fatalf("unsafe fallback content = %q", got)
+	}
+}
+
+func TestThinkStageForcesStatusCheckBeforeHistoricalTicketClaim(t *testing.T) {
+	var calls int
+	statusTool := providers.ToolDefinition{Function: &providers.ToolFunctionSchema{Name: "admin_handoff_status"}}
+	handoffTool := providers.ToolDefinition{Function: &providers.ToolFunctionSchema{Name: "escalate_to_admin"}}
+	deps := &PipelineDeps{
+		Config: PipelineConfig{MaxIterations: 10, MaxTokens: 1000},
+		BuildFilteredTools: func(_ *RunState) ([]providers.ToolDefinition, error) {
+			return []providers.ToolDefinition{handoffTool, statusTool}, nil
+		},
+		CallLLM: func(_ context.Context, _ *RunState, req providers.ChatRequest) (*providers.ChatResponse, error) {
+			calls++
+			if calls == 1 {
+				return &providers.ChatResponse{Content: "Mã Ticket-000282 vẫn đang chờ xử lý.", FinishReason: "stop"}, nil
+			}
+			if req.Options[providers.OptToolChoice] != "required" || len(req.Tools) != 1 || req.Tools[0].Function.Name != "admin_handoff_status" {
+				t.Fatalf("status retry request = %#v", req)
+			}
+			return &providers.ChatResponse{FinishReason: "tool_calls", ToolCalls: []providers.ToolCall{{
+				ID: "status-1", Name: "admin_handoff_status", Arguments: map[string]any{"ticket_id": "Ticket-000282"},
+			}}}, nil
+		},
+	}
+	stage := NewThinkStage(deps)
+	state := defaultState()
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if calls != 2 || stage.Result() != Continue || state.Think.LastResponse.ToolCalls[0].Name != "admin_handoff_status" {
+		t.Fatalf("calls=%d result=%v response=%#v", calls, stage.Result(), state.Think.LastResponse)
 	}
 }
 
@@ -2586,6 +2639,29 @@ func TestFinalizeStage_SanitizesContent(t *testing.T) {
 	}
 	if state.Observe.FinalContent != "sanitized:raw content" {
 		t.Errorf("FinalContent = %q, want sanitized:raw content", state.Observe.FinalContent)
+	}
+}
+
+func TestFinalizeStageGuaranteesPendingAdminTicketAtIterationLimit(t *testing.T) {
+	deps := &PipelineDeps{
+		SkillPostscript: func(_ context.Context, content string, _ int) string {
+			return content + " SHOULD_NOT_BE_APPENDED"
+		},
+	}
+	stage := NewFinalizeStage(deps)
+	state := defaultState()
+	state.Tool.AdminHandoffTicket = "Ticket-000247"
+	state.Tool.AdminHandoffCustomerReplyRequired = true
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !strings.Contains(state.Observe.FinalContent, "Ticket-000247") ||
+		strings.Contains(state.Observe.FinalContent, "SHOULD_NOT_BE_APPENDED") {
+		t.Fatalf("FinalContent = %q", state.Observe.FinalContent)
+	}
+	if state.Tool.AdminHandoffCustomerReplyRequired {
+		t.Fatal("pending flag was not cleared after a valid final response was generated")
 	}
 }
 

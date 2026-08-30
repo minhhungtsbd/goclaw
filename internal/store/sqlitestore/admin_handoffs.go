@@ -86,6 +86,17 @@ func (s *SQLiteAdminHandoffStore) Get(ctx context.Context, id uuid.UUID) (*store
 	return scanAdminHandoff(row)
 }
 
+func (s *SQLiteAdminHandoffStore) GetByTicketNumberForSource(ctx context.Context, ticketNumber int64, agentID uuid.UUID, channel, chatID string) (*store.AdminHandoff, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT `+adminHandoffColumns+`
+		FROM admin_handoffs
+		WHERE ticket_number = ? AND tenant_id = ? AND agent_id = ?
+			AND source_channel = ? AND source_chat_id = ?`,
+		ticketNumber, store.TenantIDFromContext(ctx).String(), agentID.String(), channel, chatID,
+	)
+	return scanAdminHandoff(row)
+}
+
 func (s *SQLiteAdminHandoffStore) ListPending(ctx context.Context, tenantID uuid.UUID, channel, chatID string, limit int) ([]store.AdminHandoff, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT `+adminHandoffColumns+`

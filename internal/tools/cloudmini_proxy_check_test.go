@@ -76,8 +76,11 @@ func TestCloudminiProxyCheckMarksNullExpiryAsDeleted(t *testing.T) {
 	if !strings.Contains(got, `"expire":null`) {
 		t.Fatalf("expiry must remain null: %s", got)
 	}
-	if !strings.Contains(got, `"service_status":"deleted"`) {
-		t.Fatalf("deleted service status missing: %s", got)
+	if !strings.Contains(got, `"service_status":"email_required"`) {
+		t.Fatalf("email gate status missing: %s", got)
+	}
+	if strings.Contains(got, "PrivateV4") || strings.Contains(got, "private@example.com") {
+		t.Fatalf("service facts must stay hidden until email verification: %s", got)
 	}
 }
 
@@ -86,11 +89,11 @@ func TestCloudminiProxyCheckNullExpiryOverridesActiveUpstreamStatus(t *testing.T
 	if err != nil {
 		t.Fatalf("sanitizeCloudminiProxyResponse: %v", err)
 	}
-	if !strings.Contains(got, `"service_status":"deleted"`) {
-		t.Fatalf("null expiry must override upstream active status: %s", got)
+	if !strings.Contains(got, `"service_status":"email_required"`) {
+		t.Fatalf("email gate must hide unverified null expiry status: %s", got)
 	}
-	if strings.Contains(got, `"service_status":"active"`) {
-		t.Fatalf("stale active status must not survive null expiry: %s", got)
+	if strings.Contains(got, `"service_status":"active"`) || strings.Contains(got, "Residential Static") {
+		t.Fatalf("unverified service facts must not survive null expiry: %s", got)
 	}
 }
 
@@ -121,7 +124,7 @@ func TestCloudminiProxyCheckRedactsExpiryAndEmailWhenNoAccountEmail(t *testing.T
 	if strings.Contains(got, "2099-08-17") {
 		t.Fatalf("expiry must be redacted when no account_email supplied: %s", got)
 	}
-	if !strings.Contains(got, "BẮT BUỘC phải hỏi xin email") {
+	if !strings.Contains(got, "Cần email tài khoản Cloudmini") {
 		t.Fatalf("status_note must prompt for email: %s", got)
 	}
 }
@@ -140,11 +143,11 @@ func TestCloudminiProxyCheckRedactsUnmatchedAccountEmail(t *testing.T) {
 	if !strings.Contains(got, `"account_email_matches":false`) {
 		t.Fatalf("account_email_matches false missing: %s", got)
 	}
-	if !strings.Contains(got, `"service_status":"unavailable"`) {
-		t.Fatalf("service_status unavailable missing: %s", got)
+	if !strings.Contains(got, `"service_status":"not_verified"`) {
+		t.Fatalf("service_status not_verified missing: %s", got)
 	}
-	if !strings.Contains(got, "IP hiện không còn khả dụng.") {
-		t.Fatalf("status_note missing: %s", got)
+	if strings.Contains(got, "tài khoản khác") || strings.Contains(got, "chủ sở hữu") {
+		t.Fatalf("ownership details must not be exposed: %s", got)
 	}
 }
 
@@ -166,9 +169,20 @@ func TestCloudminiProxyCheckCallsFixedEndpoint(t *testing.T) {
 	ctx := WithToolAgentKey(context.Background(), "linh-nhi-support-lead")
 	ctx = WithBuiltinToolSettings(ctx, BuiltinToolSettings{"cloudmini_proxy_check": []byte(`{"allowed_agent_keys":["linh-nhi-support-lead"]}`)})
 
-	result := tool.Execute(ctx, map[string]any{"ip": "51.194.203.22", "operation": "live_check"})
+	result := tool.Execute(ctx, map[string]any{"ip": "51.194.203.22", "operation": "live_check", "account_email": "customer@example.com"})
 	if result.IsError || !strings.Contains(result.ForLLM, `"live":true`) {
 		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestCloudminiProxyCheckRejectsLiveCheckWithoutAccountEmail(t *testing.T) {
+	tool := NewCloudminiProxyCheckTool(&cloudminiTestSecretsStore{})
+	result := tool.Execute(context.Background(), map[string]any{
+		"ip":        "191.101.251.120",
+		"operation": "live_check",
+	})
+	if !result.IsError || !strings.Contains(result.ForLLM, "account_email") {
+		t.Fatalf("result = %#v, want account_email validation error", result)
 	}
 }
 

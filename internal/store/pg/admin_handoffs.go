@@ -84,6 +84,17 @@ func (s *PGAdminHandoffStore) Get(ctx context.Context, id uuid.UUID) (*store.Adm
 	return scanAdminHandoff(row)
 }
 
+func (s *PGAdminHandoffStore) GetByTicketNumberForSource(ctx context.Context, ticketNumber int64, agentID uuid.UUID, channel, chatID string) (*store.AdminHandoff, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT `+adminHandoffColumns+`
+		FROM admin_handoffs
+		WHERE ticket_number = $1 AND tenant_id = $2 AND agent_id = $3
+			AND source_channel = $4 AND source_chat_id = $5`,
+		ticketNumber, store.TenantIDFromContext(ctx), agentID, channel, chatID,
+	)
+	return scanAdminHandoff(row)
+}
+
 func (s *PGAdminHandoffStore) ListPending(ctx context.Context, tenantID uuid.UUID, channel, chatID string, limit int) ([]store.AdminHandoff, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT `+adminHandoffColumns+`

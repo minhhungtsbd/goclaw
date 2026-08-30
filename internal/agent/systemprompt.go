@@ -204,6 +204,7 @@ var coreToolSummaries = map[string]string{
 	"edit":                   "Edit a file by replacing exact text matches",
 	"message":                "Send a PROACTIVE message to another channel/chat — do NOT use this to reply to the user, just respond directly",
 	"escalate_to_admin":      "Send a support handoff to the fixed Admin destination configured for this agent. Use it before saying a manual case was transferred",
+	"admin_handoff_status":   "Verify the current status of an existing Admin ticket for this customer conversation before describing or reusing it",
 	"sessions_list":          "List sessions for this agent",
 	"session_status":         "Show session status (model, tokens, compaction count)",
 	"sessions_history":       "Fetch message history for a session",

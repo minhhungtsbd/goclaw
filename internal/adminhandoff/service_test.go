@@ -73,6 +73,9 @@ func (f *fakeHandoffStore) CreateOrMerge(context.Context, *store.AdminHandoff) (
 func (f *fakeHandoffStore) Get(context.Context, uuid.UUID) (*store.AdminHandoff, error) {
 	return f.handoff, nil
 }
+func (f *fakeHandoffStore) GetByTicketNumberForSource(context.Context, int64, uuid.UUID, string, string) (*store.AdminHandoff, error) {
+	return f.handoff, nil
+}
 func (f *fakeHandoffStore) ListPending(context.Context, uuid.UUID, string, string, int) ([]store.AdminHandoff, error) {
 	return nil, nil
 }

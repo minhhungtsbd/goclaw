@@ -253,6 +253,7 @@ func TestCloudminiServicePreflightResolvesExplicitContinuationCount(t *testing.T
 
 func TestCloudminiServicePreflightRequiresHandoffForVerifiedDeletedRecovery(t *testing.T) {
 	state := NewRunState(&RunInput{RunID: "run-recovery", Message: "Khôi phục 178.218.146.11 giúp em"}, nil, "", nil)
+	state.Messages.SetHistory([]providers.Message{{Role: "user", Content: "Email tài khoản Cloudmini của em là customer@example.com"}})
 	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
 	stage := NewCloudminiServicePreflightStage(&PipelineDeps{
 		ExecuteToolCall: func(_ context.Context, _ *RunState, tc providers.ToolCall) ([]providers.Message, error) {
@@ -267,6 +268,80 @@ func TestCloudminiServicePreflightRequiresHandoffForVerifiedDeletedRecovery(t *t
 	}
 	if len(state.Cloudmini.ServiceFacts) != 1 || state.Cloudmini.ServiceFacts[0].Status != "deleted" {
 		t.Fatalf("service facts = %#v", state.Cloudmini.ServiceFacts)
+	}
+}
+
+func TestCloudminiServicePreflightRequiresEmailBeforeRecoveryDecision(t *testing.T) {
+	state := NewRunState(&RunInput{RunID: "run-recovery-email", Message: "Khôi phục 178.218.146.11 giúp em"}, nil, "", nil)
+	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
+	stage := NewCloudminiServicePreflightStage(&PipelineDeps{
+		ExecuteToolCall: func(_ context.Context, _ *RunState, tc providers.ToolCall) ([]providers.Message, error) {
+			return []providers.Message{{Role: "tool", ToolCallID: tc.ID, Content: `{"services":[{"ip":"178.218.146.11","plan":"Residential Static","expire":null,"service_status":"active"}]}`}}, nil
+		},
+	})
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	if !state.Cloudmini.EmailRequired || state.Cloudmini.HandoffRequired {
+		t.Fatalf("email gate state = %#v", state.Cloudmini)
+	}
+	if !strings.Contains(state.Messages.System().Content, "Chỉ yêu cầu email tài khoản") {
+		t.Fatal("email gate instruction missing")
+	}
+}
+
+func TestCloudminiServicePreflightRechecksPreviousIPAfterEmailReply(t *testing.T) {
+	state := NewRunState(&RunInput{RunID: "run-email-continuation", Message: "customer@example.com"}, nil, "", nil)
+	state.Messages.SetHistory([]providers.Message{
+		{Role: "user", Content: "Khôi phục 178.218.146.11 giúp em"},
+		{Role: "assistant", Content: "Anh cho em xin email tài khoản Cloudmini nhé."},
+	})
+	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
+	var calls []providers.ToolCall
+	stage := NewCloudminiServicePreflightStage(&PipelineDeps{
+		ExecuteToolCall: func(_ context.Context, _ *RunState, tc providers.ToolCall) ([]providers.Message, error) {
+			calls = append(calls, tc)
+			return []providers.Message{{Role: "tool", ToolCallID: tc.ID, Content: `{"services":[{"ip":"178.218.146.11","plan":"PrivateV4","expire":"2099-09-01T00:00:00Z","service_status":"active","account_email_matches":false}]}`}}, nil
+		},
+	})
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	if len(calls) != 1 || calls[0].Arguments["ip"] != "178.218.146.11" || calls[0].Arguments["account_email"] != "customer@example.com" {
+		t.Fatalf("calls = %#v", calls)
+	}
+	if state.Cloudmini.HandoffRequired {
+		t.Fatal("active service email mismatch must not create handoff")
+	}
+	if !strings.Contains(state.Messages.System().Content, "Không nói IP thuộc tài khoản khác") {
+		t.Fatalf("mismatch guard missing: email_mismatch=%v system=%q", state.Cloudmini.EmailMismatch, state.Messages.System().Content)
+	}
+}
+
+func TestCloudminiResponseGuardBlocksOwnershipInference(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "customer@example.com"}, nil, "", nil)
+	state.Cloudmini.EmailMismatch = true
+	state.Messages.SetHistory([]providers.Message{
+		{Role: "user", Content: "Khôi phục 92.113.182.109 giúp em"},
+		{Role: "assistant", Content: "Anh cho em xin email tài khoản Cloudmini nhé."},
+	})
+	if !cloudminiResponseViolatesGuard(state, "IP này thuộc tài khoản khác nên không thể khôi phục.") {
+		t.Fatal("ownership inference must be rejected")
+	}
+	if cloudminiResponseViolatesGuard(state, "Dạ, hiện tại em chưa thể hỗ trợ khôi phục hoặc gia hạn IP này ạ.") {
+		t.Fatal("short safe recovery response must be allowed")
+	}
+}
+
+func TestAdminHandoffResponseGuardRequiresOneTicketReply(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "Khôi phục 92.113.182.109 giúp em"}, nil, "", nil)
+	state.Tool.AdminHandoffTicket = "Ticket-000276"
+	state.Tool.AdminHandoffCustomerReplyRequired = true
+	if !adminHandoffResponseViolatesGuard(state, "Dạ em đã chuyển yêu cầu đến Admin ạ.") {
+		t.Fatal("final response without the ticket must be rejected")
+	}
+	if adminHandoffResponseViolatesGuard(state, "Dạ em đã ghi nhận và chuyển yêu cầu. Mã Ticket-000276 của anh là Ticket-000276 ạ.") {
+		t.Fatal("final response containing the ticket must be accepted")
 	}
 }
 

@@ -33,8 +33,15 @@ func (s *FinalizeStage) Execute(ctx context.Context, state *RunState) error {
 		state.Observe.FinalContent = s.deps.SanitizeContent(state.Observe.FinalContent)
 	}
 
+	// A handoff tool result is internal and silent. Guarantee that the customer
+	// still receives the real ticket when the loop ended at its iteration/tool
+	// budget, was cancelled, or the model failed to produce a valid final reply.
+	handoffReplyWasPending := adminHandoffCustomerReplyPending(state)
+	ensureAdminHandoffCustomerReply(state)
+
 	// 1b. Skill evolution postscript (matching v2 loop_finalize.go:52-57).
-	if s.deps.SkillPostscript != nil && state.Observe.FinalContent != "" {
+	// Never append an evolution prompt to a customer handoff confirmation.
+	if s.deps.SkillPostscript != nil && state.Observe.FinalContent != "" && !handoffReplyWasPending {
 		state.Observe.FinalContent = s.deps.SkillPostscript(ctx, state.Observe.FinalContent, state.Tool.TotalToolCalls)
 	}
 

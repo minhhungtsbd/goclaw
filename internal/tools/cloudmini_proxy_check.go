@@ -36,7 +36,7 @@ func NewCloudminiProxyCheckTool(secrets store.ConfigSecretsStore) *CloudminiProx
 func (t *CloudminiProxyCheckTool) Name() string { return "cloudmini_proxy_check" }
 
 func (t *CloudminiProxyCheckTool) Description() string {
-	return "Check Cloudmini Proxy or VPS service details, expiry, plan, account email, or live GeoIP for one IP. REQUIRED before replying or escalating when a customer provides an IP for a fault, recovery, renewal, cancellation, replacement, refund, or configuration request: call service_info first to identify the plan and expiry. For a Proxy connection fault, call live_check after service_info unless the service is deleted. Use only for customer support after the customer provides the IP or it is already present in the conversation."
+	return "Look up facts for one Cloudmini IP when the customer asks about that specific Proxy or VPS service. service_info returns service facts for the LLM to interpret with the Cloudmini support skill; it is not a general-IP lookup. Use account_email when the customer has supplied it. live_check is only for an active, email-verified Proxy connection fault after service_info in the same case; it requires account_email and must never be used for policy questions, VPS, deleted, expired, email_required, or not_verified services."
 }
 
 func (t *CloudminiProxyCheckTool) Parameters() map[string]any {
@@ -48,7 +48,7 @@ func (t *CloudminiProxyCheckTool) Parameters() map[string]any {
 			},
 			"operation": map[string]any{
 				"type": "string", "enum": []string{"service_info", "live_check"},
-				"description": "service_info checks Cloudmini service/plan/expiry. live_check checks live GeoIP details.",
+				"description": "service_info checks Cloudmini service/plan/expiry. live_check checks Proxy live status only after verified active service_info; never use it for VPS, deleted, expired, email_required, or not_verified results.",
 			},
 			"account_email": map[string]any{
 				"type": "string", "description": "Optional Cloudmini account email already supplied by the customer. service_info compares it with the service record.",
@@ -78,6 +78,9 @@ func (t *CloudminiProxyCheckTool) Execute(ctx context.Context, args map[string]a
 		endpoint = "check_live_proxy"
 	default:
 		return ErrorResult("operation must be service_info or live_check")
+	}
+	if operation == "live_check" && strings.TrimSpace(argString(args, "account_email")) == "" {
+		return ErrorResult("live_check requires the customer Cloudmini account_email after verified service_info")
 	}
 	token, err := t.secrets.Get(ctx, cloudminiProxyTokenKey)
 	if err != nil || strings.TrimSpace(token) == "" {
@@ -266,6 +269,19 @@ func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, reseller
 			rawUserEmail := strings.TrimSpace(items[i].UserEmail)
 			items[i].UserEmail = "" // Redact system account email from LLM view
 
+			if expectedEmail == "" {
+				// Do not let the model answer a recovery/renewal request from an
+				// unverified service snapshot. Ask for the customer's email first.
+				items[i].Plan = ""
+				items[i].PlanFamily = ""
+				items[i].Expire = nil
+				items[i].Region = ""
+				items[i].ServiceStatus = "email_required"
+				items[i].StatusNote = "Cần email tài khoản Cloudmini của khách để xác minh trước khi tư vấn hoặc xử lý IP. Không kết luận trạng thái, gói, hạn, quyền sở hữu, khôi phục hoặc gia hạn khi chưa có email."
+				items[i].AccountEmailMatches = nil
+				continue
+			}
+
 			classNote := getServiceClassificationNote(items[i].Plan)
 			isResStatic := isResidentialStaticPlan(items[i].Plan)
 			if items[i].ServiceStatus == "deleted" {
@@ -304,17 +320,11 @@ func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, reseller
 						}
 					} else {
 						if items[i].ServiceStatus == "linked" || items[i].ServiceStatus == "active" || items[i].ServiceStatus == "expired" || items[i].ServiceStatus == "unknown" {
-							items[i].ServiceStatus = "unavailable"
-							items[i].StatusNote = "IP hiện không còn khả dụng." + classNote
+							items[i].ServiceStatus = "not_verified"
+							items[i].StatusNote = "Không thể xác minh dịch vụ theo email đã cung cấp. Không suy đoán nguyên nhân hoặc quyền sở hữu. Với yêu cầu khôi phục hoặc gia hạn, chỉ thông báo ngắn gọn rằng hiện chưa thể hỗ trợ." + classNote
 							items[i].Expire = nil // Redact expiry when email does not match
 						}
 					}
-				}
-			} else {
-				if items[i].ServiceStatus == "linked" || items[i].ServiceStatus == "active" || items[i].ServiceStatus == "expired" || items[i].ServiceStatus == "unknown" {
-					items[i].ServiceStatus = "active"
-					items[i].StatusNote = "IP đang có thông tin dịch vụ." + classNote + " YÊU CẦU BẮT BUỘC BƯỚC 2: Nếu trong toàn bộ cuộc trò chuyện CHƯA CÓ email của khách hàng, BẮT BUỘC phải hỏi xin email tài khoản Cloudmini của khách trước hết. KHÔNG ĐƯỢC đưa ra hướng dẫn kỹ thuật chuyên sâu hay kết luận hỗ trợ khi chưa có email."
-					items[i].Expire = nil // Redact expiry until email is supplied & verified
 				}
 			}
 		}
