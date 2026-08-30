@@ -33,7 +33,6 @@ services:
         ENABLE_EMBEDUI: "${ENABLE_EMBEDUI:-true}"  # set to false when using WITH_WEB_NGINX
         ENABLE_PYTHON: "${ENABLE_PYTHON:-true}"
         ENABLE_FULL_SKILLS: "${ENABLE_FULL_SKILLS:-false}"
-        ENABLE_GEMINI_WEB2API: "${ENABLE_GEMINI_WEB2API:-false}"
         VERSION: "${GOCLAW_VERSION:-dev}"
     # Uncomment to test update UI: GOCLAW_VERSION=v1.0.0
     ports:
@@ -51,10 +50,6 @@ services:
       # Host-native AGY bridge. Leave both blank to keep the feature disabled.
       - GOCLAW_AGY_HOST_BRIDGE_URL=${GOCLAW_AGY_HOST_BRIDGE_URL:-}
       - GOCLAW_AGY_HOST_TOKEN=${GOCLAW_AGY_HOST_TOKEN:-}
-      # Optional in-container Gemini Web2API fallback runtime.
-      - GOCLAW_GEMINI_WEB2API_ENABLED=${ENABLE_GEMINI_WEB2API:-false}
-      - GOCLAW_GEMINI_WEB2API_PORT=${GOCLAW_GEMINI_WEB2API_PORT:-8081}
-      - GOCLAW_GEMINI_WEB2API_CONFIG=${GOCLAW_GEMINI_WEB2API_CONFIG:-/app/runtime/gemini-web2api/config.json}
       # Debug
       - GOCLAW_TRACE_VERBOSE=${GOCLAW_TRACE_VERBOSE:-0}
       - BITRIX24_LOG_RAW_EVENT=${BITRIX24_LOG_RAW_EVENT:-0}

@@ -114,6 +114,29 @@ func TestRegisterProvidersFromDBUsesCurrentMiniMaxAndZaiDefaults(t *testing.T) {
 	assertProviderDefault(t, registry, tenantID, "db-zai-coding", "glm-5.2", "https://api.z.ai/api/coding/paas/v4")
 }
 
+func TestRegisterProvidersFromDBSkipsUnsupportedProviderTypes(t *testing.T) {
+	tenantID := uuid.New()
+	providerStore := gatewayProvidersStoreStub{
+		providers: []store.LLMProviderData{
+			{
+				BaseModel:    store.BaseModel{ID: uuid.New()},
+				TenantID:     tenantID,
+				Name:         "removed-provider",
+				ProviderType: "removed_provider_type",
+				APIKey:       "token",
+				Enabled:      true,
+			},
+		},
+	}
+
+	registry := providers.NewRegistry(nil)
+	registerProvidersFromDB(registry, providerStore, nil, "", "", nil, &config.Config{}, providers.NewInMemoryRegistry())
+
+	if _, err := registry.GetForTenant(tenantID, "removed-provider"); err == nil {
+		t.Fatal("unsupported provider was registered from DB")
+	}
+}
+
 func assertProviderDefault(t *testing.T, registry *providers.Registry, tenantID uuid.UUID, name, wantModel, wantBase string) {
 	t.Helper()
 	runtimeProvider, err := registry.GetForTenant(tenantID, name)

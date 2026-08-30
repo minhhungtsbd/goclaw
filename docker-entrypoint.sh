@@ -114,61 +114,6 @@ run_as_goclaw() {
   fi
 }
 
-start_gemini_web2api() {
-  case "${GOCLAW_GEMINI_WEB2API_ENABLED:-false}" in
-    1|true|TRUE|yes|YES) ;;
-    *) return 0 ;;
-  esac
-
-  GEMINI_WEB2API_SCRIPT="/app/runtime/gemini-web2api/gemini_web2api.py"
-  GEMINI_WEB2API_CONFIG="${GOCLAW_GEMINI_WEB2API_CONFIG:-/app/runtime/gemini-web2api/config.json}"
-  GEMINI_WEB2API_PORT="${GOCLAW_GEMINI_WEB2API_PORT:-8081}"
-
-  if ! [ -f "$GEMINI_WEB2API_SCRIPT" ]; then
-    echo "WARNING: Gemini Web2API was enabled at runtime but not included in this image. Rebuild with ENABLE_GEMINI_WEB2API=true."
-    return 0
-  fi
-  if ! command -v python3 >/dev/null 2>&1; then
-    echo "WARNING: Gemini Web2API requires Python. Rebuild with ENABLE_GEMINI_WEB2API=true."
-    return 0
-  fi
-  case "$GEMINI_WEB2API_PORT" in
-    ''|*[!0-9]*)
-      echo "WARNING: invalid GOCLAW_GEMINI_WEB2API_PORT; runtime not started."
-      return 0
-      ;;
-  esac
-  case "$GEMINI_WEB2API_CONFIG" in
-    /app/data/*|/app/runtime/gemini-web2api/config.json) ;;
-    *)
-      echo "WARNING: GOCLAW_GEMINI_WEB2API_CONFIG must stay under /app/data or use the bundled config."
-      return 0
-      ;;
-  esac
-  if ! [ -f "$GEMINI_WEB2API_CONFIG" ]; then
-    echo "WARNING: Gemini Web2API config not found: $GEMINI_WEB2API_CONFIG"
-    return 0
-  fi
-
-  echo "Starting Gemini Web2API on 127.0.0.1:${GEMINI_WEB2API_PORT}..."
-  if command -v su-exec >/dev/null 2>&1 && [ "$(id -u)" = "0" ]; then
-    su-exec goclaw python3 "$GEMINI_WEB2API_SCRIPT" --config "$GEMINI_WEB2API_CONFIG" --port "$GEMINI_WEB2API_PORT" &
-  else
-    python3 "$GEMINI_WEB2API_SCRIPT" --config "$GEMINI_WEB2API_CONFIG" --port "$GEMINI_WEB2API_PORT" &
-  fi
-  GEMINI_WEB2API_PID=$!
-
-  for _i in 1 2 3 4 5 6 7 8 9 10; do
-    if wget -qO- "http://127.0.0.1:${GEMINI_WEB2API_PORT}/v1/models" >/dev/null 2>&1; then
-      echo "Gemini Web2API ready (PID $GEMINI_WEB2API_PID)."
-      return 0
-    fi
-    sleep 0.5
-  done
-  echo "WARNING: Gemini Web2API failed its startup probe; continuing without this fallback runtime."
-  kill "$GEMINI_WEB2API_PID" 2>/dev/null || true
-}
-
 case "${1:-serve}" in
   serve)
     # Auto-upgrade (schema migrations + data hooks) before starting.
@@ -182,7 +127,6 @@ case "${1:-serve}" in
           echo "Upgrade warning (may already be up-to-date)"
       fi
     fi
-    start_gemini_web2api
     run_as_goclaw /app/goclaw
     ;;
   upgrade)
