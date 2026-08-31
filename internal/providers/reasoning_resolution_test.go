@@ -40,6 +40,19 @@ func TestLookupReasoningCapability(t *testing.T) {
 	}
 }
 
+func TestLookupReasoningCapabilityGPT56Luna(t *testing.T) {
+	capability := LookupReasoningCapability("gpt-5.6-luna")
+	if capability == nil {
+		t.Fatal("LookupReasoningCapability(gpt-5.6-luna) = nil, want capability")
+	}
+	if capability.DefaultEffort != "medium" {
+		t.Fatalf("default_effort = %q, want medium", capability.DefaultEffort)
+	}
+	if !capability.Supports("max") || capability.Supports("none") {
+		t.Fatalf("levels = %#v, want low..max without none", capability.Levels)
+	}
+}
+
 func TestResolveReasoningDecisionDowngradesUnsupportedEffort(t *testing.T) {
 	decision := ResolveReasoningDecision(testThinkingProvider{thinking: true}, "gpt-5.1-codex", "xhigh", "downgrade", "reasoning")
 	if decision.EffectiveEffort != "high" {

@@ -310,6 +310,14 @@ func TestSeedDefaultModels(t *testing.T) {
 	if gpt.ContextWindow != 128_000 {
 		t.Errorf("expected ContextWindow=128000, got %d", gpt.ContextWindow)
 	}
+
+	luna := registry.Resolve("openai", "gpt-5.6-luna")
+	if luna == nil {
+		t.Fatal("expected gpt-5.6-luna, got nil")
+	}
+	if luna.ContextWindow != 1_050_000 || !luna.Reasoning || !luna.Vision {
+		t.Errorf("unexpected gpt-5.6-luna spec: %+v", luna)
+	}
 }
 
 func TestAnthropicForwardCompatResolveVersioned(t *testing.T) {

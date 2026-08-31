@@ -115,10 +115,11 @@ func TestProvidersHandlerListProviderModelsChatGPTOAuthIncludesReasoningMetadata
 	assertModelIDsInOrder(t, result.Models, []string{
 		"gpt-5.6-sol",
 		"gpt-5.6-terra",
+		"gpt-5.6-luna",
 		"gpt-5.5",
 	})
 
-	for _, wantID := range []string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.5"} {
+	for _, wantID := range []string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5"} {
 		var found bool
 		for _, model := range result.Models {
 			if model.ID != wantID {
@@ -131,8 +132,11 @@ func TestProvidersHandlerListProviderModelsChatGPTOAuthIncludesReasoningMetadata
 			if model.Reasoning.DefaultEffort != "medium" {
 				t.Fatalf("%s default_effort = %q, want medium", wantID, model.Reasoning.DefaultEffort)
 			}
-			if got := model.Reasoning.Levels; len(got) != 5 || got[4] != "xhigh" {
-				t.Fatalf("%s levels = %#v, want none..xhigh", wantID, got)
+			if got := model.Reasoning.Levels; len(got) != 5 {
+				t.Fatalf("%s levels = %#v, want five supported efforts", wantID, got)
+			}
+			if wantID == "gpt-5.6-luna" && model.Reasoning.Levels[4] != "max" {
+				t.Fatalf("%s levels = %#v, want max effort", wantID, model.Reasoning.Levels)
 			}
 		}
 		if !found {
