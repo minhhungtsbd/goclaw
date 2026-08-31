@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nextlevelbuilder/goclaw/internal/bootstrap"
+	"github.com/nextlevelbuilder/goclaw/internal/cloudminiincident"
 	"github.com/nextlevelbuilder/goclaw/internal/edition"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
@@ -61,7 +62,7 @@ func (l *Loop) buildMessages(ctx context.Context, history []providers.Message, s
 	// lightContext: skip loading context files, only inject ExtraSystemPrompt (heartbeat checklist).
 	var contextFiles []bootstrap.ContextFile
 	if !lightContext {
-		contextFiles = l.resolveContextFiles(ctx, userID)
+		contextFiles = l.resolveContextFilesWithOperationalIncidents(ctx, userID)
 
 		// Fallback: if DB seeding failed (e.g. SQLITE_BUSY) but we have
 		// in-memory embedded templates, merge them so the first turn still
@@ -210,7 +211,7 @@ func (l *Loop) buildMessages(ctx context.Context, history []providers.Message, s
 	if allowlist := bootstrap.ModeAllowlist(string(mode)); allowlist != nil {
 		filtered := make([]bootstrap.ContextFile, 0, len(contextFiles))
 		for _, cf := range contextFiles {
-			if allowlist[cf.Path] {
+			if allowlist[cf.Path] || cf.Path == cloudminiincident.ContextPath() {
 				filtered = append(filtered, cf)
 			}
 		}

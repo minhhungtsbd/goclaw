@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
+	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
 // ContextState: owned by ContextStage, read by ThinkStage.
@@ -93,6 +94,9 @@ type CloudminiState struct {
 	EmailRequired  bool
 	EmailMismatch  bool
 	ServiceFacts   []CloudminiServiceFact
+	IncidentsByIP  map[string]store.OperationalIncident
+	LiveChecks     map[string]bool
+	LiveAttempts   map[string]bool
 }
 
 type CloudminiServiceFact struct {

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nextlevelbuilder/goclaw/internal/bootstrap"
+	"github.com/nextlevelbuilder/goclaw/internal/cloudminiincident"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"github.com/nextlevelbuilder/goclaw/internal/i18n"
 	"github.com/nextlevelbuilder/goclaw/internal/pipeline"
@@ -120,6 +122,8 @@ func (l *Loop) makeResolveWorkspace(req *RunRequest) func(ctx context.Context, i
 
 func (l *Loop) makeLoadContextFiles() func(ctx context.Context, userID string) ([]bootstrap.ContextFile, bool) {
 	return func(ctx context.Context, userID string) ([]bootstrap.ContextFile, bool) {
+		// BuildMessages owns runtime-only context injection. Keeping this metadata
+		// load side-effect free avoids querying the incident store twice per run.
 		files := l.resolveContextFiles(ctx, userID)
 		hadBootstrap := false
 		for _, f := range files {
@@ -130,6 +134,34 @@ func (l *Loop) makeLoadContextFiles() func(ctx context.Context, userID string) (
 		}
 		return files, hadBootstrap
 	}
+}
+
+func (l *Loop) resolveContextFilesWithOperationalIncidents(ctx context.Context, userID string) []bootstrap.ContextFile {
+	files := l.resolveContextFiles(ctx, userID)
+	// A context file with this reserved path is never trusted. Remove it before
+	// appending the runtime-owned block so editable files cannot impersonate the
+	// structured incident registry.
+	filtered := files[:0:0]
+	for _, file := range files {
+		if strings.EqualFold(filepath.Base(file.Path), cloudminiincident.ContextPath()) {
+			continue
+		}
+		filtered = append(filtered, file)
+	}
+	files = filtered
+	var incidents []store.OperationalIncident
+	if l.operationalIncidents != nil {
+		loaded, err := l.operationalIncidents.List(ctx)
+		if err != nil {
+			slog.Warn("operational incidents context load failed", "agent", l.id, "error", err)
+		} else {
+			incidents = loaded
+		}
+	}
+	return append(files, bootstrap.ContextFile{
+		Path:    cloudminiincident.ContextPath(),
+		Content: cloudminiincident.RenderContext(incidents, l.id, time.Now().UTC()),
+	})
 }
 
 func (l *Loop) makeBuildMessages(req *RunRequest) func(ctx context.Context, input *pipeline.RunInput, history []providers.Message, summary string) ([]providers.Message, error) {

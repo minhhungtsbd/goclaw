@@ -10,12 +10,16 @@ import (
 
 func TestCloudminiServicePreflightCallsServiceInfoBeforeLLM(t *testing.T) {
 	state := NewRunState(&RunInput{Message: "Kiểm tra Proxy 94.103.56.231 lỗi kết nối"}, nil, "", nil)
+	state.Messages.SetHistory([]providers.Message{{Role: "user", Content: "Email Cloudmini: customer@example.com"}})
 	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
 	var calls []providers.ToolCall
 	stage := NewCloudminiServicePreflightStage(&PipelineDeps{
 		ExecuteToolCall: func(_ context.Context, _ *RunState, tc providers.ToolCall) ([]providers.Message, error) {
 			calls = append(calls, tc)
-			return []providers.Message{{Role: "tool", ToolCallID: tc.ID, Content: `{"services":[{"service_status":"linked","plan":"PrivateV4"}]}`}}, nil
+			if tc.Arguments["operation"] == "live_check" {
+				return []providers.Message{{Role: "tool", ToolCallID: tc.ID, Content: `{"live_check":{"ip":"94.103.56.231","live":true}}`}}, nil
+			}
+			return []providers.Message{{Role: "tool", ToolCallID: tc.ID, Content: `{"services":[{"ip":"94.103.56.231","service_status":"active","plan":"PrivateV4","plan_family":"proxy","account_email_matches":true}]}`}}, nil
 		},
 	})
 	if err := stage.Execute(context.Background(), state); err != nil {
@@ -114,6 +118,46 @@ func TestCloudminiServicePreflightSkipsLiveCheckForDeletedService(t *testing.T) 
 	}
 }
 
+func TestCloudminiServicePreflightSkipsLiveCheckForUnverifiedService(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "Kiểm tra Proxy 37.221.109.121 lỗi kết nối"}, nil, "", nil)
+	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
+	var calls []providers.ToolCall
+	stage := NewCloudminiServicePreflightStage(&PipelineDeps{ExecuteToolCall: func(_ context.Context, _ *RunState, tc providers.ToolCall) ([]providers.Message, error) {
+		calls = append(calls, tc)
+		return []providers.Message{{Role: "tool", ToolCallID: tc.ID, Content: `{"services":[{"service_status":"not_verified","plan":"PrivateV4"}]}`}}, nil
+	}})
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	if len(calls) != 1 || calls[0].Arguments["operation"] != "service_info" {
+		t.Fatalf("calls = %#v", calls)
+	}
+}
+
+func TestCloudminiServicePreflightRecordsUnavailableFactOnToolFailure(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "Proxy 37.221.109.121 lỗi kết nối"}, nil, "", nil)
+	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
+	stage := NewCloudminiServicePreflightStage(&PipelineDeps{ExecuteToolCall: func(_ context.Context, _ *RunState, tc providers.ToolCall) ([]providers.Message, error) {
+		return []providers.Message{{Role: "tool", ToolCallID: tc.ID, Content: `Cloudmini proxy check failed to reach the service`, IsError: true}}, nil
+	}})
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	if len(state.Cloudmini.ServiceFacts) != 1 || state.Cloudmini.ServiceFacts[0].IP != "37.221.109.121" || state.Cloudmini.ServiceFacts[0].Status != "unavailable" {
+		t.Fatalf("service facts = %#v", state.Cloudmini.ServiceFacts)
+	}
+	if state.Cloudmini.EmailRequired {
+		t.Fatal("a tool outage must not be misreported as missing customer email")
+	}
+	if state.Cloudmini.EmailMismatch {
+		t.Fatal("a tool outage must not be misreported as an account mismatch")
+	}
+	reply := adminHandoffCustomerConfirmationWithFacts(state, "Ticket-000304")
+	if !strings.Contains(reply, "công cụ kiểm tra chưa trả dữ liệu") {
+		t.Fatalf("tool outage explanation missing: %s", reply)
+	}
+}
+
 func TestCloudminiServicePreflightSkipsNonSupportMessage(t *testing.T) {
 	state := NewRunState(&RunInput{Message: "Proxy ở quốc gia nào?"}, nil, "", nil)
 	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
@@ -123,6 +167,18 @@ func TestCloudminiServicePreflightSkipsNonSupportMessage(t *testing.T) {
 			return nil, nil
 		},
 	})
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+}
+
+func TestCloudminiServicePreflightSkipsUnrelatedIPAddress(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "Máy chủ DNS hiện tại là 8.8.8.8"}, nil, "", nil)
+	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
+	stage := NewCloudminiServicePreflightStage(&PipelineDeps{ExecuteToolCall: func(_ context.Context, _ *RunState, _ providers.ToolCall) ([]providers.Message, error) {
+		t.Fatal("unrelated IP must not invoke Cloudmini tool")
+		return nil, nil
+	}})
 	if err := stage.Execute(context.Background(), state); err != nil {
 		t.Fatalf("preflight: %v", err)
 	}
@@ -191,7 +247,7 @@ func TestCloudminiServicePreflightUsesUniqueBoundedIDsAcrossRuns(t *testing.T) {
 	}
 }
 
-func TestCloudminiServicePreflightFocusesMatchingOperationalSubnetFromAgents(t *testing.T) {
+func TestCloudminiServicePreflightIgnoresLegacyOperationalSubnetFromAgents(t *testing.T) {
 	state := NewRunState(&RunInput{RunID: "run-subnet", Message: "178.218.146.11 lỗi ạ"}, nil, "", nil)
 	state.Messages.SetSystem(providers.Message{Role: "system", Content: `base
 
@@ -213,12 +269,11 @@ không liên quan`})
 		t.Fatalf("preflight: %v", err)
 	}
 	content := state.Messages.System().Content
-	if !strings.Contains(content, "THÔNG BÁO VẬN HÀNH KHỚP IP HIỆN TẠI") ||
-		!strings.Contains(content, "178.218.146.0/24") || !strings.Contains(content, "thay thế miễn phí hoặc hoàn tiền") {
-		t.Fatalf("matching operational notice was not focused: %s", content)
+	if strings.Contains(content, "THÔNG BÁO VẬN HÀNH KHỚP IP HIỆN TẠI") {
+		t.Fatalf("legacy free-form notice affected runtime: %s", content)
 	}
-	if len(state.Cloudmini.OutageCIDRs) != 1 || state.Cloudmini.OutageCIDRs[0] != "178.218.146.0/24" {
-		t.Fatalf("matched CIDRs = %#v", state.Cloudmini.OutageCIDRs)
+	if len(state.Cloudmini.OutageCIDRs) != 0 {
+		t.Fatalf("legacy free-form CIDRs were trusted: %#v", state.Cloudmini.OutageCIDRs)
 	}
 }
 
@@ -251,7 +306,7 @@ func TestCloudminiServicePreflightResolvesExplicitContinuationCount(t *testing.T
 	}
 }
 
-func TestCloudminiServicePreflightCapturesVerifiedDeletedRecoveryFacts(t *testing.T) {
+func TestCloudminiServicePreflightKeepsExplicitStatusWhenExpiryIsRedacted(t *testing.T) {
 	state := NewRunState(&RunInput{RunID: "run-recovery", Message: "Khôi phục 178.218.146.11 giúp em"}, nil, "", nil)
 	state.Messages.SetHistory([]providers.Message{{Role: "user", Content: "Email tài khoản Cloudmini của em là customer@example.com"}})
 	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
@@ -263,7 +318,22 @@ func TestCloudminiServicePreflightCapturesVerifiedDeletedRecoveryFacts(t *testin
 	if err := stage.Execute(context.Background(), state); err != nil {
 		t.Fatalf("preflight: %v", err)
 	}
-	if len(state.Cloudmini.ServiceFacts) != 1 || state.Cloudmini.ServiceFacts[0].Status != "deleted" {
+	if len(state.Cloudmini.ServiceFacts) != 1 || state.Cloudmini.ServiceFacts[0].Status != "active" {
+		t.Fatalf("service facts = %#v", state.Cloudmini.ServiceFacts)
+	}
+}
+
+func TestCloudminiServicePreflightDoesNotTurnNotVerifiedIntoDeleted(t *testing.T) {
+	state := NewRunState(&RunInput{RunID: "run-not-verified", Message: "37.221.109.121 lỗi kết nối"}, nil, "", nil)
+	state.Messages.SetHistory([]providers.Message{{Role: "user", Content: "customer@example.com"}})
+	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
+	stage := NewCloudminiServicePreflightStage(&PipelineDeps{ExecuteToolCall: func(_ context.Context, _ *RunState, tc providers.ToolCall) ([]providers.Message, error) {
+		return []providers.Message{{Role: "tool", ToolCallID: tc.ID, Content: `{"services":[{"ip":"37.221.109.121","plan":"PrivateV4","expire":null,"service_status":"not_verified","account_email_matches":false}]}`}}, nil
+	}})
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	if len(state.Cloudmini.ServiceFacts) != 1 || state.Cloudmini.ServiceFacts[0].Status != "not_verified" {
 		t.Fatalf("service facts = %#v", state.Cloudmini.ServiceFacts)
 	}
 }
@@ -377,15 +447,16 @@ func TestCloudminiServicePreflightStillRejectsActiveServiceEmailMismatch(t *test
 
 func TestCloudminiServicePreflightChecksLiveAfterServiceIdentifiesProxy(t *testing.T) {
 	state := NewRunState(&RunInput{RunID: "run-live", Message: "94.103.56.231 lỗi ạ"}, nil, "", nil)
+	state.Messages.SetHistory([]providers.Message{{Role: "user", Content: "customer@example.com"}})
 	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
 	var operations []string
 	stage := NewCloudminiServicePreflightStage(&PipelineDeps{
 		ExecuteToolCall: func(_ context.Context, _ *RunState, tc providers.ToolCall) ([]providers.Message, error) {
 			operation := tc.Arguments["operation"].(string)
 			operations = append(operations, operation)
-			content := `{"services":[{"ip":"94.103.56.231","plan":"PrivateV4","expire":"2026-09-02T00:00:00Z","service_status":"active"}]}`
+			content := `{"services":[{"ip":"94.103.56.231","plan":"PrivateV4","plan_family":"proxy","expire":"2026-09-02T00:00:00Z","service_status":"active","account_email_matches":true}]}`
 			if operation == "live_check" {
-				content = `{"success":true,"live":true}`
+				content = `{"live_check":{"ip":"94.103.56.231","live":true}}`
 			}
 			return []providers.Message{{Role: "tool", ToolCallID: tc.ID, Content: content}}, nil
 		},
@@ -395,6 +466,95 @@ func TestCloudminiServicePreflightChecksLiveAfterServiceIdentifiesProxy(t *testi
 	}
 	if strings.Join(operations, ",") != "service_info,live_check" {
 		t.Fatalf("operations = %#v", operations)
+	}
+}
+
+func TestCloudminiServicePreflightAuthorizesLiveCheck(t *testing.T) {
+	state := NewRunState(&RunInput{RunID: "run-live-auth", Message: "Proxy 94.103.56.231 lỗi kết nối"}, nil, "", nil)
+	state.Messages.SetHistory([]providers.Message{{Role: "user", Content: "customer@example.com"}})
+	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
+	var calls []string
+	stage := NewCloudminiServicePreflightStage(&PipelineDeps{
+		AuthorizeToolCall: func(_ context.Context, _ *RunState, tc providers.ToolCall) (bool, string) {
+			if tc.Arguments["operation"] == "live_check" {
+				return false, "denied in test"
+			}
+			return true, ""
+		},
+		ExecuteToolCall: func(_ context.Context, _ *RunState, tc providers.ToolCall) ([]providers.Message, error) {
+			calls = append(calls, tc.Arguments["operation"].(string))
+			return []providers.Message{{Role: "tool", ToolCallID: tc.ID, Content: `{"services":[{"ip":"94.103.56.231","plan":"PrivateV4","plan_family":"proxy","service_status":"active","account_email_matches":true}]}`}}, nil
+		},
+	})
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	if strings.Join(calls, ",") != "service_info" {
+		t.Fatalf("unauthorized live_check executed: %#v", calls)
+	}
+}
+
+func TestCloudminiLiveCheckUsesOutageScopePerIP(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "Proxy 10.0.0.10 và 10.0.1.10 đều lỗi"}, nil, "", nil)
+	state.Cloudmini.OutageCIDRs = []string{"10.0.0.0/24"}
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{
+		{IP: "10.0.0.10", Plan: "PrivateV4", PlanFamily: "proxy", Status: "active", AccountEmailMatches: true},
+		{IP: "10.0.1.10", Plan: "PrivateV4", PlanFamily: "proxy", Status: "active", AccountEmailMatches: true},
+	}
+	if requiresCloudminiProxyLiveCheck(state, "10.0.0.10") {
+		t.Fatal("outage IP must skip live_check")
+	}
+	if !requiresCloudminiProxyLiveCheck(state, "10.0.1.10") {
+		t.Fatal("unaffected IP must still require live_check")
+	}
+}
+
+func TestCloudminiLiveCheckValidatorUsesOutageScopePerIP(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "Proxy 10.0.0.10 và 10.0.1.10 đều lỗi"}, nil, "", nil)
+	state.Cloudmini.RequestIPs = []string{"10.0.0.10", "10.0.1.10"}
+	state.Cloudmini.OutageCIDRs = []string{"10.0.0.0/24"}
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{
+		{IP: "10.0.0.10", Plan: "PrivateV4", PlanFamily: "proxy", Status: "active", AccountEmailMatches: true},
+		{IP: "10.0.1.10", Plan: "PrivateV4", PlanFamily: "proxy", Status: "active", AccountEmailMatches: true},
+	}
+	state.Messages.SetHistory([]providers.Message{{Role: "user", Content: "customer@example.com"}})
+	outageCall := providers.ToolCall{Name: cloudminiProxyCheckToolName, Arguments: map[string]any{
+		"operation": "live_check", "ip": "10.0.0.10", "account_email": "customer@example.com",
+	}}
+	if ok, _ := validateCloudminiCurrentRequestToolCall(state, outageCall); ok {
+		t.Fatal("outage IP live_check must be rejected")
+	}
+	unaffectedCall := providers.ToolCall{Name: cloudminiProxyCheckToolName, Arguments: map[string]any{
+		"operation": "live_check", "ip": "10.0.1.10", "account_email": "customer@example.com",
+	}}
+	if ok, reason := validateCloudminiCurrentRequestToolCall(state, unaffectedCall); !ok {
+		t.Fatalf("unaffected IP live_check rejected: %s", reason)
+	}
+}
+
+func TestCloudminiHandoffRequiresTriageWhenProxyIsLive(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "Proxy 94.103.56.231 lỗi kết nối"}, nil, "", nil)
+	state.Cloudmini.RequestIPs = []string{"94.103.56.231"}
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{{IP: "94.103.56.231", PlanFamily: "proxy", Status: "active", AccountEmailMatches: true}}
+	state.Cloudmini.LiveChecks = map[string]bool{"94.103.56.231": true}
+	call := providers.ToolCall{Name: "escalate_to_admin", Arguments: map[string]any{"summary": "Proxy 94.103.56.231 lỗi kết nối"}}
+	if ok, _ := validateCloudminiCurrentRequestToolCall(state, call); ok {
+		t.Fatal("LIVE proxy must be explained and triaged before handoff")
+	}
+	state.Input.Message += " khách đã thử WARP và 4G"
+	if ok, reason := validateCloudminiCurrentRequestToolCall(state, call); !ok {
+		t.Fatalf("handoff after customer triage rejected: %s", reason)
+	}
+}
+
+func TestCloudminiHandoffAllowsEscalationAfterLiveCheckToolFailure(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "Proxy 94.103.56.231 lỗi kết nối"}, nil, "", nil)
+	state.Cloudmini.RequestIPs = []string{"94.103.56.231"}
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{{IP: "94.103.56.231", PlanFamily: "private_v4", Status: "active", AccountEmailMatches: true}}
+	state.Cloudmini.LiveAttempts = map[string]bool{"94.103.56.231": true}
+	call := providers.ToolCall{Name: "escalate_to_admin", Arguments: map[string]any{"summary": "Proxy 94.103.56.231 lỗi kết nối; live_check không trả trạng thái"}}
+	if ok, reason := validateCloudminiCurrentRequestToolCall(state, call); !ok {
+		t.Fatalf("handoff after live_check tool failure rejected: %s", reason)
 	}
 }
 

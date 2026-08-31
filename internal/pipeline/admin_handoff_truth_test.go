@@ -123,3 +123,50 @@ func TestAdminHandoffTruthChecksEveryMentionedTicket(t *testing.T) {
 		t.Fatal("unchecked second ticket was accepted")
 	}
 }
+
+func TestEnsureAdminHandoffCustomerReplyIncludesEveryCheckedIP(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "Proxy 37.221.109.121 và 37.221.109.122 lỗi"}, nil, "", nil)
+	state.Tool.AdminHandoffTicket = "Ticket-000301"
+	state.Tool.AdminHandoffCustomerReplyRequired = true
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{
+		{IP: "37.221.109.121", Status: "active"},
+		{IP: "37.221.109.122", Status: "not_verified"},
+	}
+	state.Observe.FinalContent = "Dạ đã chuyển Admin, Ticket-000301."
+
+	ensureAdminHandoffCustomerReply(state)
+
+	content := strings.ToLower(state.Observe.FinalContent)
+	for _, required := range []string{"ticket-000301", "37.221.109.121", "đang hoạt động", "37.221.109.122", "chưa thể xác minh"} {
+		if !strings.Contains(content, required) {
+			t.Fatalf("deterministic reply missing %q: %s", required, state.Observe.FinalContent)
+		}
+	}
+	if state.Tool.AdminHandoffCustomerReplyRequired {
+		t.Fatal("pending reply flag was not cleared")
+	}
+}
+
+func TestAdminHandoffRecoveryConfirmationDoesNotInventConnectionError(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "Nhờ khôi phục IP 37.221.109.121"}, nil, "", nil)
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{{IP: "37.221.109.121", Status: "deleted"}}
+
+	content := strings.ToLower(adminHandoffCustomerConfirmationWithFacts(state, "Ticket-000302"))
+	if !strings.Contains(content, "yêu cầu khôi phục") {
+		t.Fatalf("recovery reason missing: %s", content)
+	}
+	if strings.Contains(content, "lỗi kết nối") {
+		t.Fatalf("recovery reply invented connection error: %s", content)
+	}
+}
+
+func TestAdminHandoffConfirmationIncludesLiveCheckResult(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "Proxy 37.221.109.121 lỗi kết nối"}, nil, "", nil)
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{{IP: "37.221.109.121", Status: "active"}}
+	state.Cloudmini.LiveChecks = map[string]bool{"37.221.109.121": false}
+
+	content := adminHandoffCustomerConfirmationWithFacts(state, "Ticket-000303")
+	if !strings.Contains(content, "37.221.109.121") || !strings.Contains(content, "DIE") {
+		t.Fatalf("live result missing from confirmation: %s", content)
+	}
+}

@@ -269,6 +269,7 @@ func wireExtras(
 		BuiltinToolTenantCfgs:  stores.BuiltinToolTenantCfgs,
 		SkillTenantCfgs:        stores.SkillTenantCfgs,
 		SystemConfigs:          stores.SystemConfigs,
+		OperationalIncidents:   stores.OperationalIncidents,
 		Workspace:              workspace,
 		TTSAutoMode:            appCfg.Tts.Auto,
 		AutoInjector:           autoInjector,

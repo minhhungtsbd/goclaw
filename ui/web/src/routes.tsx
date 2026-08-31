@@ -84,6 +84,9 @@ const PendingMessagesPage = lazyWithRetry(() =>
 const AdminHandoffsPage = lazyWithRetry(() =>
   import("@/pages/admin-handoffs/admin-handoffs-page").then((m) => ({ default: m.AdminHandoffsPage })),
 );
+const OperationalIncidentsPage = lazyWithRetry(() =>
+  import("@/pages/operational-incidents/operational-incidents-page").then((m) => ({ default: m.OperationalIncidentsPage })),
+);
 const MemoryPage = lazyWithRetry(() =>
   import("@/pages/memory/memory-page").then((m) => ({ default: m.MemoryPage })),
 );
@@ -213,6 +216,7 @@ export function AppRoutes() {
           <Route path={ROUTES.APPROVALS} element={<ApprovalsPage />} />
           <Route path={ROUTES.PENDING_MESSAGES} element={<PendingMessagesPage />} />
           <Route path={ROUTES.ADMIN_HANDOFFS} element={<RequireAdmin><AdminHandoffsPage /></RequireAdmin>} />
+          <Route path={ROUTES.OPERATIONAL_INCIDENTS} element={<RequireAdmin><OperationalIncidentsPage /></RequireAdmin>} />
           <Route path={ROUTES.MEMORY} element={<MemoryPage />} />
           <Route path={ROUTES.VAULT} element={<VaultPage />} />
           <Route path={ROUTES.KNOWLEDGE_GRAPH} element={<KnowledgeGraphPage />} />

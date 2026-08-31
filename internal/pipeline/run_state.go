@@ -95,6 +95,7 @@ func (rs *RunState) BuildResult() *RunResult {
 // RunInput is the pipeline's view of a run request.
 // Converted from agent.RunRequest by the adapter in Phase 8.
 type RunInput struct {
+	AgentKey                   string
 	SessionKey                 string
 	Message                    string
 	Media                      []bus.MediaFile

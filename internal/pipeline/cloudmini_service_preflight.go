@@ -11,8 +11,11 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/nextlevelbuilder/goclaw/internal/cloudminiincident"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
+	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
 const cloudminiProxyCheckToolName = "cloudmini_proxy_check"
@@ -20,9 +23,6 @@ const cloudminiProxyCheckToolName = "cloudmini_proxy_check"
 var cloudminiIPCandidate = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
 var cloudminiEmailCandidate = regexp.MustCompile(`(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b`)
 var cloudminiDeclaredIPCount = regexp.MustCompile(`(?i)\b(\d{1,3})\s*(?:ip|proxy|vps)\b`)
-var cloudminiOutageSectionStart = regexp.MustCompile(`(?mi)^#{1,6}\s*Subnet IPv4 ngưng hoạt động hoàn toàn\s*:?\s*$`)
-var cloudminiNextHeading = regexp.MustCompile(`(?m)^#{1,6}\s+`)
-var cloudminiCIDRCandidate = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}/\d{1,2}\b`)
 
 // CloudminiServicePreflightStage loads service facts before the model answers a
 // customer request about a Proxy IP. It applies only when the scoped agent has
@@ -63,6 +63,10 @@ func (s *CloudminiServicePreflightStage) Execute(ctx context.Context, state *Run
 	state.Tool.AllowedTools = map[string]bool{cloudminiProxyCheckToolName: true}
 	accountEmail := latestCloudminiCustomerEmailForState(state)
 	for index, ip := range ips {
+		if cloudminiPreflightBudgetExhausted(s.deps, state) {
+			slog.Warn("cloudmini service preflight stopped at tool budget", "checked", index, "ip_count", len(ips))
+			break
+		}
 		arguments := map[string]any{
 			"ip":        ip,
 			"operation": "service_info",
@@ -77,7 +81,8 @@ func (s *CloudminiServicePreflightStage) Execute(ctx context.Context, state *Run
 		}
 		if s.deps.AuthorizeToolCall != nil {
 			if ok, reason := s.deps.AuthorizeToolCall(ctx, state, tc); !ok {
-				return fmt.Errorf("authorize %s: %s", cloudminiProxyCheckToolName, reason)
+				slog.Warn("cloudmini service preflight unauthorized", "ip", ip, "reason", reason)
+				break
 			}
 		}
 
@@ -91,18 +96,35 @@ func (s *CloudminiServicePreflightStage) Execute(ctx context.Context, state *Run
 		for _, message := range messages {
 			state.Messages.AppendPending(message)
 		}
-		captureCloudminiServiceFacts(state, messages)
+		if captureCloudminiServiceFacts(state, messages) == 0 {
+			upsertCloudminiUnavailableFact(state, ip)
+		}
 		state.Tool.TotalToolCalls++
 
-		if requiresCloudminiProxyLiveCheck(state, ip) && !cloudminiServiceDeleted(messages) {
-			liveCheck := providers.ToolCall{
-				ID:   cloudminiPreflightCallID(state.RunID, "live_check", ip, index),
-				Name: cloudminiProxyCheckToolName,
-				Arguments: map[string]any{
-					"ip":        ip,
-					"operation": "live_check",
-				},
+		if requiresCloudminiProxyLiveCheck(state, ip) && !cloudminiServiceDeleted(messages) && !cloudminiPreflightBudgetExhausted(s.deps, state) {
+			liveArguments := map[string]any{
+				"ip":        ip,
+				"operation": "live_check",
 			}
+			if accountEmail != "" {
+				liveArguments["account_email"] = accountEmail
+			}
+			liveCheck := providers.ToolCall{
+				ID:        cloudminiPreflightCallID(state.RunID, "live_check", ip, index),
+				Name:      cloudminiProxyCheckToolName,
+				Arguments: liveArguments,
+			}
+			if ok, reason := validateCloudminiCurrentRequestToolCall(state, liveCheck); !ok {
+				slog.Warn("cloudmini live preflight blocked", "ip", ip, "reason", reason)
+				continue
+			}
+			if s.deps.AuthorizeToolCall != nil {
+				if ok, reason := s.deps.AuthorizeToolCall(ctx, state, liveCheck); !ok {
+					slog.Warn("cloudmini live preflight unauthorized", "ip", ip, "reason", reason)
+					continue
+				}
+			}
+			markCloudminiLiveCheckAttempt(state, ip)
 			state.Messages.AppendPending(providers.Message{Role: "assistant", ToolCalls: []providers.ToolCall{liveCheck}})
 			liveMessages, err := s.deps.ExecuteToolCall(ctx, state, liveCheck)
 			if err != nil {
@@ -111,6 +133,7 @@ func (s *CloudminiServicePreflightStage) Execute(ctx context.Context, state *Run
 			for _, message := range liveMessages {
 				state.Messages.AppendPending(message)
 			}
+			captureCloudminiLiveCheck(state, liveMessages)
 			state.Tool.TotalToolCalls++
 		}
 	}
@@ -118,6 +141,10 @@ func (s *CloudminiServicePreflightStage) Execute(ctx context.Context, state *Run
 	appendCloudminiRequestScope(state, ips)
 	appendCloudminiResponseGuard(state, accountEmail)
 	return nil
+}
+
+func cloudminiPreflightBudgetExhausted(deps *PipelineDeps, state *RunState) bool {
+	return deps != nil && deps.Config.MaxToolCalls > 0 && state.Tool.TotalToolCalls >= deps.Config.MaxToolCalls
 }
 
 // prepareCloudminiToolState initializes only deterministic request scope after
@@ -144,29 +171,54 @@ func prepareCloudminiToolState(state *RunState, call providers.ToolCall) {
 // been processed so the next LLM iteration sees deterministic email, ownership,
 // live-check, scope, and handoff guards without an automatic backend API call.
 func recordCloudminiProxyCheckResult(state *RunState, call providers.ToolCall, messages []providers.Message) {
-	if state == nil || call.Name != cloudminiProxyCheckToolName ||
-		strings.TrimSpace(cloudminiToolStringArg(call.Arguments, "operation")) != "service_info" {
+	if state == nil || call.Name != cloudminiProxyCheckToolName {
+		return
+	}
+	if strings.TrimSpace(cloudminiToolStringArg(call.Arguments, "operation")) == "live_check" {
+		markCloudminiLiveCheckAttempt(state, cloudminiToolStringArg(call.Arguments, "ip"))
+		captureCloudminiLiveCheck(state, messages)
+		return
+	}
+	if strings.TrimSpace(cloudminiToolStringArg(call.Arguments, "operation")) != "service_info" {
 		return
 	}
 	if captureCloudminiServiceFacts(state, messages) == 0 {
-		return
+		upsertCloudminiUnavailableFact(state, cloudminiToolStringArg(call.Arguments, "ip"))
 	}
 	accountEmail := latestCloudminiCustomerEmailForState(state)
 	refreshCloudminiDeterministicState(state, accountEmail)
 	appendCloudminiResponseGuard(state, accountEmail)
 }
 
+func upsertCloudminiUnavailableFact(state *RunState, ip string) {
+	if state == nil || strings.TrimSpace(ip) == "" {
+		return
+	}
+	ip = strings.TrimSpace(ip)
+	fact := CloudminiServiceFact{IP: ip, Status: "unavailable"}
+	for index := range state.Cloudmini.ServiceFacts {
+		if state.Cloudmini.ServiceFacts[index].IP == ip {
+			state.Cloudmini.ServiceFacts[index] = fact
+			return
+		}
+	}
+	state.Cloudmini.ServiceFacts = append(state.Cloudmini.ServiceFacts, fact)
+}
+
 func refreshCloudminiDeterministicState(state *RunState, accountEmail string) {
 	if state == nil {
 		return
 	}
-	state.Cloudmini.EmailRequired = accountEmail == "" && len(state.Cloudmini.ServiceFacts) > 0
+	state.Cloudmini.EmailRequired = false
 	state.Cloudmini.EmailMismatch = false
 	for _, fact := range state.Cloudmini.ServiceFacts {
+		if fact.Status == "email_required" || (accountEmail == "" && fact.Status != "unavailable") {
+			state.Cloudmini.EmailRequired = true
+		}
 		// A deleted IP is intentionally exempt for recovery: its old owner is
 		// irrelevant and the supplied email is the destination account. For an
 		// existing service, a false match is never evidence of another owner.
-		if fact.Status == "not_verified" || fact.Status == "unavailable" ||
+		if fact.Status == "not_verified" ||
 			(accountEmail != "" && fact.Status != "deleted" && !fact.AccountEmailMatches) {
 			state.Cloudmini.EmailMismatch = true
 			break
@@ -268,55 +320,110 @@ func appendUniqueCloudminiIPs(base []string, values ...string) []string {
 
 func appendCloudminiOperationalSubnetNotice(state *RunState, ips []string) {
 	system := state.Messages.System()
-	start := cloudminiOutageSectionStart.FindStringIndex(system.Content)
-	if start == nil {
-		return
-	}
-	sectionEnd := len(system.Content)
-	afterHeading := system.Content[start[1]:]
-	if next := cloudminiNextHeading.FindStringIndex(afterHeading); next != nil {
-		sectionEnd = start[1] + next[0]
-	}
-	section := strings.TrimSpace(system.Content[start[0]:sectionEnd])
-	var matched []string
-	for _, candidate := range cloudminiCIDRCandidate.FindAllString(section, -1) {
-		prefix, err := netip.ParsePrefix(candidate)
-		if err != nil {
-			continue
-		}
-		for _, value := range ips {
-			ip, err := netip.ParseAddr(value)
-			if err == nil && prefix.Contains(ip) {
-				matched = appendUniqueCloudminiIPs(matched, candidate)
-				break
+	if incidents, err := cloudminiincident.ParseContext(system.Content); err == nil {
+		matchedIDs := make(map[string]bool)
+		for _, ip := range ips {
+			if incident := cloudminiincident.Match(incidents, ip, state.Input.AgentKey, time.Now().UTC()); incident != nil {
+				if state.Cloudmini.IncidentsByIP == nil {
+					state.Cloudmini.IncidentsByIP = make(map[string]store.OperationalIncident)
+				}
+				state.Cloudmini.IncidentsByIP[ip] = *incident
+				if incident.Severity == "permanent_outage" {
+					state.Cloudmini.OutageCIDRs = appendUniqueCloudminiIPs(state.Cloudmini.OutageCIDRs, incident.CIDRs...)
+				}
+				if matchedIDs[incident.ID] {
+					continue
+				}
+				matchedIDs[incident.ID] = true
+				encoded, _ := json.Marshal(incident)
+				block := "\n\n[THÔNG BÁO VẬN HÀNH CÓ CẤU TRÚC - BẮT BUỘC ĐỐI CHIẾU]\n" +
+					"Chỉ dẫn: đây là context vận hành, không ghi đè kết quả tool mới nhất. " +
+					"Không nâng mức độ sự cố và không tự thêm phương án đổi/hoàn tiền.\n" +
+					"<matched_operational_incident>" + string(encoded) + "</matched_operational_incident>"
+				system.Content += block
 			}
 		}
+		if len(matchedIDs) > 0 {
+			state.Messages.SetSystem(system)
+			return
+		}
 	}
-	if len(matched) == 0 {
-		return
-	}
-	state.Cloudmini.OutageCIDRs = matched
-	system.Content += "\n\n[THÔNG BÁO VẬN HÀNH KHỚP IP HIỆN TẠI - BẮT BUỘC ÁP DỤNG]\n" +
-		"IP khách gửi thuộc subnet: " + strings.Join(matched, ", ") + ".\n" + section + "\n" +
-		"Phải trả lời theo thông báo này. Không thay bằng hướng dẫn Check Live chung, không nói đã chuyển Admin và không tạo mã ticket nếu chưa gọi thành công `escalate_to_admin`."
-	state.Messages.SetSystem(system)
+	// Legacy free-form AGENTS.md outage sections are deliberately ignored. Only
+	// validated <operational_incidents> records may affect runtime decisions.
 }
 
 func requiresCloudminiProxyLiveCheck(state *RunState, ip string) bool {
 	message := strings.ToLower(cloudminiSupportIntentText(state))
-	if !containsAny(message, "lỗi", "loi", "không kết nối", "khong ket noi", "check live", "die") ||
-		len(state.Cloudmini.OutageCIDRs) > 0 {
+	if containsAny(message,
+		"khôi phục", "khoi phuc", "phục hồi", "phuc hoi", "gia hạn", "gia han",
+		"hủy", "huỷ", "huy", "hoàn", "hoan", "đổi ip", "doi ip", "thay ip") {
 		return false
 	}
-	if strings.Contains(message, "proxy") {
-		return true
+	if !containsAny(message, "lỗi", "loi", "không kết nối", "khong ket noi", "check live", "die", "error", "timeout", "không hoạt động", "khong hoat dong") ||
+		cloudminiIPInOutage(state, ip) {
+		return false
 	}
 	for _, fact := range state.Cloudmini.ServiceFacts {
-		if fact.IP == ip && fact.Plan != "" && !strings.Contains(strings.ToLower(fact.Plan), "vps") {
+		if fact.IP == ip && fact.Status == "active" && fact.AccountEmailMatches &&
+			fact.Plan != "" && fact.PlanFamily != "vps" && !strings.Contains(strings.ToLower(fact.Plan), "vps") {
 			return true
 		}
 	}
 	return false
+}
+
+func cloudminiIPInOutage(state *RunState, value string) bool {
+	if state == nil {
+		return false
+	}
+	ip, err := netip.ParseAddr(value)
+	if err != nil {
+		return false
+	}
+	for _, raw := range state.Cloudmini.OutageCIDRs {
+		prefix, err := netip.ParsePrefix(raw)
+		if err == nil && prefix.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func captureCloudminiLiveCheck(state *RunState, messages []providers.Message) int {
+	if state == nil {
+		return 0
+	}
+	captured := 0
+	for _, message := range messages {
+		if message.Role != "tool" || message.IsError {
+			continue
+		}
+		var response struct {
+			LiveCheck struct {
+				IP   string `json:"ip"`
+				Live *bool  `json:"live"`
+			} `json:"live_check"`
+		}
+		if json.Unmarshal([]byte(message.Content), &response) != nil || response.LiveCheck.IP == "" || response.LiveCheck.Live == nil {
+			continue
+		}
+		if state.Cloudmini.LiveChecks == nil {
+			state.Cloudmini.LiveChecks = make(map[string]bool)
+		}
+		state.Cloudmini.LiveChecks[response.LiveCheck.IP] = *response.LiveCheck.Live
+		captured++
+	}
+	return captured
+}
+
+func markCloudminiLiveCheckAttempt(state *RunState, ip string) {
+	if state == nil || strings.TrimSpace(ip) == "" {
+		return
+	}
+	if state.Cloudmini.LiveAttempts == nil {
+		state.Cloudmini.LiveAttempts = make(map[string]bool)
+	}
+	state.Cloudmini.LiveAttempts[strings.TrimSpace(ip)] = true
 }
 
 func cloudminiServiceDeleted(messages []providers.Message) bool {
@@ -362,8 +469,11 @@ func captureCloudminiServiceFacts(state *RunState, messages []providers.Message)
 			continue
 		}
 		for _, service := range response.Services {
-			status := service.ServiceStatus
-			if strings.TrimSpace(string(service.Expire)) == "null" {
+			status := strings.TrimSpace(service.ServiceStatus)
+			// expire may be redacted to null for email_required/not_verified.
+			// Only infer deleted for legacy tool payloads that omit service_status;
+			// an explicit sanitized status is always authoritative.
+			if status == "" && strings.TrimSpace(string(service.Expire)) == "null" {
 				status = "deleted"
 			}
 			fact := CloudminiServiceFact{
@@ -398,7 +508,17 @@ func isCloudminiServiceRequest(state *RunState) bool {
 		return false
 	}
 	message := strings.ToLower(state.Input.Message)
-	return len(cloudminiIPs(message)) > 0 || isCloudminiEmailContinuation(state)
+	if isCloudminiEmailContinuation(state) {
+		return true
+	}
+	if len(cloudminiIPs(message)) == 0 {
+		return false
+	}
+	return containsAny(message,
+		"cloudmini", "proxy", "vps", "kiểm tra", "kiem tra", "check", "lỗi", "loi", "error",
+		"không kết nối", "khong ket noi", "không hoạt động", "khong hoat dong", "timeout", "die",
+		"khôi phục", "khoi phuc", "phục hồi", "phuc hoi", "gia hạn", "gia han", "hủy", "huỷ", "huy",
+		"hoàn tiền", "hoan tien", "đổi ip", "doi ip", "thay ip")
 }
 
 func isCloudminiEmailContinuation(state *RunState) bool {
@@ -562,7 +682,7 @@ func validateCloudminiCurrentRequestToolCall(state *RunState, tc providers.ToolC
 			if customerEmail == "" || providedEmail == "" || !strings.EqualFold(providedEmail, customerEmail) {
 				return false, "chỉ được gọi live_check với email Cloudmini do khách đã cung cấp"
 			}
-			if len(state.Cloudmini.OutageCIDRs) > 0 {
+			if cloudminiIPInOutage(state, parsed.String()) {
 				return false, "không gọi live_check cho IP thuộc subnet đang có thông báo vận hành"
 			}
 			var verifiedProxy bool
@@ -584,14 +704,25 @@ func validateCloudminiCurrentRequestToolCall(state *RunState, tc providers.ToolC
 			}
 		}
 	case "escalate_to_admin":
+		intent := strings.ToLower(cloudminiSupportIntentText(state))
+		needsOperationalReview := containsAny(intent,
+			"lỗi", "loi", "không kết nối", "khong ket noi", "không vào được", "khong vao duoc",
+			"không hoạt động", "khong hoat dong", "die", "error", "timeout", "manual", "kỹ thuật", "ky thuat",
+			"khôi phục", "khoi phuc", "gia hạn", "gia han", "hủy", "huỷ", "huy", "hoàn tiền", "hoan tien")
 		referenced := cloudminiHandoffIPs(tc.Arguments)
 		if len(referenced) == 0 {
 			return false, "Admin handoff cho yêu cầu Cloudmini hiện tại phải chứa IP trong tin nhắn khách vừa gửi"
+		}
+		if !needsOperationalReview && !cloudminiIncidentsAllowHandoff(state, referenced) {
+			return false, "chỉ tạo Admin handoff khi khách báo lỗi/cần xử lý kỹ thuật hoặc incident cho phép handoff"
 		}
 		for _, ip := range referenced {
 			if !containsCloudminiIP(allowed, ip) {
 				return false, "Admin handoff chỉ được chứa IP trong tin nhắn Cloudmini hiện tại; không dùng danh sách IP cũ"
 			}
+		}
+		if blocked, reason := cloudminiHandoffNeedsMoreLiveTriage(state, referenced, intent); blocked {
+			return false, reason
 		}
 		if requiresAllCloudminiIPs(state.Input.Message) {
 			for _, ip := range current {
@@ -602,6 +733,47 @@ func validateCloudminiCurrentRequestToolCall(state *RunState, tc providers.ToolC
 		}
 	}
 	return true, ""
+}
+
+func cloudminiHandoffNeedsMoreLiveTriage(state *RunState, ips []string, intent string) (bool, string) {
+	if state == nil || cloudminiIncidentsAllowHandoff(state, ips) ||
+		!containsAny(intent, "lỗi", "loi", "error", "không kết nối", "khong ket noi", "die", "timeout") ||
+		containsAny(intent, "đã thử", "da thu", "warp", "4g", "5g", "mạng khác", "mang khac", "restart", "khởi động", "khoi dong", "ứng dụng khác", "ung dung khac", "xóa cache", "xoa cache") {
+		return false, ""
+	}
+	for _, ip := range ips {
+		for _, fact := range state.Cloudmini.ServiceFacts {
+			if fact.IP != ip || fact.Status != "active" || !fact.AccountEmailMatches || fact.PlanFamily == "vps" {
+				continue
+			}
+			live, checked := state.Cloudmini.LiveChecks[ip]
+			if !checked {
+				if state.Cloudmini.LiveAttempts[ip] {
+					// The required check ran but returned no usable status. This is a
+					// tool/service failure and may be escalated with that evidence.
+					continue
+				}
+				return true, "phải hoàn tất live_check cho Proxy active đã xác minh trước khi tạo Admin handoff lỗi kết nối"
+			}
+			if live {
+				return true, "Proxy đang LIVE; phải giải thích trạng thái và hướng dẫn bước chẩn đoán phù hợp trước khi chuyển Admin"
+			}
+		}
+	}
+	return false, ""
+}
+
+func cloudminiIncidentsAllowHandoff(state *RunState, ips []string) bool {
+	if state == nil || len(ips) == 0 {
+		return false
+	}
+	for _, ip := range ips {
+		incident, ok := state.Cloudmini.IncidentsByIP[ip]
+		if !ok || !incident.AllowsAdminHandoff {
+			return false
+		}
+	}
+	return true
 }
 
 func cloudminiHandoffIPs(args map[string]any) []string {

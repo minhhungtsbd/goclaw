@@ -143,7 +143,7 @@ func TestNewDefaultPipeline_PrunesBeforeThink(t *testing.T) {
 	}
 }
 
-func TestNewDefaultPipelineDoesNotAutomaticallyCallCloudminiTool(t *testing.T) {
+func TestNewDefaultPipelineLoadsCloudminiServiceInfoBeforeLLM(t *testing.T) {
 	var toolCalls int
 	deps := PipelineDeps{
 		Config: PipelineConfig{MaxIterations: 1, ContextWindow: 8_000, MaxTokens: 512},
@@ -153,9 +153,9 @@ func TestNewDefaultPipelineDoesNotAutomaticallyCallCloudminiTool(t *testing.T) {
 		BuildFilteredTools: func(_ *RunState) ([]providers.ToolDefinition, error) {
 			return []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}, nil
 		},
-		ExecuteToolCall: func(context.Context, *RunState, providers.ToolCall) ([]providers.Message, error) {
+		ExecuteToolCall: func(_ context.Context, _ *RunState, call providers.ToolCall) ([]providers.Message, error) {
 			toolCalls++
-			return nil, nil
+			return []providers.Message{{Role: "tool", ToolCallID: call.ID, Content: `{"services":[{"ip":"191.101.251.120","service_status":"email_required"}]}`}}, nil
 		},
 		CallLLM: func(context.Context, *RunState, providers.ChatRequest) (*providers.ChatResponse, error) {
 			return &providers.ChatResponse{Content: "Em cần email Cloudmini để kiểm tra đúng dịch vụ ạ.", FinishReason: "stop"}, nil
@@ -166,8 +166,8 @@ func TestNewDefaultPipelineDoesNotAutomaticallyCallCloudminiTool(t *testing.T) {
 	if _, err := NewDefaultPipeline(deps).Run(context.Background(), state); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if toolCalls != 0 {
-		t.Fatalf("automatic Cloudmini calls = %d, want 0; the LLM must decide from the pinned skill", toolCalls)
+	if toolCalls != 1 {
+		t.Fatalf("automatic Cloudmini calls = %d, want service_info only", toolCalls)
 	}
 }
 

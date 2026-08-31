@@ -40,6 +40,7 @@ type Stores struct {
 	SkillTenantCfgs       SkillTenantConfigStore
 	SkillEvolution        SkillEvolutionStore
 	SystemConfigs         SystemConfigStore
+	OperationalIncidents  OperationalIncidentStore
 	SubagentTasks         SubagentTaskStore
 	SubagentTaskRecovery  SubagentTaskRecoveryStore
 	Vault                 VaultStore

@@ -16,6 +16,7 @@
     "sessions": "Sessions",
     "pendingMessages": "Pending Messages",
     "adminHandoffs": "Admin Handoffs",
+    "operationalIncidents": "Operational Incidents",
     "channels": "Channels",
     "webhooks": "Webhooks",
     "contacts": "Contacts",

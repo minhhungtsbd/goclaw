@@ -51,6 +51,7 @@ func NewSQLiteStores(cfg store.StoreConfig) (*store.Stores, error) {
 		SkillTenantCfgs:        NewSQLiteSkillTenantConfigStore(db),
 		SkillEvolution:         NewSQLiteSkillEvolutionStore(db),
 		SystemConfigs:          NewSQLiteSystemConfigStore(db),
+		OperationalIncidents:   store.NewOperationalIncidentStore(NewSQLiteSystemConfigStore(db)),
 		Snapshots:              NewSQLiteSnapshotStore(db),
 		UsageEvents:            NewSQLiteUsageEventStore(db),
 		Cron:                   NewSQLiteCronStore(db),

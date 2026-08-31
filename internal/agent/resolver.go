@@ -124,7 +124,8 @@ type ResolverDeps struct {
 	SkillTenantCfgs       store.SkillTenantConfigStore
 
 	// System config store for tenant-scoped settings (allowed_paths, etc.)
-	SystemConfigs store.SystemConfigStore
+	SystemConfigs        store.SystemConfigStore
+	OperationalIncidents store.OperationalIncidentStore
 
 	// Global workspace root (GOCLAW_WORKSPACE)
 	Workspace string
@@ -523,6 +524,7 @@ func NewManagedResolver(deps ResolverDeps) ResolverFunc {
 			TenantToolSettings:     tenantToolSettings,
 			TenantAllowedPaths:     tenantAllowedPaths,
 			SystemConfigs:          deps.SystemConfigs,
+			OperationalIncidents:   deps.OperationalIncidents,
 			DisabledTools:          disabledTools,
 			ReasoningConfig:        store.ResolveEffectiveReasoningConfig(providerReasoningDefaults, ag.ParseReasoningConfig()),
 			PromptMode:             PromptMode(ag.ParsePromptMode()),

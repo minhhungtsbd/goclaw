@@ -99,11 +99,66 @@ func ensureAdminHandoffCustomerReply(state *RunState) {
 		return
 	}
 	ticket := strings.TrimSpace(state.Tool.AdminHandoffTicket)
-	if !strings.Contains(strings.ToLower(state.Observe.FinalContent), strings.ToLower(ticket)) {
-		state.Observe.FinalContent = adminHandoffCustomerConfirmation(ticket)
+	lower := strings.ToLower(state.Observe.FinalContent)
+	if !strings.Contains(lower, strings.ToLower(ticket)) ||
+		(cloudminiHandoffNeedsServiceExplanation(state) && !handoffReplyHasServiceExplanation(state, lower)) {
+		state.Observe.FinalContent = adminHandoffCustomerConfirmationWithFacts(state, ticket)
 		state.Observe.FinalThinking = ""
 	}
 	state.Tool.AdminHandoffCustomerReplyRequired = false
+}
+
+func adminHandoffCustomerConfirmationWithFacts(state *RunState, ticket string) string {
+	if state == nil || len(state.Cloudmini.ServiceFacts) == 0 {
+		return adminHandoffCustomerConfirmation(ticket)
+	}
+	facts := make([]string, 0, len(state.Cloudmini.ServiceFacts))
+	for _, fact := range state.Cloudmini.ServiceFacts {
+		label := "Dịch vụ"
+		if strings.TrimSpace(fact.IP) != "" {
+			label = "IP " + strings.TrimSpace(fact.IP)
+		}
+		status := "chưa thể xác định trạng thái dịch vụ"
+		switch fact.Status {
+		case "active", "running", "linked":
+			status = "đang hoạt động theo kết quả kiểm tra hiện tại"
+		case "not_verified":
+			status = "hiện chưa thể xác minh theo thông tin tài khoản"
+		case "unavailable":
+			status = "hiện chưa thể xác minh do công cụ kiểm tra chưa trả dữ liệu"
+		case "email_required":
+			status = "cần email tài khoản Cloudmini để xác minh"
+		case "expired":
+			status = "đã hết hạn theo kết quả kiểm tra hiện tại"
+		case "deleted":
+			status = "đã bị xoá theo kết quả kiểm tra hiện tại"
+		}
+		if live, checked := state.Cloudmini.LiveChecks[fact.IP]; checked {
+			if live {
+				status += ", kiểm tra kết nối hiện là LIVE"
+			} else {
+				status += ", kiểm tra kết nối hiện là DIE"
+			}
+		} else if state.Cloudmini.LiveAttempts[fact.IP] {
+			status += ", live_check đã chạy nhưng chưa trả trạng thái sử dụng được"
+		}
+		facts = append(facts, label+" "+status)
+	}
+	reason := "Theo yêu cầu hiện tại"
+	intent := strings.ToLower(cloudminiSupportIntentText(state))
+	switch {
+	case containsAny(intent, "lỗi", "loi", "error", "không kết nối", "khong ket noi", "die", "timeout"):
+		reason = "Vì anh đang báo lỗi kết nối"
+	case containsAny(intent, "khôi phục", "khoi phuc", "phục hồi", "phuc hoi"):
+		reason = "Theo yêu cầu khôi phục của anh"
+	case containsAny(intent, "gia hạn", "gia han"):
+		reason = "Theo yêu cầu gia hạn của anh"
+	case containsAny(intent, "hủy", "huỷ", "huy", "hoàn", "hoan"):
+		reason = "Theo yêu cầu hủy/hoàn của anh"
+	}
+	return "Dạ, em đã kiểm tra: " + strings.Join(facts, "; ") + ". " + reason +
+		", em đã chuyển bộ phận Admin/Kỹ thuật kiểm tra thêm. Mã theo dõi của anh là " +
+		strings.TrimSpace(ticket) + ". Bên em sẽ cập nhật lại anh khi có kết quả ạ."
 }
 
 func adminHandoffTruthInstruction(state *RunState, mentionedTicket string) string {

@@ -1,0 +1,13 @@
+{
+  "title": "Operational incidents",
+  "description": "Manage structured notices that agents may use when handling affected proxy networks.",
+  "refresh": "Refresh", "add": "Add incident", "help": "Use one CIDR per line. Tool results always take precedence over an incident notice.",
+  "saved": "Incident saved", "saveFailed": "Could not save incident", "loadFailed": "Could not load incidents", "confirmDelete": "Delete {{name}}?", "deleted": "Incident deleted",
+  "emptyTitle": "No operational incidents", "emptyDescription": "Add a structured notice to guide agents during a known incident.",
+  "columns": {"name": "Name", "service": "Service", "networks": "Networks", "severity": "Severity", "status": "Status", "actions": "Actions"},
+  "severity": {"temporary_issue": "Temporary issue", "degraded": "Degraded", "permanent_outage": "Permanent outage"},
+  "enabled": "Enabled", "disabled": "Disabled", "edit": "Edit", "delete": "Delete", "editTitle": "Edit incident", "addTitle": "Add incident",
+  "formDescription": "These fields become structured context; agents cannot edit them during a customer conversation.",
+  "fields": {"name": "Name", "service": "Service", "region": "Region", "severity": "Severity", "cidrs": "Affected CIDRs", "cidrsPlaceholder": "147.189.140.0/24\nOne network per line", "startsAt": "Starts at", "endsAt": "Ends at", "customerMessage": "Approved customer message", "customerMessagePlaceholder": "Optional text agents may quote", "allowedClaims": "Allowed claims (one per line)", "forbiddenClaims": "Forbidden claims (one per line)", "agentKeys": "Agent keys (comma-separated)", "agentKeysPlaceholder": "Leave blank for all agents", "enabled": "Enabled", "requiresLive": "Require live-check when applicable", "allowsHandoff": "Allow Admin handoff"},
+  "cancel": "Cancel", "saving": "Saving…", "save": "Save"
+}

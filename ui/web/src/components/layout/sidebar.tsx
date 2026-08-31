@@ -33,6 +33,7 @@ import {
   Cable,
   MonitorCog,
   ClipboardCheck,
+  AlertTriangle,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { SidebarGroup } from "./sidebar-group";
@@ -99,6 +100,7 @@ export function Sidebar({ collapsed, onNavItemClick }: SidebarProps) {
           <SidebarItem to={ROUTES.SESSIONS} icon={History} label={t("nav.sessions")} collapsed={collapsed} />
           <SidebarItem to={ROUTES.PENDING_MESSAGES} icon={Inbox} label={t("nav.pendingMessages")} collapsed={collapsed} />
           {isAdmin && <SidebarItem to={ROUTES.ADMIN_HANDOFFS} icon={ClipboardCheck} label={t("nav.adminHandoffs")} collapsed={collapsed} />}
+          {isAdmin && <SidebarItem to={ROUTES.OPERATIONAL_INCIDENTS} icon={AlertTriangle} label={t("nav.operationalIncidents")} collapsed={collapsed} />}
           <SidebarItem to={ROUTES.CONTACTS} icon={Contact} label={t("nav.contacts")} collapsed={collapsed} />
         </SidebarGroup>
 

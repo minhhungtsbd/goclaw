@@ -35,6 +35,7 @@ export const ROUTES = {
   STORAGE: "/storage",
   PENDING_MESSAGES: "/pending-messages",
   ADMIN_HANDOFFS: "/admin-handoffs",
+  OPERATIONAL_INCIDENTS: "/operational-incidents",
   MEMORY: "/memory",
   VAULT: "/vault",
   KNOWLEDGE_GRAPH: "/knowledge-graph",

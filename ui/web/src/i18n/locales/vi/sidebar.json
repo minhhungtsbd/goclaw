@@ -16,6 +16,7 @@
     "sessions": "Session",
     "pendingMessages": "Tin nhắn chờ",
     "adminHandoffs": "Admin Handoff",
+    "operationalIncidents": "Thông báo vận hành",
     "channels": "Channel",
     "webhooks": "Webhook",
     "contacts": "Liên hệ",

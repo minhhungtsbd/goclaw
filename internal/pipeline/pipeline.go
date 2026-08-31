@@ -27,7 +27,8 @@ func NewPipeline(setup, iteration, finalize []Stage, deps PipelineDeps) *Pipelin
 }
 
 // NewDefaultPipeline creates the standard 8-stage pipeline.
-// Setup: [ContextStage]. Iteration: [PruneStage, ThinkStage, ToolStage, ObserveStage, CheckpointStage].
+// Setup: [ContextStage, CloudminiServicePreflightStage].
+// Iteration: [PruneStage, ThinkStage, ToolStage, ObserveStage, CheckpointStage].
 // Finalize: [FinalizeStage].
 func NewDefaultPipeline(deps PipelineDeps) *Pipeline {
 	d := &deps
@@ -35,6 +36,10 @@ func NewDefaultPipeline(deps PipelineDeps) *Pipeline {
 
 	setup := []Stage{
 		NewContextStage(d),
+		// Resolve Cloudmini service facts before the first LLM call. This makes
+		// service_info deterministic and gives every fallback model the same
+		// verified facts instead of asking the model to remember to check first.
+		NewCloudminiServicePreflightStage(d),
 	}
 	iteration := []Stage{
 		NewPruneStage(d, memFlush),
@@ -55,6 +60,11 @@ func (p *Pipeline) Run(ctx context.Context, state *RunState) (*RunResult, error)
 
 	// 1. Setup (once)
 	for _, stage := range p.setup {
+		// Setup stages may enrich state.Ctx (ContextStage adds tenant/agent/user
+		// scope). Each subsequent setup stage must receive that enriched context.
+		if state.Ctx != nil {
+			ctx = state.Ctx
+		}
 		if err := stage.Execute(ctx, state); err != nil {
 			return nil, fmt.Errorf("setup %s: %w", stage.Name(), err)
 		}
