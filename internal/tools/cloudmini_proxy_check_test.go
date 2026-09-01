@@ -229,11 +229,14 @@ func TestCloudminiProxyCheckMapsLiveCheckHTTP500ToDie(t *testing.T) {
 	}
 }
 
-func TestSanitizeCloudminiLiveCheckRequiresExplicitLiveResult(t *testing.T) {
+func TestSanitizeCloudminiLiveCheckMapsInvalidOrNegativeResultsToDie(t *testing.T) {
 	for name, body := range map[string]string{
-		"upstream error": `{"error":true,"msg":"failed","data":null}`,
-		"missing data":   `{"error":false,"msg":"Success","data":null}`,
-		"unknown data":   `{"error":false,"msg":"Success","data":{"status":"unknown"}}`,
+		"upstream error":    `{"error":true,"msg":"failed","data":null}`,
+		"missing data":      `{"error":false,"msg":"Success","data":null}`,
+		"unknown status":    `{"error":false,"msg":"Success","data":{"status":"unknown"}}`,
+		"explicit die":      `{"error":false,"msg":"Success","data":{"ip":"154.16.151.89","live":false}}`,
+		"mismatched ip":     `{"error":false,"msg":"Success","data":{"ip":"103.239.67.232","country":"Vietnam"}}`,
+		"empty data object": `{"error":false,"msg":"Success","data":{}}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			got, err := sanitizeCloudminiProxyResponse("live_check", "154.16.151.89", "customer@example.com", nil, []byte(body))
@@ -241,6 +244,14 @@ func TestSanitizeCloudminiLiveCheckRequiresExplicitLiveResult(t *testing.T) {
 				t.Fatalf("result = %q, err = %v, want DIE", got, err)
 			}
 		})
+	}
+}
+
+func TestSanitizeCloudminiLiveCheckTreatsSuccessfulGeoIPPayloadAsLive(t *testing.T) {
+	body := []byte(`{"error":false,"msg":"Success","data":{"ip":"103.239.67.232","country":"Vietnam","state_prov":"Ho Chi Minh City","city":"Ho Chi Minh City","zipcode":"700000"}}`)
+	got, err := sanitizeCloudminiProxyResponse("live_check", "103.239.67.232", "customer@example.com", nil, body)
+	if err != nil || !strings.Contains(got, `"live":true`) || !strings.Contains(got, "LIVE") {
+		t.Fatalf("result = %q, err = %v, want LIVE", got, err)
 	}
 }
 

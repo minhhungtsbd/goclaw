@@ -55,7 +55,7 @@ Chỉ gọi `live_check` khi **đồng thời** có đủ: (1) khách đang báo
 
 - Không gọi `live_check` cho VPS.
 - Không dùng GeoIP/live-check để kết luận location; chỉ dùng `region` của `service_info`.
-- `live_check` chỉ có hai kết quả cuối cùng: LIVE hoặc DIE. Chỉ kết quả dương tính rõ ràng mới là LIVE; timeout, HTTP lỗi, lỗi hệ thống, dữ liệu thiếu/không hợp lệ hoặc mọi kết quả khác đều được chuẩn hóa thành DIE.
+- `live_check` chỉ có hai kết quả cuối cùng: LIVE hoặc DIE. API trả `error:false` cùng `data.ip` hợp lệ, đúng IP đang kiểm tra là LIVE, kể cả khi `data` chỉ chứa GeoIP và không có trường `live:true`; tín hiệu LIVE rõ ràng cũng là LIVE. Timeout, HTTP lỗi, `error:true`, dữ liệu rỗng/sai IP/không hợp lệ hoặc tín hiệu DIE rõ ràng đều được chuẩn hóa thành DIE.
 - Nếu LIVE, đọc `proxy-troubleshooting.md` và hướng dẫn bước phù hợp trước khi chuyển xử lý. Nếu DIE, đọc `escalation.md` rồi chuyển xử lý khi đủ dữ kiện.
 
 ### Thông báo vận hành có cấu trúc

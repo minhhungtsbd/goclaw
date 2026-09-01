@@ -289,22 +289,7 @@ func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, reseller
 	}
 	result := map[string]any{"operation": operation, "ip": ip, "success": !response.Error, "message": response.Msg}
 	if operation == "live_check" {
-		isLive := false
-		if !response.Error && len(response.Data) > 0 {
-			var rawMap map[string]any
-			if err := json.Unmarshal(response.Data, &rawMap); err == nil {
-				switch value := rawMap["live"].(type) {
-				case bool:
-					isLive = value
-				case string:
-					isLive = strings.EqualFold(value, "true") || strings.EqualFold(value, "live")
-				}
-				if status, ok := rawMap["status"].(string); ok {
-					isLive = strings.EqualFold(status, "live") || strings.EqualFold(status, "ok") || strings.EqualFold(status, "active")
-				}
-			}
-		}
-		return marshalCloudminiLiveCheckResult(ip, isLive)
+		return marshalCloudminiLiveCheckResult(ip, cloudminiLiveResponseIsLive(response.Error, response.Data, ip))
 	}
 	if response.Error || len(response.Data) == 0 {
 		encoded, err := json.Marshal(result)
@@ -390,6 +375,42 @@ func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, reseller
 	}
 	encoded, err := json.Marshal(result)
 	return string(encoded), err
+}
+
+func cloudminiLiveResponseIsLive(upstreamError bool, data json.RawMessage, requestedIP string) bool {
+	if upstreamError || len(data) == 0 {
+		return false
+	}
+	var rawMap map[string]any
+	if err := json.Unmarshal(data, &rawMap); err != nil || len(rawMap) == 0 {
+		return false
+	}
+	if value, exists := rawMap["live"]; exists {
+		switch typed := value.(type) {
+		case bool:
+			return typed
+		case string:
+			return strings.EqualFold(typed, "true") || strings.EqualFold(typed, "live")
+		default:
+			return false
+		}
+	}
+	if value, exists := rawMap["status"]; exists {
+		status, ok := value.(string)
+		return ok && (strings.EqualFold(status, "live") || strings.EqualFold(status, "ok") || strings.EqualFold(status, "active"))
+	}
+
+	// The production endpoint normally signals a successful live check with
+	// error=false and GeoIP data instead of a `live` boolean. Require the IP in
+	// that payload to match the requested IP so unrelated non-empty data cannot
+	// be promoted to LIVE.
+	responseIP, ok := rawMap["ip"].(string)
+	if !ok {
+		return false
+	}
+	responseAddr, responseErr := netip.ParseAddr(strings.TrimSpace(responseIP))
+	requestedAddr, requestedErr := netip.ParseAddr(strings.TrimSpace(requestedIP))
+	return responseErr == nil && requestedErr == nil && responseAddr == requestedAddr
 }
 
 type cloudminiServiceInfo struct {
