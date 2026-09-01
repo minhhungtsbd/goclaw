@@ -82,7 +82,7 @@ func adminHandoffListPages(handoffs []store.AdminHandoff) []adminHandoffListPage
 			rows = append(rows, []telego.InlineKeyboardButton{
 				{Text: handoff.Reference() + " Hoàn tất", CallbackData: "ah:done:" + handoff.ID.String()},
 				{Text: "Manual", CallbackData: "ah:manual:" + handoff.ID.String()},
-				{Text: "Đóng, không trả lời", CallbackData: "ah:dismiss:" + handoff.ID.String()},
+				{Text: "Đóng", CallbackData: "ah:dismiss:" + handoff.ID.String()},
 			})
 		}
 		text.WriteString("Dùng nút để xử lý ticket. Hoặc dùng /handoff_done <Ticket-000001> hay /handoff_dismiss <Ticket-000001>.")
