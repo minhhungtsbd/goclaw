@@ -140,6 +140,10 @@ func (s *ThinkStage) Execute(ctx context.Context, state *RunState) error {
 			FinishReason: "stop",
 		}
 	}
+	if len(resp.ToolCalls) == 0 && cloudminiNeedsEmailMismatchAdminReview(state) &&
+		strings.TrimSpace(state.Tool.AdminHandoffTicket) != "" {
+		resp.Content = cloudminiEmailMismatchReply(state, state.Tool.AdminHandoffTicket)
+	}
 
 	// A model may cite a historical ticket only after the read-only status tool
 	// verifies it for this exact customer route. A pending historical ticket also
@@ -163,6 +167,17 @@ func (s *ThinkStage) Execute(ctx context.Context, state *RunState) error {
 			if len(retryReq.Tools) == 0 {
 				canRetry = false
 				retryErr = fmt.Errorf("required safety tool admin_handoff_status is unavailable")
+			}
+			retryReq.Options = cloneRequestOptions(req.Options)
+			retryReq.Options[providers.OptToolChoice] = "required"
+		}
+		requiresCloudminiAdminReview := cloudminiNeedsEmailMismatchAdminReview(state) &&
+			strings.TrimSpace(state.Tool.AdminHandoffTicket) == ""
+		if requiresCloudminiAdminReview {
+			retryReq.Tools = onlyToolDefinition(req.Tools, "escalate_to_admin")
+			if len(retryReq.Tools) == 0 {
+				canRetry = false
+				retryErr = fmt.Errorf("required safety tool escalate_to_admin is unavailable")
 			}
 			retryReq.Options = cloneRequestOptions(req.Options)
 			retryReq.Options[providers.OptToolChoice] = "required"

@@ -113,6 +113,9 @@ func adminHandoffCustomerConfirmationWithFacts(state *RunState, ticket string) s
 	if state == nil || len(state.Cloudmini.ServiceFacts) == 0 {
 		return adminHandoffCustomerConfirmation(ticket)
 	}
+	if cloudminiNeedsEmailMismatchAdminReview(state) {
+		return cloudminiEmailMismatchReply(state, ticket)
+	}
 	facts := make([]string, 0, len(state.Cloudmini.ServiceFacts))
 	for _, fact := range state.Cloudmini.ServiceFacts {
 		label := "Dịch vụ"

@@ -41,6 +41,21 @@ func TestAdminHandoffReplyRequiresEveryIPStatus(t *testing.T) {
 	}
 }
 
+func TestEmailMismatchAdminReplyExplainsEveryIPInMixedRequest(t *testing.T) {
+	state := &RunState{Input: &RunInput{Message: "Khôi phục các IP này"}}
+	state.Cloudmini.EmailMismatch = true
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{
+		{IP: "37.221.109.121", Status: "active", AccountEmailMatches: true},
+		{IP: "37.221.109.122", Status: "not_verified", AccountEmailMatches: false},
+	}
+	state.Tool.AdminHandoffTicket = "Ticket-000404"
+	state.Tool.AdminHandoffCustomerReplyRequired = true
+	reply := cloudminiEmailMismatchReply(state, state.Tool.AdminHandoffTicket)
+	if adminHandoffResponseViolatesGuard(state, reply) {
+		t.Fatalf("canonical mixed-IP response must explain every service fact: %q", reply)
+	}
+}
+
 func TestActiveServiceRejectsPermanentOutageClaim(t *testing.T) {
 	state := &RunState{Cloudmini: CloudminiState{ServiceFacts: []CloudminiServiceFact{{Status: "active"}}}}
 	if !cloudminiResponseViolatesGuard(state, "Proxy đang ngưng hoạt động hoàn toàn") {

@@ -645,7 +645,7 @@ func appendCloudminiResponseGuard(state *RunState, accountEmail string) {
 		lower := strings.ToLower(cloudminiSupportIntentText(state))
 		if containsAny(lower, "khôi phục", "khoi phuc", "phục hồi", "phuc hoi", "gia hạn", "gia han") {
 			system.Content += "\n\n[CLOUDMINI KHÔI PHỤC KHÔNG XÁC MINH ĐƯỢC - BẮT BUỘC]\n" +
-				"Không nói IP thuộc tài khoản khác, chủ sở hữu khác, email không khớp, IP đang LIVE, chuyển nhượng hoặc đề xuất mua IP mới. Không tiết lộ dữ liệu đối chiếu nội bộ. Chỉ trả lời ngắn gọn bằng tiếng Việt rằng hiện chưa thể hỗ trợ khôi phục hoặc gia hạn IP này. Không gọi live_check và không tạo Admin handoff."
+				"Không nói IP thuộc tài khoản khác, chủ sở hữu khác, email không khớp, IP đang LIVE, chuyển nhượng hoặc đề xuất mua IP mới. Không tiết lộ dữ liệu đối chiếu nội bộ và không gọi live_check. Bắt buộc gọi escalate_to_admin với đúng IP và email Cloudmini khách đã cung cấp để Admin kiểm tra trực tiếp. Chỉ được xác nhận đã chuyển sau khi tool thành công và phải kèm mã Ticket thật."
 		}
 	}
 	state.Messages.SetSystem(system)

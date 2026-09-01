@@ -484,8 +484,41 @@ func TestCloudminiResponseGuardBlocksOwnershipInference(t *testing.T) {
 	if !cloudminiResponseViolatesGuard(state, "IP này thuộc tài khoản khác nên không thể khôi phục.") {
 		t.Fatal("ownership inference must be rejected")
 	}
-	if cloudminiResponseViolatesGuard(state, "Dạ, hiện tại em chưa thể hỗ trợ khôi phục hoặc gia hạn IP này ạ.") {
-		t.Fatal("short safe recovery response must be allowed")
+	if !cloudminiResponseViolatesGuard(state, "Dạ, hiện tại em chưa thể hỗ trợ khôi phục hoặc gia hạn IP này ạ.") {
+		t.Fatal("a text-only recovery response must be rejected until Admin handoff succeeds")
+	}
+	state.Tool.AdminHandoffTicket = "Ticket-000401"
+	if cloudminiResponseViolatesGuard(state, cloudminiEmailMismatchReply(state, state.Tool.AdminHandoffTicket)) {
+		t.Fatal("canonical response with a real Admin ticket must be allowed")
+	}
+}
+
+func TestCloudminiEmailMismatchReplyIncludesVerifiedTicketOnlyAfterHandoff(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "Khôi phục 92.113.182.109 giúp em"}, nil, "", nil)
+	state.Cloudmini.EmailMismatch = true
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{{
+		IP: "92.113.182.109", Status: "not_verified", AccountEmailMatches: false,
+	}}
+	withoutTicket := cloudminiEmailMismatchReply(state, "")
+	if !strings.Contains(withoutTicket, "IP 92.113.182.109 hiện tại chưa thể xác minh được thông tin") {
+		t.Fatalf("neutral mismatch reply = %q", withoutTicket)
+	}
+	if strings.Contains(strings.ToLower(withoutTicket), "chuyển case") {
+		t.Fatalf("reply claimed handoff without a ticket: %q", withoutTicket)
+	}
+	withTicket := cloudminiEmailMismatchReply(state, "Ticket-000402")
+	if !strings.Contains(withTicket, "đã chuyển case này cho Admin kiểm tra trực tiếp") ||
+		!strings.Contains(withTicket, "Ticket-000402") {
+		t.Fatalf("ticket confirmation = %q", withTicket)
+	}
+}
+
+func TestCloudminiEmailMismatchFallbackDoesNotInventRecoveryIntent(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "Proxy 92.113.182.109 đang lỗi kết nối"}, nil, "", nil)
+	state.Cloudmini.EmailMismatch = true
+	reply := cloudminiSafeGuardResponse(state)
+	if strings.Contains(strings.ToLower(reply), "khôi phục") || strings.Contains(strings.ToLower(reply), "gia hạn") {
+		t.Fatalf("non-recovery fallback invented a recovery intent: %q", reply)
 	}
 }
 

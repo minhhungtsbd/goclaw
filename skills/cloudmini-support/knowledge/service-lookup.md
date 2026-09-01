@@ -31,7 +31,7 @@ Quy tắc:
 7. Với `expired`, không gọi `live_check`; hướng dẫn khách kiểm tra khả năng tự gia hạn. Với `deleted`, áp dụng luồng khôi phục và không khẳng định có thể khôi phục nếu chưa có Admin xác nhận.
 8. Nếu API không có dữ liệu hoặc lỗi, không kết luận IP không thuộc Cloudmini. Xin bằng chứng không nhạy cảm hoặc chuyển Admin khi cần thao tác thủ công.
 9. Nếu API trả `service_status: "email_required"`, chỉ xin email tài khoản Cloudmini. Không nêu plan, region, expire, trạng thái, quyền sở hữu, phí hoặc khả năng khôi phục/gia hạn trước khi có email.
-10. Nếu API trả `service_status: "not_verified"`, đây là kết quả không xác minh được theo email đã cung cấp, không phải bằng chứng để nói IP thuộc tài khoản khác. Không tiết lộ hoặc suy đoán nguyên nhân; không gọi `live_check`. Với yêu cầu khôi phục/gia hạn, chỉ trả lời ngắn gọn rằng hiện chưa thể hỗ trợ.
+10. Nếu API trả `service_status: "not_verified"`, đây là kết quả không xác minh được theo email đã cung cấp, không phải bằng chứng để nói IP thuộc tài khoản khác. Không tiết lộ hoặc suy đoán nguyên nhân; không gọi `live_check`. Với yêu cầu khôi phục/gia hạn, gọi `escalate_to_admin` bằng đúng IP và email khách đã cung cấp để Admin kiểm tra trực tiếp. Chỉ xác nhận đã chuyển sau khi tool thành công và phải kèm mã Ticket thật; không đề xuất mua/đăng ký Proxy mới.
 
 ## live_check
 

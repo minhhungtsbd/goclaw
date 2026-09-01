@@ -214,6 +214,73 @@ func TestThinkStageDoesNotForceHandoffFromCloudminiFacts(t *testing.T) {
 	}
 }
 
+func TestThinkStageForcesAdminHandoffForUnverifiedRecovery(t *testing.T) {
+	var calls int
+	handoffTool := providers.ToolDefinition{Function: &providers.ToolFunctionSchema{Name: "escalate_to_admin"}}
+	deps := &PipelineDeps{
+		Config: PipelineConfig{MaxIterations: 10, MaxTokens: 1000},
+		BuildFilteredTools: func(_ *RunState) ([]providers.ToolDefinition, error) {
+			return []providers.ToolDefinition{handoffTool}, nil
+		},
+		CallLLM: func(_ context.Context, _ *RunState, req providers.ChatRequest) (*providers.ChatResponse, error) {
+			calls++
+			if calls == 1 {
+				return &providers.ChatResponse{Content: "IP hiện không còn khả dụng, anh hãy mua Proxy mới.", FinishReason: "stop"}, nil
+			}
+			if req.Options[providers.OptToolChoice] != "required" || len(req.Tools) != 1 ||
+				req.Tools[0].Function.Name != "escalate_to_admin" {
+				t.Fatalf("handoff retry request = %#v", req)
+			}
+			return &providers.ChatResponse{FinishReason: "tool_calls", ToolCalls: []providers.ToolCall{{
+				ID: "handoff-unverified-1", Name: "escalate_to_admin", Arguments: map[string]any{
+					"summary":     "Khôi phục Proxy 92.113.182.109 cần Admin kiểm tra trực tiếp",
+					"identifiers": []any{"92.113.182.109", "customer@example.com"},
+				},
+			}}}, nil
+		},
+	}
+	stage := NewThinkStage(deps)
+	state := defaultState()
+	state.Input.Message = "Khôi phục 92.113.182.109 giúp em"
+	state.Cloudmini.EmailMismatch = true
+	state.Cloudmini.RequestIPs = []string{"92.113.182.109"}
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{{IP: "92.113.182.109", Status: "not_verified"}}
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if calls != 2 || stage.Result() != Continue || state.Think.LastResponse == nil ||
+		len(state.Think.LastResponse.ToolCalls) != 1 || state.Think.LastResponse.ToolCalls[0].Name != "escalate_to_admin" {
+		t.Fatalf("calls=%d result=%v response=%#v", calls, stage.Result(), state.Think.LastResponse)
+	}
+}
+
+func TestThinkStageUsesCanonicalUnverifiedReplyAfterAdminTicket(t *testing.T) {
+	deps := &PipelineDeps{
+		Config: PipelineConfig{MaxIterations: 10, MaxTokens: 1000},
+		CallLLM: func(_ context.Context, _ *RunState, _ providers.ChatRequest) (*providers.ChatResponse, error) {
+			return &providers.ChatResponse{Content: "Em đã chuyển rồi ạ.", FinishReason: "stop"}, nil
+		},
+	}
+	stage := NewThinkStage(deps)
+	state := defaultState()
+	state.Input.Message = "Gia hạn 92.113.182.109 giúp em"
+	state.Cloudmini.EmailMismatch = true
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{{IP: "92.113.182.109", Status: "not_verified"}}
+	state.Tool.AdminHandoffTicket = "Ticket-000403"
+	state.Tool.AdminHandoffCustomerReplyRequired = true
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	got := state.Think.LastResponse.Content
+	if !strings.Contains(got, "IP 92.113.182.109 hiện tại chưa thể xác minh được thông tin") ||
+		!strings.Contains(got, "đã chuyển case này cho Admin kiểm tra trực tiếp") ||
+		!strings.Contains(got, "Ticket-000403") {
+		t.Fatalf("canonical response = %q", got)
+	}
+}
+
 func TestThinkStageStatusCheckFailsClosedWhenToolUnavailable(t *testing.T) {
 	var calls int
 	deps := &PipelineDeps{

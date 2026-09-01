@@ -27,8 +27,12 @@ func cloudminiResponseViolatesGuard(state *RunState, content string) bool {
 		return containsAny(intent, "khôi phục", "khoi phuc", "phục hồi", "phuc hoi", "gia hạn", "gia han") &&
 			containsAny(lower, "khôi phục", "khoi phuc", "phục hồi", "phuc hoi", "gia hạn", "gia han")
 	}
-	if state.Cloudmini.EmailMismatch && containsAny(strings.ToLower(cloudminiSupportIntentText(state)),
-		"khôi phục", "khoi phuc", "phục hồi", "phuc hoi", "gia hạn", "gia han") {
+	if cloudminiNeedsEmailMismatchAdminReview(state) {
+		// A text-only answer is never sufficient here. The customer may only be
+		// told about an Admin review after escalate_to_admin produced a real ticket.
+		if strings.TrimSpace(state.Tool.AdminHandoffTicket) == "" {
+			return true
+		}
 		return containsAny(lower, "tài khoản khác", "tai khoan khac", "chủ sở hữu", "chu so huu",
 			"không khớp", "khong khop", "sở hữu", "so huu", "live", "chuyển nhượng",
 			"chuyen nhuong", "mua ip", "mua proxy", "email khác", "email khac")
@@ -230,8 +234,11 @@ func cloudminiSafeGuardResponse(state *RunState) string {
 	if state != nil && state.Cloudmini.EmailRequired {
 		return "Dạ anh cho em xin email đăng nhập Cloudmini để em kiểm tra và hỗ trợ chính xác ạ."
 	}
+	if cloudminiNeedsEmailMismatchAdminReview(state) {
+		return cloudminiEmailMismatchReply(state, "")
+	}
 	if state != nil && state.Cloudmini.EmailMismatch {
-		return "Dạ, hiện tại em chưa thể hỗ trợ khôi phục hoặc gia hạn IP này ạ."
+		return "Dạ em chưa thể xác minh thông tin IP này theo dữ liệu hiện tại ạ."
 	}
 	if state != nil && len(state.Cloudmini.RequestHosts) > 0 {
 		return "Dạ, gói Residential VN này dùng hostname " + strings.Join(state.Cloudmini.RequestHosts, ", ") + " thay cho IP dạng số nên anh không cần tìm thêm IPv4. Anh dùng hostname ở trường Host/IP và port đúng trong cột Proxy Port; không gửi lại user/pass. Nếu kết nối vẫn chậm hoặc lỗi, bên em sẽ tiếp nhận xử lý theo hostname này ạ."
@@ -253,13 +260,96 @@ func cloudminiResponseGuardInstruction(state *RunState) string {
 	if state != nil && state.Cloudmini.EmailRequired {
 		return "Khách chưa có email tài khoản. Chỉ xin email; không nêu thông tin dịch vụ, plan, hạn, trạng thái, phí hoặc khả năng khôi phục/gia hạn."
 	}
-	if state != nil && state.Cloudmini.EmailMismatch {
-		return "Không nêu tài khoản khác, chủ sở hữu, email không khớp, LIVE, chuyển nhượng hoặc mua IP mới; với yêu cầu khôi phục/gia hạn chỉ trả lời ngắn gọn là chưa thể hỗ trợ."
+	if cloudminiNeedsEmailMismatchAdminReview(state) {
+		return "Không nêu tài khoản khác, chủ sở hữu, email không khớp, LIVE, chuyển nhượng hoặc mua IP mới. Bắt buộc gọi escalate_to_admin với đúng IP và email Cloudmini khách đã cung cấp; không được nói đã/sẽ chuyển nếu tool chưa trả ticket."
 	}
 	if state != nil && len(state.Cloudmini.RequestHosts) > 0 {
 		return "Residential VN dùng hostname " + strings.Join(state.Cloudmini.RequestHosts, ", ") + "; không yêu cầu IP dạng số và không gọi cloudmini_proxy_check. Hỗ trợ cấu hình bằng hostname/Proxy Port. Nếu khách đang báo lỗi thực tế, chậm kéo dài hoặc yêu cầu thay proxy và email đã có, gọi escalate_to_admin ngay với đúng hostname và email, không kèm port:user:pass."
 	}
 	return "Không suy đoán dữ liệu dịch vụ hoặc quyền sở hữu."
+}
+
+func cloudminiNeedsEmailMismatchAdminReview(state *RunState) bool {
+	if state == nil || !state.Cloudmini.EmailMismatch {
+		return false
+	}
+	intent := strings.ToLower(cloudminiSupportIntentText(state))
+	return containsAny(intent, "khôi phục", "khoi phuc", "phục hồi", "phuc hoi", "gia hạn", "gia han")
+}
+
+func cloudminiEmailMismatchReply(state *RunState, ticket string) string {
+	ips := cloudminiEmailMismatchIPs(state)
+	if state != nil && len(state.Cloudmini.ServiceFacts) > 1 {
+		facts := make([]string, 0, len(state.Cloudmini.ServiceFacts))
+		for _, fact := range state.Cloudmini.ServiceFacts {
+			label := "Dịch vụ"
+			if strings.TrimSpace(fact.IP) != "" {
+				label = "IP " + strings.TrimSpace(fact.IP)
+			}
+			status := "chưa thể xác định trạng thái dịch vụ"
+			switch fact.Status {
+			case "active", "running", "linked":
+				if fact.AccountEmailMatches {
+					status = "đang hoạt động theo kết quả kiểm tra hiện tại"
+				} else {
+					status = "hiện tại chưa thể xác minh được thông tin"
+				}
+			case "not_verified":
+				status = "hiện tại chưa thể xác minh được thông tin"
+			case "unavailable":
+				status = "hiện chưa thể xác minh do công cụ kiểm tra chưa trả dữ liệu"
+			case "email_required":
+				status = "cần email tài khoản Cloudmini để xác minh"
+			case "expired":
+				status = "đã hết hạn theo kết quả kiểm tra hiện tại"
+			case "deleted":
+				status = "đã bị xoá theo kết quả kiểm tra hiện tại"
+			}
+			facts = append(facts, label+" "+status)
+		}
+		reply := "Dạ em kiểm tra: " + strings.Join(facts, "; ") + ". Vì vậy em chưa thể hỗ trợ khôi phục hoặc gia hạn các IP chưa xác minh ạ."
+		if strings.TrimSpace(ticket) != "" {
+			reply += " Em đã chuyển case này cho Admin kiểm tra trực tiếp. Mã theo dõi của anh/chị là " + strings.TrimSpace(ticket) + " ạ."
+		}
+		return reply
+	}
+	target := "IP này"
+	object := "IP này"
+	if len(ips) == 1 {
+		target = "IP " + ips[0]
+	} else if len(ips) > 1 {
+		target = "các IP " + strings.Join(ips, ", ")
+		object = "các IP này"
+	}
+	reply := "Dạ em kiểm tra " + target + " hiện tại chưa thể xác minh được thông tin, nên em chưa thể hỗ trợ khôi phục hoặc gia hạn " + object + " ạ."
+	if strings.TrimSpace(ticket) != "" {
+		reply += " Em đã chuyển case này cho Admin kiểm tra trực tiếp. Mã theo dõi của anh/chị là " + strings.TrimSpace(ticket) + " ạ."
+	}
+	return reply
+}
+
+func cloudminiEmailMismatchIPs(state *RunState) []string {
+	if state == nil {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	result := make([]string, 0, len(state.Cloudmini.ServiceFacts))
+	for _, fact := range state.Cloudmini.ServiceFacts {
+		ip := strings.TrimSpace(fact.IP)
+		if ip == "" || fact.Status == "deleted" ||
+			(fact.Status != "not_verified" && fact.AccountEmailMatches) {
+			continue
+		}
+		if _, exists := seen[ip]; exists {
+			continue
+		}
+		seen[ip] = struct{}{}
+		result = append(result, ip)
+	}
+	if len(result) == 0 {
+		return append([]string(nil), state.Cloudmini.RequestIPs...)
+	}
+	return result
 }
 
 func cloudminiRequiredIncidentMessages(state *RunState) []string {
