@@ -89,6 +89,7 @@ type AdminHandoffStatusFact struct {
 // facts out of shared agent state so concurrent customer sessions cannot leak.
 type CloudminiState struct {
 	RequestIPs     []string
+	RequestHosts   []string
 	ScopeAmbiguous bool
 	OutageCIDRs    []string
 	EmailRequired  bool

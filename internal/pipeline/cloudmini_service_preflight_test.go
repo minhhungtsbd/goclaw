@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
+	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
 func TestCloudminiServicePreflightCallsServiceInfoBeforeLLM(t *testing.T) {
@@ -30,6 +31,72 @@ func TestCloudminiServicePreflightCallsServiceInfoBeforeLLM(t *testing.T) {
 	}
 	if got := state.Messages.Pending(); len(got) != 4 || got[0].Role != "assistant" || got[1].Role != "tool" || got[2].Role != "assistant" || got[3].Role != "tool" {
 		t.Fatalf("pending messages = %#v", got)
+	}
+}
+
+func TestCloudminiResidentialVNHostnameSkipsIPv4APIPreflight(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "Proxy ipv4-vt-04.resvn.net tải YouTube rất chậm"}, nil, "", nil)
+	state.Messages.SetSystem(providers.Message{Role: "system", Content: "base"})
+	state.Messages.SetHistory([]providers.Message{{Role: "user", Content: "Email Cloudmini: customer@example.com"}})
+	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
+	stage := NewCloudminiServicePreflightStage(&PipelineDeps{
+		ExecuteToolCall: func(_ context.Context, _ *RunState, _ providers.ToolCall) ([]providers.Message, error) {
+			t.Fatal("Residential VN hostname must skip IPv4-only service_info/live_check")
+			return nil, nil
+		},
+	})
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	if got := strings.Join(state.Cloudmini.RequestHosts, ","); got != "ipv4-vt-04.resvn.net" {
+		t.Fatalf("RequestHosts = %q", got)
+	}
+	if content := state.Messages.System().Content; !strings.Contains(strings.ToLower(content), "không yêu cầu khách cung cấp ip dạng số") ||
+		!strings.Contains(content, "được phép chuyển Admin/Kỹ thuật ngay") {
+		t.Fatalf("Residential VN runtime context missing: %s", content)
+	}
+}
+
+func TestCloudminiResidentialVNContinuationReusesRecentHostname(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "vẫn chưa load nổi YouTube, thay proxy giúp em"}, nil, "", nil)
+	state.Messages.SetHistory([]providers.Message{
+		{Role: "user", Content: "ipv4-vt-04.resvn.net:18118:user:secret"},
+		{Role: "assistant", Content: "Anh thử lại giúp em."},
+	})
+	if !isCloudminiServiceRequest(state) {
+		t.Fatal("Residential VN follow-up was not recognized as the same support request")
+	}
+	if got := strings.Join(resolveCloudminiRequestHosts(state), ","); got != "ipv4-vt-04.resvn.net" {
+		t.Fatalf("resolved hosts = %q", got)
+	}
+}
+
+func TestCloudminiResidentialVNHostnameRequiresExactDomainSuffix(t *testing.T) {
+	if hosts := cloudminiResidentialVNHosts("ipv4-vt-04.resvn.net.evil.example"); len(hosts) != 0 {
+		t.Fatalf("lookalike hostname accepted: %#v", hosts)
+	}
+}
+
+func TestCloudminiResidentialVNHandoffUsesHostnameAndCustomerEmail(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "Proxy ipv4-vt-04.resvn.net không load YouTube, thay giúp em"}, nil, "", nil)
+	state.Cloudmini.RequestHosts = []string{"ipv4-vt-04.resvn.net"}
+	state.Messages.SetHistory([]providers.Message{{Role: "user", Content: "Tài khoản customer@example.com"}})
+	checkCall := providers.ToolCall{Name: cloudminiProxyCheckToolName, Arguments: map[string]any{
+		"operation": "service_info", "ip": "ipv4-vt-04.resvn.net",
+	}}
+	if ok, reason := validateCloudminiCurrentRequestToolCall(state, checkCall); ok || !strings.Contains(reason, "không gọi") {
+		t.Fatalf("hostname API call = %v, reason=%q", ok, reason)
+	}
+	handoff := providers.ToolCall{Name: "escalate_to_admin", Arguments: map[string]any{
+		"service": "Proxy Residential VN", "summary": "Proxy ipv4-vt-04.resvn.net không tải được YouTube, khách yêu cầu kiểm tra hoặc thay proxy",
+		"identifiers": []any{"ipv4-vt-04.resvn.net", "customer@example.com"},
+	}}
+	if ok, reason := validateCloudminiCurrentRequestToolCall(state, handoff); !ok {
+		t.Fatalf("valid Residential VN handoff rejected: %s", reason)
+	}
+	handoff.Arguments["identifiers"] = []any{"ipv4-vt-05.resvn.net", "customer@example.com"}
+	if ok, _ := validateCloudminiCurrentRequestToolCall(state, handoff); ok {
+		t.Fatal("handoff with an old/different Residential VN hostname was accepted")
 	}
 }
 
@@ -97,6 +164,31 @@ func TestValidateCloudminiCurrentRequestToolCallRequiresCompleteRecoveryHandoff(
 	}}
 	if ok, reason := validateCloudminiCurrentRequestToolCall(state, complete); !ok {
 		t.Fatalf("complete handoff rejected: %s", reason)
+	}
+}
+
+func TestValidateCloudminiCurrentRequestToolCallHonorsIncidentHandoffFlag(t *testing.T) {
+	const ip = "147.189.140.177"
+	newState := func(allows bool) *RunState {
+		state := NewRunState(&RunInput{Message: "Proxy " + ip + " đang lỗi kết nối"}, nil, "", nil)
+		state.Cloudmini.ServiceFacts = []CloudminiServiceFact{{
+			IP: ip, Status: "active", PlanFamily: "private_v4", AccountEmailMatches: true,
+		}}
+		state.Cloudmini.LiveAttempts = map[string]bool{ip: true}
+		state.Cloudmini.IncidentsByIP = map[string]store.OperationalIncident{
+			ip: {Severity: "temporary_issue", AllowsAdminHandoff: allows, CustomerMessage: "Dải này đang lỗi tạm thời."},
+		}
+		return state
+	}
+	call := providers.ToolCall{Name: "escalate_to_admin", Arguments: map[string]any{
+		"summary": "Proxy " + ip + " lỗi kết nối; live_check không trả trạng thái",
+	}}
+
+	if ok, reason := validateCloudminiCurrentRequestToolCall(newState(false), call); ok || !strings.Contains(reason, "không cho phép") {
+		t.Fatalf("handoff disallowed by incident = %v, reason=%q", ok, reason)
+	}
+	if ok, reason := validateCloudminiCurrentRequestToolCall(newState(true), call); !ok {
+		t.Fatalf("handoff allowed by incident was rejected: %s", reason)
 	}
 }
 

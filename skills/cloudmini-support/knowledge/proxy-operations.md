@@ -50,6 +50,7 @@ Khi khách yêu cầu khôi phục hoặc gia hạn lại Proxy hết hạn đã
 
 ## Thuộc tính kỹ thuật
 
+- **Residential VN** dùng hostname `*.resvn.net` (ví dụ `ipv4-vt-04.resvn.net`) thay cho IPv4 dạng số. Nhập hostname vào trường Host/IP và lấy port đúng tại cột Proxy Port; không yêu cầu khách tìm IP số. `service_info`/`live_check` có thể không hỗ trợ nên được bỏ qua; lỗi cần xử lý thủ công được chuyển Admin bằng hostname + email.
 - **Residential Static** và **Budget Residential Static** là hai gói riêng biệt. Luôn giữ nguyên chữ `Budget` khi đọc tên gói và đối chiếu chính sách; không rút gọn cả hai thành “Residential Static”.
 - Khi đặt **Residential Static**, khách không chọn được Bang/State/Region. Trang đặt hàng chỉ cho chọn **Local** và **tên ISP**; không hứa chọn chi tiết Bang hoặc Thành phố.
 - Quy tắc đặt hàng trên không tự động áp dụng cho **Budget Residential Static** nếu tài liệu hoặc giao diện không xác nhận như vậy.

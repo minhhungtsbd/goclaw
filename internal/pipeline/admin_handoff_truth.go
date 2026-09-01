@@ -101,7 +101,8 @@ func ensureAdminHandoffCustomerReply(state *RunState) {
 	ticket := strings.TrimSpace(state.Tool.AdminHandoffTicket)
 	lower := strings.ToLower(state.Observe.FinalContent)
 	if !strings.Contains(lower, strings.ToLower(ticket)) ||
-		(cloudminiHandoffNeedsServiceExplanation(state) && !handoffReplyHasServiceExplanation(state, lower)) {
+		(cloudminiHandoffNeedsServiceExplanation(state) && !handoffReplyHasServiceExplanation(state, lower)) ||
+		cloudminiIncidentExplanationMissing(state, lower) {
 		state.Observe.FinalContent = adminHandoffCustomerConfirmationWithFacts(state, ticket)
 		state.Observe.FinalThinking = ""
 	}
@@ -156,7 +157,11 @@ func adminHandoffCustomerConfirmationWithFacts(state *RunState, ticket string) s
 	case containsAny(intent, "hủy", "huỷ", "huy", "hoàn", "hoan"):
 		reason = "Theo yêu cầu hủy/hoàn của anh"
 	}
-	return "Dạ, em đã kiểm tra: " + strings.Join(facts, "; ") + ". " + reason +
+	incidentPrefix := ""
+	if messages := cloudminiRequiredIncidentMessages(state); len(messages) > 0 {
+		incidentPrefix = "theo thông báo vận hành hiện tại: " + strings.Join(messages, " ") + " "
+	}
+	return "Dạ, " + incidentPrefix + "Em đã kiểm tra: " + strings.Join(facts, "; ") + ". " + reason +
 		", em đã chuyển bộ phận Admin/Kỹ thuật kiểm tra thêm. Mã theo dõi của anh là " +
 		strings.TrimSpace(ticket) + ". Bên em sẽ cập nhật lại anh khi có kết quả ạ."
 }

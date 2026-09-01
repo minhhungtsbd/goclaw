@@ -20,6 +20,15 @@ func init() {
 		MsgFailedToSave:     "не удалось сохранить %s: %s",
 		MsgInvalidUpdates:   "неверные обновления",
 
+		// Channel admin takeover
+		MsgTakeoverInvalidID:     "неверный ID перехвата управления",
+		MsgTakeoverInvalidBody:   "неверное тело запроса перехвата управления",
+		MsgTakeoverMultipleJSON:  "тело запроса должно содержать не более одного объекта JSON",
+		MsgTakeoverNotFound:      "активный перехват управления не найден",
+		MsgTakeoverListFailed:    "не удалось получить список активных перехватов управления",
+		MsgTakeoverReleaseFailed: "не удалось освободить перехват управления",
+		MsgTakeoverReasonTooLong: "причина освобождения не должна превышать 1000 символов",
+
 		// Agent
 		MsgAgentNotFound:                       "агент не найден: %s",
 		MsgCannotDeleteDefault:                 "нельзя удалить агента по умолчанию",

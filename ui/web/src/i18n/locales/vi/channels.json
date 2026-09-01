@@ -142,11 +142,24 @@
       "selectAgent": "Chọn agent",
       "enabled": "Bật",
       "adminReplyCooldown": {
-        "title": "Tạm ngưng phản hồi khi Admin trả lời",
-        "description": "Tạm dừng Agent phản hồi sau khi Admin của Page trả lời trong cùng cuộc trò chuyện Messenger.",
-        "label": "Thời gian chờ (phút)",
-        "hint": "Mặc định: 5 phút. Khoảng cho phép: 1-1440 phút.",
+        "title": "Takeover của Admin",
+        "description": "Khi Admin của Page trả lời, hệ thống lưu trạng thái takeover và dừng Agent trong cùng cuộc trò chuyện Messenger, kể cả sau khi restart.",
+        "label": "Tự động nhả takeover sau (phút)",
+        "hint": "Mặc định: 5 phút. Khoảng cho phép: 1-1440 phút. Admin có thể nhả thủ công bên dưới.",
         "error": "Nhập số nguyên từ 1 đến 1440."
+      },
+      "takeovers": {
+        "title": "Cuộc trò chuyện Admin đang tiếp quản",
+        "description": "Agent không lên lịch hoặc gửi phản hồi trong các cuộc trò chuyện này cho đến khi Admin nhả takeover hoặc hết thời gian.",
+        "refresh": "Tải lại",
+        "empty": "Không có cuộc trò chuyện nào đang được Admin tiếp quản.",
+        "expires": "Tự động nhả lúc {{value}}",
+        "release": "Nhả takeover",
+        "releasing": "Đang nhả…",
+        "released": "Đã nhả takeover",
+        "releaseReason": "Được nhả từ phần cài đặt kênh",
+        "loadFailed": "Không thể tải trạng thái takeover",
+        "releaseFailed": "Không thể nhả takeover"
       },
       "saved": "Đã lưu",
       "saveChanges": "Lưu thay đổi",
@@ -404,8 +417,8 @@
       "label": "Mức độ reaction"
     },
     "messenger_options.admin_reply_cooldown_minutes": {
-      "label": "Thời gian nhường Admin (phút)",
-      "help": "Tạm ngưng AI trả lời sau khi Admin của Page nhắn trong cùng cuộc trò chuyện Messenger. Phạm vi: 1–1440 phút."
+      "label": "Thời gian Admin takeover (phút)",
+      "help": "Lưu takeover và ngưng AI trả lời sau khi Admin của Page nhắn; trạng thái vẫn giữ qua restart. Phạm vi: 1–1440 phút."
     },
     "activity_indicator": {
       "label": "Chỉ báo hoạt động",

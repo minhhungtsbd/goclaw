@@ -238,7 +238,7 @@ export const configSchema: Record<string, FieldDef[]> = {
     { key: "comment_reply_options.include_post_context", label: "Include Post Context", type: "boolean", defaultValue: false, help: "Fetch original post content for comment context" },
     { key: "comment_reply_options.max_thread_depth", label: "Max Thread Depth", type: "number", defaultValue: 10 },
     { key: "messenger_options.session_timeout", label: "Messenger Session Timeout", type: "text", placeholder: "e.g. 30m" },
-    { key: "messenger_options.admin_reply_cooldown_minutes", label: "Admin Reply Cooldown (minutes)", type: "number", defaultValue: 5, help: "Pause AI replies after a human Page Admin replies in the same Messenger conversation. Range: 1–1440 minutes." },
+    { key: "messenger_options.admin_reply_cooldown_minutes", label: "Admin Takeover Duration (minutes)", type: "number", defaultValue: 5, help: "Persist human Page Admin control and pause AI replies in the same Messenger conversation, including across restarts. Range: 1–1440 minutes." },
     { key: "post_context_cache_ttl", label: "Post Cache TTL", type: "text", placeholder: "e.g. 15m" },
     { key: "first_inbox_message", label: "First Inbox DM Text", type: "textarea", help: "Custom DM sent to first-time commenters. Defaults to Vietnamese if empty." },
     { key: "allow_from", label: "Allowed Users", type: "tags", help: "Facebook user IDs" },

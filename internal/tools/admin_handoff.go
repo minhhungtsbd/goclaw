@@ -61,7 +61,7 @@ func (t *AdminHandoffTool) SetChannelTenantChecker(checker ChannelTenantChecker)
 func (t *AdminHandoffTool) Name() string { return "escalate_to_admin" }
 
 func (t *AdminHandoffTool) Description() string {
-	return "Tạo và gửi yêu cầu xử lý nội bộ đến nhóm Admin đã cấu hình cho agent. Chỉ dùng khi cần Admin hoặc Kỹ thuật thao tác thủ công. Luôn có email tài khoản trong identifiers; nếu liên quan Proxy hoặc VPS thì phải có cả IP và email. Summary và identifiers phải viết ngắn gọn bằng tiếng Việt có dấu; không ghi mật khẩu, token, cookie, OTP hoặc API key. Tool chỉ gửi handoff đến nhóm Admin; sau khi tool thành công, hãy gộp mã Ticket và xác nhận ngắn gọn vào một response duy nhất gửi khách, không gọi tool hoặc gửi xác nhận riêng lần nữa."
+	return "Tạo và gửi yêu cầu xử lý nội bộ đến nhóm Admin đã cấu hình cho agent. Chỉ dùng khi cần Admin hoặc Kỹ thuật thao tác thủ công. Luôn có email tài khoản trong identifiers; nếu liên quan Proxy hoặc VPS thì phải có IP và email, riêng Residential VN dùng hostname *.resvn.net thay cho IP. Summary và identifiers phải viết ngắn gọn bằng tiếng Việt có dấu; không ghi mật khẩu, token, cookie, OTP, API key hoặc chuỗi host:port:user:pass. Tool chỉ gửi handoff đến nhóm Admin; sau khi tool thành công, hãy gộp mã Ticket và xác nhận ngắn gọn vào một response duy nhất gửi khách, không gọi tool hoặc gửi xác nhận riêng lần nữa."
 }
 
 func (t *AdminHandoffTool) Parameters() map[string]any {
@@ -78,7 +78,7 @@ func (t *AdminHandoffTool) Parameters() map[string]any {
 				"type": "string", "description": "Loại dịch vụ và gói nếu đã xác định, viết bằng tiếng Việt có dấu.",
 			},
 			"identifiers": map[string]any{
-				"type": "array", "items": map[string]any{"type": "string"}, "description": "Luôn gồm email tài khoản. Nếu liên quan Proxy/VPS phải gồm cả IP và email. Có thể thêm mã đơn khi cần. Không ghi mật khẩu, token, cookie, OTP hoặc API key.",
+				"type": "array", "items": map[string]any{"type": "string"}, "description": "Luôn gồm email tài khoản. Nếu liên quan Proxy/VPS phải gồm IP và email; riêng Residential VN dùng hostname *.resvn.net thay cho IP. Có thể thêm mã đơn khi cần. Không ghi mật khẩu, token, cookie, OTP, API key hoặc chuỗi host:port:user:pass.",
 			},
 		},
 		"required": []string{"summary"},
@@ -177,23 +177,24 @@ func (t *AdminHandoffTool) Execute(ctx context.Context, args map[string]any) *Re
 }
 
 var (
-	adminHandoffIPPattern     = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b|(?i)\b[0-9a-f]{0,4}:[0-9a-f:]+\b`)
-	adminHandoffEmailPattern  = regexp.MustCompile(`(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b`)
-	adminHandoffSecretPattern = regexp.MustCompile(`(?i)\b(?:password|pass(?:word)?|pwd|otp|token|cookie|api[ _-]?key|private[ _-]?key)\b|\b(?:\d{1,3}\.){3}\d{1,3}:\d{1,5}:[^:\s]+:[^:\s]+`)
+	adminHandoffIPPattern       = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b|(?i)\b[0-9a-f]{0,4}:[0-9a-f:]+\b`)
+	adminHandoffEmailPattern    = regexp.MustCompile(`(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b`)
+	adminHandoffHostnamePattern = regexp.MustCompile(`(?i)\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b`)
+	adminHandoffSecretPattern   = regexp.MustCompile(`(?i)\b(?:password|pass(?:word)?|pwd|otp|token|cookie|api[ _-]?key|private[ _-]?key)\b|\b(?:(?:\d{1,3}\.){3}\d{1,3}|(?:[a-z0-9-]+\.)+[a-z]{2,}):\d{1,5}:[^:\s]+:[^:\s]+`)
 )
 
 func validateAdminHandoffDetails(service, summary string, identifiers []string) error {
 	allDetails := append(append([]string{}, identifiers...), summary)
 	for _, detail := range allDetails {
 		if adminHandoffSecretPattern.MatchString(detail) {
-			return fmt.Errorf("Admin handoff must not contain passwords, OTPs, tokens, cookies, API keys, or Proxy user/password strings; include only the IP and Cloudmini account email")
+			return fmt.Errorf("Admin handoff must not contain passwords, OTPs, tokens, cookies, API keys, or Proxy user/password strings; include only the IP/Residential VN hostname and Cloudmini account email")
 		}
 	}
 	if !containsAdminHandoffEmail(allDetails) {
 		return fmt.Errorf("email tài khoản là bắt buộc khi tạo Admin handoff; hãy xin hoặc dùng email đã có trong cuộc trò chuyện")
 	}
-	if isProxyOrVPSHandoff(service, summary) && !containsAdminHandoffIP(allDetails) {
-		return fmt.Errorf("case Proxy hoặc VPS phải có IP và email tài khoản trước khi chuyển Admin")
+	if isProxyOrVPSHandoff(service, summary) && !containsAdminHandoffServiceIdentifier(allDetails) {
+		return fmt.Errorf("case Proxy hoặc VPS phải có IP và email tài khoản trước khi chuyển Admin; riêng Residential VN được dùng hostname *.resvn.net thay IP")
 	}
 	return nil
 }
@@ -223,15 +224,43 @@ func containsAdminHandoffIP(values []string) bool {
 	return false
 }
 
+func containsAdminHandoffServiceIdentifier(values []string) bool {
+	if containsAdminHandoffIP(values) {
+		return true
+	}
+	for _, value := range values {
+		if adminHandoffResidentialVNHost(value) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // adminHandoffDedupeKey groups pending manual work for the same customer IP.
 // Non-IP requests intentionally remain separate because their relationship is ambiguous.
 func adminHandoffDedupeKey(sourceChannel, sourceChatID, summary string, identifiers []string) string {
-	for _, candidate := range append(append([]string{}, identifiers...), summary) {
+	values := append(append([]string{}, identifiers...), summary)
+	for _, candidate := range values {
 		for _, rawIP := range adminHandoffIPPattern.FindAllString(candidate, -1) {
 			ip, err := netip.ParseAddr(rawIP)
 			if err == nil {
 				return sourceChannel + "\x1f" + sourceChatID + "\x1f" + ip.String()
 			}
+		}
+	}
+	for _, candidate := range values {
+		if host := adminHandoffResidentialVNHost(candidate); host != "" {
+			return sourceChannel + "\x1f" + sourceChatID + "\x1f" + host
+		}
+	}
+	return ""
+}
+
+func adminHandoffResidentialVNHost(value string) string {
+	for _, candidate := range adminHandoffHostnamePattern.FindAllString(value, -1) {
+		host := strings.ToLower(candidate)
+		if host == "resvn.net" || strings.HasSuffix(host, ".resvn.net") {
+			return host
 		}
 	}
 	return ""

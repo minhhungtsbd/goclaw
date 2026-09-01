@@ -27,6 +27,7 @@ type ConsumerDeps struct {
 	AgentLinkStore   store.AgentLinkStore
 	AgentStore       store.AgentStore
 	SessStore        store.SessionStore
+	AdminTakeovers   store.ChannelAdminTakeoverStore
 	PostTurn         tools.PostTurnProcessor
 	QuotaChecker     *channels.QuotaChecker
 	ContactCollector *store.ContactCollector

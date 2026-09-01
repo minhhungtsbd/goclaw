@@ -20,6 +20,15 @@ func init() {
 		MsgFailedToSave:     "failed to save %s: %s",
 		MsgInvalidUpdates:   "invalid updates",
 
+		// Channel admin takeover
+		MsgTakeoverInvalidID:     "invalid takeover ID",
+		MsgTakeoverInvalidBody:   "invalid takeover request body",
+		MsgTakeoverMultipleJSON:  "request body must contain at most one JSON object",
+		MsgTakeoverNotFound:      "active takeover not found",
+		MsgTakeoverListFailed:    "failed to list active takeovers",
+		MsgTakeoverReleaseFailed: "failed to release takeover",
+		MsgTakeoverReasonTooLong: "release reason must be at most 1000 characters",
+
 		// Agent
 		MsgAgentNotFound:                       "agent not found: %s",
 		MsgCannotDeleteDefault:                 "cannot delete the default agent",

@@ -20,6 +20,15 @@ func init() {
 		MsgFailedToSave:     "保存 %s 失败：%s",
 		MsgInvalidUpdates:   "更新内容无效",
 
+		// Channel admin takeover
+		MsgTakeoverInvalidID:     "无效的接管 ID",
+		MsgTakeoverInvalidBody:   "无效的接管请求正文",
+		MsgTakeoverMultipleJSON:  "请求正文最多只能包含一个 JSON 对象",
+		MsgTakeoverNotFound:      "未找到有效的接管状态",
+		MsgTakeoverListFailed:    "无法获取有效接管列表",
+		MsgTakeoverReleaseFailed: "无法释放接管状态",
+		MsgTakeoverReasonTooLong: "释放原因不得超过 1000 个字符",
+
 		// Agent
 		MsgAgentNotFound:                       "未找到Agent：%s",
 		MsgCannotDeleteDefault:                 "无法删除默认Agent",

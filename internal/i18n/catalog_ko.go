@@ -20,6 +20,15 @@ func init() {
 		MsgFailedToSave:     "%s 저장에 실패했습니다: %s",
 		MsgInvalidUpdates:   "잘못된 업데이트",
 
+		// Channel admin takeover
+		MsgTakeoverInvalidID:     "잘못된 인계 ID",
+		MsgTakeoverInvalidBody:   "잘못된 인계 요청 본문",
+		MsgTakeoverMultipleJSON:  "요청 본문에는 JSON 객체를 하나만 포함할 수 있습니다",
+		MsgTakeoverNotFound:      "활성 인계 상태를 찾을 수 없습니다",
+		MsgTakeoverListFailed:    "활성 인계 목록을 불러오지 못했습니다",
+		MsgTakeoverReleaseFailed: "인계 상태를 해제하지 못했습니다",
+		MsgTakeoverReasonTooLong: "해제 사유는 1000자 이하여야 합니다",
+
 		// Agent
 		MsgAgentNotFound:       "에이전트를 찾을 수 없습니다: %s",
 		MsgCannotDeleteDefault: "기본 에이전트는 삭제할 수 없습니다",

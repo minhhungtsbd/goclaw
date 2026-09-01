@@ -143,11 +143,24 @@
       "selectAgent": "Select agent",
       "enabled": "Enabled",
       "adminReplyCooldown": {
-        "title": "Admin Reply Cooldown",
-        "description": "Pause AI replies after a human Page Admin replies in the same Messenger conversation.",
-        "label": "Cooldown (minutes)",
-        "hint": "Default: 5 minutes. Allowed range: 1-1440 minutes.",
+        "title": "Admin Takeover",
+        "description": "When a Page Admin replies, persist takeover and pause the agent in that Messenger conversation, including across restarts.",
+        "label": "Auto-release after (minutes)",
+        "hint": "Default: 5 minutes. Allowed range: 1-1440 minutes. Admins can also release below.",
         "error": "Enter a whole number from 1 to 1440."
+      },
+      "takeovers": {
+        "title": "Admin-controlled conversations",
+        "description": "The agent will neither schedule nor send replies in these conversations until takeover is released or expires.",
+        "refresh": "Refresh",
+        "empty": "No conversations are currently controlled by an Admin.",
+        "expires": "Auto-releases at {{value}}",
+        "release": "Release takeover",
+        "releasing": "Releasing…",
+        "released": "Takeover released",
+        "releaseReason": "Released from channel settings",
+        "loadFailed": "Could not load takeover state",
+        "releaseFailed": "Could not release takeover"
       },
       "saved": "Saved",
       "saveChanges": "Save Changes",
@@ -405,8 +418,8 @@
       "label": "Reaction Level"
     },
     "messenger_options.admin_reply_cooldown_minutes": {
-      "label": "Admin Reply Cooldown (minutes)",
-      "help": "Pause AI replies after a human Page Admin replies in the same Messenger conversation. Range: 1–1440 minutes."
+      "label": "Admin Takeover Duration (minutes)",
+      "help": "Persist takeover and pause AI replies after a human Page Admin replies; survives restarts. Range: 1–1440 minutes."
     },
     "activity_indicator": {
       "label": "Activity Indicator",

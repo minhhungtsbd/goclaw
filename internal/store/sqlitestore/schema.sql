@@ -2404,3 +2404,25 @@ CREATE TABLE IF NOT EXISTS admin_handoff_events (
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_admin_handoff_events_handoff_created ON admin_handoff_events(tenant_id, handoff_id, created_at);
+
+CREATE TABLE IF NOT EXISTS channel_admin_takeovers (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    channel_name TEXT NOT NULL,
+    chat_id TEXT NOT NULL,
+    agent_key TEXT NOT NULL,
+    admin_message_id TEXT NOT NULL DEFAULT '',
+    last_admin_message TEXT NOT NULL DEFAULT '',
+    taken_over_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    released_at TEXT,
+    released_by TEXT NOT NULL DEFAULT '',
+    release_reason TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    CHECK (expires_at > taken_over_at),
+    UNIQUE (tenant_id, channel_name, chat_id)
+);
+CREATE INDEX IF NOT EXISTS idx_channel_admin_takeovers_active
+    ON channel_admin_takeovers(tenant_id, channel_name, expires_at DESC)
+    WHERE released_at IS NULL;

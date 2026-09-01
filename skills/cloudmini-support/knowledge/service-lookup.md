@@ -4,6 +4,13 @@
 
 Tool `cloudmini_proxy_check` dùng cho IP Proxy hoặc VPS mà khách đã gửi trong cuộc trò chuyện. Không dùng để quét IP không liên quan.
 
+### Ngoại lệ Residential VN dùng hostname
+
+- Residential VN có thể cấp hostname `*.resvn.net`, ví dụ `ipv4-vt-04.resvn.net`, thay vì IPv4 dạng số. Đây là định dạng kết nối hợp lệ; không nói hostname “chưa đủ” và không yêu cầu khách tìm IP số.
+- `service_info`/`live_check` hiện là luồng theo IP và có thể không dùng được với hostname Residential VN. Bỏ qua API cho case này.
+- Câu hỏi cấu hình: dùng hostname ở trường Host/IP và port đúng trong cột Proxy Port. Không suy ra một số khác là port nếu giao diện không ghi như vậy.
+- Lỗi kết nối/chậm, riêng website không tải hoặc yêu cầu thay proxy: hỗ trợ bước an toàn nếu phù hợp; nếu vẫn lỗi hoặc khách cần thao tác, chuyển Admin bằng hostname + email đã có. Không đưa user/pass hoặc chuỗi `host:port:user:pass` vào handoff.
+
 ## service_info
 
 Dùng trước khi xử lý lỗi, đổi, hủy, gia hạn, khôi phục hoặc nâng cấp khi đã có IP.
@@ -39,7 +46,7 @@ Chỉ dùng sau `service_info` khi khách báo Proxy không kết nối và kế
 
 Khi yêu cầu cần Admin/Kỹ thuật, đưa vào `escalate_to_admin`:
 - yêu cầu của khách;
-- IP, gói, hạn và region API trả về;
+- IP, gói, hạn và region API trả về; riêng Residential VN dùng hostname `*.resvn.net` nếu không có IP số;
 - email Cloudmini do khách đã cung cấp, chỉ trong nội dung nội bộ;
 - kết quả `live_check` nếu có;
 - lỗi, ảnh và các bước đã thử.

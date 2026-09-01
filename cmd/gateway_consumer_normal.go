@@ -36,6 +36,9 @@ func processNormalMessage(
 	} else {
 		ctx = store.WithTenantID(ctx, store.MasterTenantID)
 	}
+	if suppressInboundForAdminTakeover(ctx, msg, deps) {
+		return
+	}
 
 	// Determine target agent via bindings or explicit AgentID
 	agentID := msg.AgentID

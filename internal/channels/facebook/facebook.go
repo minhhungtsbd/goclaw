@@ -3,6 +3,7 @@ package facebook
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -51,8 +52,12 @@ type Channel struct {
 	adminReplied sync.Map // chatID(string) → time.Time
 
 	// botSentAt tracks when bot last sent a reply to each conversation.
-	// Used to distinguish bot replies from admin replies in Graph API checks.
+	// Used only as a fallback when Meta omits the message MID on an echo.
 	botSentAt sync.Map // chatID(string) → time.Time
+	// botMessageIDs tracks exact Graph API message IDs returned by GoClaw sends.
+	// An echo is classified as bot-authored by MID first, so a human reply sent
+	// within the old 15-second window is not discarded.
+	botMessageIDs sync.Map // MID(string) → expiry time.Time
 
 	// postFetcher caches post content to enrich comment context.
 	postFetcher *PostFetcher
@@ -65,10 +70,13 @@ type Channel struct {
 
 	// sessionMessages persists Page-admin messages without routing them to an LLM.
 	sessionMessages sessionMessageStore
+	// takeovers is the durable source of truth for human control of Messenger chats.
+	takeovers store.ChannelAdminTakeoverStore
 }
 
 type sessionMessageStore interface {
 	AddMessage(context.Context, string, providers.Message)
+	Save(context.Context, string) error
 }
 
 // Option configures optional channel dependencies.
@@ -77,6 +85,10 @@ type Option func(*Channel)
 // WithSessionStore retains human Page replies in the original customer session.
 func WithSessionStore(s sessionMessageStore) Option {
 	return func(ch *Channel) { ch.sessionMessages = s }
+}
+
+func WithTakeoverStore(s store.ChannelAdminTakeoverStore) Option {
+	return func(ch *Channel) { ch.takeovers = s }
 }
 
 // New creates a Facebook channel from parsed credentials and config.
@@ -137,6 +149,15 @@ func FactoryWithSessionStore(sessionStore store.SessionStore) channels.ChannelFa
 	return func(name string, creds json.RawMessage, cfg json.RawMessage,
 		msgBus *bus.MessageBus, pairingSvc store.PairingStore) (channels.Channel, error) {
 		return buildChannel(name, creds, cfg, msgBus, pairingSvc, WithSessionStore(sessionStore))
+	}
+}
+
+// FactoryWithStores wires durable human takeover state and session history.
+func FactoryWithStores(sessionStore store.SessionStore, takeoverStore store.ChannelAdminTakeoverStore) channels.ChannelFactory {
+	return func(name string, creds json.RawMessage, cfg json.RawMessage,
+		msgBus *bus.MessageBus, pairingSvc store.PairingStore) (channels.Channel, error) {
+		return buildChannel(name, creds, cfg, msgBus, pairingSvc,
+			WithSessionStore(sessionStore), WithTakeoverStore(takeoverStore))
 	}
 }
 
@@ -216,6 +237,21 @@ func (ch *Channel) adminRepliedRecently(chatID string, now time.Time) bool {
 	return false
 }
 
+func (ch *Channel) adminTakeoverActive(ctx context.Context, chatID string, now time.Time) (bool, error) {
+	if ch.takeovers == nil {
+		return ch.adminRepliedRecently(chatID, now), nil
+	}
+	_, err := ch.takeovers.GetActive(ctx, ch.Name(), chatID, now)
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, store.ErrChannelAdminTakeoverNotFound):
+		return false, nil
+	default:
+		return false, err
+	}
+}
+
 func (ch *Channel) adminReplyCooldown() time.Duration {
 	minutes := ch.config.MessengerOptions.AdminReplyCooldownMinutes
 	if minutes <= 0 {
@@ -228,7 +264,13 @@ func (ch *Channel) adminReplyCooldown() time.Duration {
 	return cooldown
 }
 
-func (ch *Channel) isBotEcho(chatID string, eventAt time.Time) bool {
+func (ch *Channel) isBotEcho(chatID, messageID string, eventAt time.Time) bool {
+	if messageID != "" {
+		if _, ok := ch.botMessageIDs.Load(messageID); ok {
+			return true
+		}
+		return false
+	}
 	val, ok := ch.botSentAt.Load(chatID)
 	if !ok {
 		return false
@@ -243,6 +285,7 @@ func (ch *Channel) isBotEcho(chatID string, eventAt time.Time) bool {
 
 // Send delivers an outbound message. Dispatches to comment reply or Messenger based on fb_mode metadata.
 func (ch *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+	ctx = store.WithTenantID(ctx, ch.TenantID())
 	// NO_REPLY / suppressed-error path: empty content with no media means the
 	// caller wants downstream cleanup (placeholder, typing) but no user-visible
 	// message. Graph API rejects empty text, so short-circuit here — matches
@@ -255,7 +298,13 @@ func (ch *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 
 	switch mode {
 	case "messenger":
-		if ch.adminRepliedRecently(msg.ChatID, time.Now()) {
+		active, err := ch.adminTakeoverActive(ctx, msg.ChatID, time.Now())
+		if err != nil {
+			slog.Warn("facebook: takeover lookup failed; suppressing bot reply",
+				"chat_id", msg.ChatID, "error", err)
+			return nil
+		}
+		if active {
 			slog.Info("facebook: skipping bot reply (admin already responded)",
 				"chat_id", msg.ChatID)
 			return nil
@@ -267,7 +316,8 @@ func (ch *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 		ch.botSentAt.Store(msg.ChatID, sentAt)
 		sentAny := false
 		for _, part := range parts {
-			if _, err := ch.graphClient.SendMessage(ctx, msg.ChatID, part); err != nil {
+			messageID, err := ch.graphClient.SendMessage(ctx, msg.ChatID, part)
+			if err != nil {
 				if !sentAny {
 					ch.botSentAt.Delete(msg.ChatID)
 				}
@@ -276,6 +326,9 @@ func (ch *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 			}
 			sentAny = true
 			ch.botSentAt.Store(msg.ChatID, time.Now())
+			if messageID != "" {
+				ch.botMessageIDs.Store(messageID, time.Now().Add(dedupTTL))
+			}
 		}
 
 	default: // "comment"
@@ -365,6 +418,12 @@ func (ch *Channel) runDedupCleaner() {
 			ch.botSentAt.Range(func(k, v any) bool {
 				if t, ok := v.(time.Time); ok && now.Sub(t) > botEchoWindow {
 					ch.botSentAt.Delete(k)
+				}
+				return true
+			})
+			ch.botMessageIDs.Range(func(k, v any) bool {
+				if expiresAt, ok := v.(time.Time); !ok || now.After(expiresAt) {
+					ch.botMessageIDs.Delete(k)
 				}
 				return true
 			})

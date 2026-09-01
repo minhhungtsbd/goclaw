@@ -18,10 +18,6 @@ import (
 // handleMessagingEvent processes a Messenger inbox event.
 func (ch *Channel) handleMessagingEvent(ctx context.Context, entry WebhookEntry, event MessagingEvent) {
 	ctx = store.WithTenantID(ctx, ch.TenantID())
-	// Feature gate.
-	if !ch.config.Features.MessengerAutoReply {
-		return
-	}
 
 	// Page routing guard (before dedup write).
 	if entry.ID != ch.pageID {
@@ -32,16 +28,43 @@ func (ch *Channel) handleMessagingEvent(ctx context.Context, entry WebhookEntry,
 	// record the recipient's chat ID so the bot skips auto-reply for that
 	// conversation during the cooldown window.
 	if event.Sender.ID == ch.pageID {
-		if event.Recipient.ID != "" {
+		if event.Recipient.ID != "" && event.Message != nil {
 			eventAt := messagingEventTime(event.Timestamp)
-			if ch.isBotEcho(event.Recipient.ID, eventAt) {
+			messageID := strings.TrimSpace(event.Message.MID)
+			dedupKey := ""
+			if messageID != "" {
+				dedupKey = "page:" + messageID
+			}
+			if dedupKey != "" && ch.isDup(dedupKey) {
+				slog.Debug("facebook: duplicate Page message skipped", "message_id", messageID)
+				return
+			}
+			if ch.isBotEcho(event.Recipient.ID, messageID, eventAt) {
 				slog.Debug("facebook: bot echo ignored", "chat_id", event.Recipient.ID)
 				return
 			}
-			ch.adminReplied.Store(event.Recipient.ID, eventAt)
-			ch.persistAdminMessage(ctx, event.Recipient.ID, event.Message)
-			slog.Debug("facebook: admin reply tracked", "chat_id", event.Recipient.ID)
+			takeoverAt := time.Now()
+			ch.adminReplied.Store(event.Recipient.ID, takeoverAt)
+			if err := ch.persistAdminTakeover(ctx, event.Recipient.ID, takeoverAt, event.Message); err != nil {
+				slog.Warn("facebook: admin takeover persistence failed",
+					"chat_id", event.Recipient.ID, "error", err)
+				// A failed takeover write must remain retryable. If the durable lease
+				// exists and only session persistence failed, retain the dedup claim
+				// to avoid appending the same Admin reply twice.
+				active, lookupErr := ch.adminTakeoverActive(ctx, event.Recipient.ID, time.Now())
+				if dedupKey != "" && (lookupErr != nil || !active) {
+					ch.dedup.Delete(dedupKey)
+				}
+			} else {
+				slog.Info("facebook: admin takeover activated", "chat_id", event.Recipient.ID)
+			}
 		}
+		return
+	}
+
+	// Feature gate. Page-admin events above are persisted even while automatic
+	// replies are disabled, so re-enabling the channel cannot steal a live chat.
+	if !ch.config.Features.MessengerAutoReply {
 		return
 	}
 
@@ -65,7 +88,13 @@ func (ch *Channel) handleMessagingEvent(ctx context.Context, entry WebhookEntry,
 
 	// Check if admin already replied to this conversation recently.
 	senderID := event.Sender.ID
-	if ch.adminRepliedRecently(senderID, time.Now()) {
+	active, err := ch.adminTakeoverActive(ctx, senderID, time.Now())
+	if err != nil {
+		slog.Warn("facebook: takeover lookup failed; suppressing inbound auto-reply",
+			"chat_id", senderID, "error", err)
+		return
+	}
+	if active {
 		slog.Info("facebook: skipping auto-reply (admin replied recently)", "chat_id", senderID)
 		return
 	}
@@ -111,16 +140,56 @@ func (ch *Channel) handleMessagingEvent(ctx context.Context, entry WebhookEntry,
 	ch.HandleMessage(senderID, chatID, content, media, metadata, "direct")
 }
 
-// persistAdminMessage records a human Page reply as assistant context only.
-// It deliberately bypasses HandleMessage, so it cannot trigger an LLM turn or
-// emit an outbound reply.
-func (ch *Channel) persistAdminMessage(ctx context.Context, customerID string, message *IncomingMessage) {
-	if ch.sessionMessages == nil || message == nil || strings.TrimSpace(message.Text) == "" || ch.AgentID() == "" {
-		return
+// persistAdminTakeover records durable human control and stores the Page reply
+// as assistant context. It bypasses HandleMessage, so it cannot trigger an LLM
+// turn or emit an outbound reply.
+func (ch *Channel) persistAdminTakeover(ctx context.Context, customerID string, eventAt time.Time, message *IncomingMessage) error {
+	if ch.AgentID() == "" {
+		return fmt.Errorf("agent id is required")
+	}
+	messageID, messageText := "", ""
+	if message != nil {
+		messageID = strings.TrimSpace(message.MID)
+		messageText = adminMessageHistoryText(message)
+	}
+	if ch.takeovers != nil {
+		_, err := ch.takeovers.Activate(ctx, store.ChannelAdminTakeover{
+			ChannelName: ch.Name(), ChatID: customerID, AgentKey: ch.AgentID(),
+			AdminMessageID: messageID, LastAdminMessage: messageText,
+			TakenOverAt: eventAt, ExpiresAt: eventAt.Add(ch.adminReplyCooldown()),
+		})
+		if err != nil {
+			return err
+		}
+	}
+	if ch.sessionMessages == nil || messageText == "" {
+		return nil
 	}
 	key := sessions.BuildSessionKey(ch.AgentID(), ch.Name(), sessions.PeerDirect, customerID)
-	content := "[Tin nhắn do nhân viên Admin Cloudmini gửi cho khách]\n" + strings.TrimSpace(message.Text)
+	content := "[Tin nhắn do nhân viên Admin Cloudmini gửi cho khách]\n" + messageText
 	ch.sessionMessages.AddMessage(ctx, key, providers.Message{Role: "assistant", Content: content})
+	if err := ch.sessionMessages.Save(ctx, key); err != nil {
+		return fmt.Errorf("save admin message: %w", err)
+	}
+	return nil
+}
+
+func adminMessageHistoryText(message *IncomingMessage) string {
+	if message == nil {
+		return ""
+	}
+	parts := make([]string, 0, len(message.Attachments)+1)
+	if text := strings.TrimSpace(message.Text); text != "" {
+		parts = append(parts, text)
+	}
+	for _, attachment := range message.Attachments {
+		kind := strings.TrimSpace(attachment.Type)
+		if kind == "" {
+			kind = "file"
+		}
+		parts = append(parts, "[Admin gửi đính kèm: "+kind+"]")
+	}
+	return strings.Join(parts, "\n")
 }
 
 func messagingEventTime(ts int64) time.Time {

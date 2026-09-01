@@ -196,6 +196,9 @@ func TestAdminHandoffDedupeKey(t *testing.T) {
 	if got := adminHandoffDedupeKey("facebook", "customer-1", "Need a package upgrade", nil); got != "" {
 		t.Fatalf("dedupe key without IP = %q, want empty", got)
 	}
+	if got := adminHandoffDedupeKey("facebook", "customer-1", "Residential VN ipv4-vt-04.resvn.net lỗi", nil); got != "facebook\x1fcustomer-1\x1fipv4-vt-04.resvn.net" {
+		t.Fatalf("Residential VN dedupe key = %q", got)
+	}
 }
 
 func TestAdminHandoffToolSendsOnlyConfiguredDestination(t *testing.T) {
@@ -258,7 +261,10 @@ func TestValidateAdminHandoffDetails(t *testing.T) {
 		{name: "proxy requires IP", service: "Proxy PrivateV4", summary: "Khách báo lỗi", identifiers: []string{"customer@example.com"}, wantErr: true},
 		{name: "proxy requires email", service: "Proxy PrivateV4", summary: "Khách báo lỗi IP 191.101.251.120", identifiers: []string{"191.101.251.120"}, wantErr: true},
 		{name: "proxy with required details", service: "Proxy PrivateV4", summary: "Khách báo lỗi", identifiers: []string{"191.101.251.120", "customer@example.com"}},
+		{name: "Residential VN hostname replaces IP", service: "Proxy Residential VN", summary: "Khách báo lỗi", identifiers: []string{"ipv4-vt-04.resvn.net", "customer@example.com"}},
+		{name: "rejects Residential VN lookalike hostname", service: "Proxy Residential VN", summary: "Khách báo lỗi", identifiers: []string{"ipv4-vt-04.resvn.net.evil.example", "customer@example.com"}, wantErr: true},
 		{name: "rejects proxy credentials", service: "Proxy PrivateV4", summary: "Khách báo lỗi", identifiers: []string{"191.101.251.120:8080:username:password", "customer@example.com"}, wantErr: true},
+		{name: "rejects Residential VN credentials", service: "Proxy Residential VN", summary: "Khách báo lỗi", identifiers: []string{"ipv4-vt-04.resvn.net:18118:demo-user:demo-pass", "customer@example.com"}, wantErr: true},
 		{name: "rejects token", service: "Proxy PrivateV4", summary: "Khách gửi api token abc", identifiers: []string{"191.101.251.120", "customer@example.com"}, wantErr: true},
 	}
 	for _, tt := range tests {

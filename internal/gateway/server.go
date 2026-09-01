@@ -714,6 +714,11 @@ func (s *Server) SetOperationalIncidentsHandler(h *httpapi.OperationalIncidentsH
 	s.handlers = append(s.handlers, h)
 }
 
+// SetChannelAdminTakeoversHandler registers durable human takeover management.
+func (s *Server) SetChannelAdminTakeoversHandler(h *httpapi.ChannelAdminTakeoversHandler) {
+	s.handlers = append(s.handlers, h)
+}
+
 // SetSecureCLIHandler sets the secure CLI credential CRUD handler.
 func (s *Server) SetSecureCLIHandler(h *httpapi.SecureCLIHandler) {
 	s.handlers = append(s.handlers, h)

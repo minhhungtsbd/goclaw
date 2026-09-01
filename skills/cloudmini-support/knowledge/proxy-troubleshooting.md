@@ -32,7 +32,7 @@ Mẫu phản hồi:
 
 ## Proxy không kết nối
 
-Dữ liệu tối thiểu là IP Proxy. Không yêu cầu Port, Username hoặc Password.
+Dữ liệu tối thiểu là IP Proxy; riêng Residential VN chấp nhận hostname `*.resvn.net` thay IP. Không yêu cầu Port, Username hoặc Password.
 
 1. Nếu đã có IP, dùng `cloudmini_proxy_check` với `service_info` trước để kiểm tra IP thuộc gói nào và còn hạn hay không. Không hỏi lại gói hoặc email nếu API và hội thoại đã đủ dữ liệu.
 2. Nếu API cho thấy dịch vụ hết hạn hoặc không còn trong trạng thái sử dụng, giải thích theo trạng thái đó và chuyển sang luồng gia hạn/khôi phục; không kết luận đây là lỗi kết nối.
@@ -40,6 +40,8 @@ Dữ liệu tối thiểu là IP Proxy. Không yêu cầu Port, Username hoặc 
 4. Nếu có kết quả live nhưng khách vẫn không dùng được, hướng dẫn thử mạng khác/4G/5G, Cloudflare WARP, kiểm tra ứng dụng, xóa cache antidetect browser hoặc thử ứng dụng khác khi phù hợp.
 5. Ping chỉ là tín hiệu bổ sung, không dùng một kết quả ping để kết luận.
 6. Vẫn lỗi sau kiểm tra cơ bản → chuyển Admin/Kỹ thuật.
+
+Với Residential VN dùng hostname `*.resvn.net`, không gọi API IP và không yêu cầu khách cung cấp IPv4 dạng số. Nếu hostname + port trong cột Proxy Port đã cấu hình đúng nhưng vẫn chậm/không tải được website, hoặc khách yêu cầu thay proxy, chuyển Admin/Kỹ thuật ngay khi đã có email; handoff chỉ chứa hostname và email, không chứa user/pass.
 
 Không nói “Request timed out chắc chắn là mạng khách lỗi”.
 
@@ -66,4 +68,4 @@ Không yêu cầu Check Live nếu khách chỉ đổi/hủy vì tài khoản b�
 
 ## Bắt buộc dùng API trước khi hướng dẫn Check Live
 
-Khi khách báo Proxy lỗi kết nối và đã có IP, trước tiên gọi `cloudmini_proxy_check` với `operation: service_info`. Nếu IP đã bị xóa (`service_status: deleted` hoặc `expire: null`), chuyển theo chính sách khôi phục và không Check Live. Nếu IP còn dịch vụ, gọi `cloudmini_proxy_check` với `operation: live_check`, sau đó giải thích kết quả và mời khách đối chiếu thêm tại `Quản lý Proxy -> Thao tác -> Check Live`. Không đưa hướng dẫn Check Live làm bước đầu tiên. Chỉ xin khách tự kiểm tra trước nếu API lỗi hoặc không có dữ liệu.
+Khi khách báo Proxy lỗi kết nối và đã có IP, trước tiên gọi `cloudmini_proxy_check` với `operation: service_info`. Nếu IP đã bị xóa (`service_status: deleted` hoặc `expire: null`), chuyển theo chính sách khôi phục và không Check Live. Nếu IP còn dịch vụ, gọi `cloudmini_proxy_check` với `operation: live_check`, sau đó giải thích kết quả và mời khách đối chiếu thêm tại `Quản lý Proxy -> Thao tác -> Check Live`. Không đưa hướng dẫn Check Live làm bước đầu tiên. Chỉ xin khách tự kiểm tra trước nếu API lỗi hoặc không có dữ liệu. Ngoại lệ: Residential VN `*.resvn.net` bỏ qua toàn bộ API IP theo quy tắc bên trên.

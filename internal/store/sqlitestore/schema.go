@@ -16,7 +16,7 @@ var schemaSQL string
 
 // SchemaVersion is the current SQLite schema version.
 // Bump this when adding new migration steps below.
-const SchemaVersion = 66
+const SchemaVersion = 67
 
 // migrations maps version → SQL to apply when upgrading FROM that version.
 // schema.sql always represents the LATEST full schema (for fresh DBs).
@@ -95,6 +95,27 @@ BEGIN
 END;`
 
 var migrations = map[int]string{
+	66: `CREATE TABLE IF NOT EXISTS channel_admin_takeovers (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    channel_name TEXT NOT NULL,
+    chat_id TEXT NOT NULL,
+    agent_key TEXT NOT NULL,
+    admin_message_id TEXT NOT NULL DEFAULT '',
+    last_admin_message TEXT NOT NULL DEFAULT '',
+    taken_over_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    released_at TEXT,
+    released_by TEXT NOT NULL DEFAULT '',
+    release_reason TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    CHECK (expires_at > taken_over_at),
+    UNIQUE (tenant_id, channel_name, chat_id)
+);
+CREATE INDEX IF NOT EXISTS idx_channel_admin_takeovers_active
+    ON channel_admin_takeovers(tenant_id, channel_name, expires_at DESC)
+    WHERE released_at IS NULL;`,
 	65: `CREATE INDEX IF NOT EXISTS idx_admin_handoffs_tenant_status_created
     ON admin_handoffs(tenant_id, status, created_at DESC);
 CREATE TABLE IF NOT EXISTS admin_handoff_events (

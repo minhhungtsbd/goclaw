@@ -1,12 +1,18 @@
 package pipeline
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 func cloudminiResponseViolatesGuard(state *RunState, content string) bool {
 	if state == nil || strings.TrimSpace(content) == "" {
 		return false
 	}
 	lower := strings.ToLower(content)
+	if len(state.Cloudmini.RequestHosts) > 0 && cloudminiResidentialVNAsksForNumericIP(lower) {
+		return true
+	}
 	if state.Cloudmini.EmailRequired {
 		if !containsAny(lower, "email", "e-mail", "mail") {
 			return true
@@ -39,6 +45,57 @@ func cloudminiResponseViolatesGuard(state *RunState, content string) bool {
 			}
 		}
 	}
+	if cloudminiIncidentExplanationMissing(state, lower) {
+		return true
+	}
+	return false
+}
+
+func cloudminiResidentialVNAsksForNumericIP(lower string) bool {
+	if containsAny(lower, "không cần ip dạng số", "khong can ip dang so", "không yêu cầu ip dạng số", "khong yeu cau ip dang so") {
+		return false
+	}
+	hasNumericIP := containsAny(lower, "ip dạng số", "ip dang so", "địa chỉ ip số", "dia chi ip so", "xxx.xxx")
+	asksForIt := containsAny(lower, "gửi", "gui", "cung cấp", "cung cap", "bắt buộc", "bat buoc", "phải có", "phai co", "cần", "can ", "chưa đủ", "chua du")
+	return hasNumericIP && asksForIt ||
+		(strings.Contains(lower, "hostname") && containsAny(lower, "chưa đủ để", "chua du de"))
+}
+
+func cloudminiIncidentExplanationMissing(state *RunState, lower string) bool {
+	if state == nil {
+		return false
+	}
+	for ip, incident := range state.Cloudmini.IncidentsByIP {
+		message := strings.TrimSpace(incident.CustomerMessage)
+		if message == "" {
+			continue
+		}
+		// A current successful LIVE result supersedes the incident notice for
+		// this IP. A failed/unusable live attempt does not.
+		if live, checked := state.Cloudmini.LiveChecks[ip]; checked && live {
+			continue
+		}
+		// customer_message is operator-authored data. Requiring it verbatim
+		// prevents the model from replacing a scoped notice with a vague or
+		// stronger claim that happens to contain the same severity words.
+		if !strings.Contains(lower, strings.ToLower(message)) {
+			return true
+		}
+		switch incident.Severity {
+		case "temporary_issue":
+			if !containsAny(lower, "lỗi tạm thời", "loi tam thoi", "sự cố tạm thời", "su co tam thoi") {
+				return true
+			}
+		case "degraded":
+			if !containsAny(lower, "suy giảm", "suy giam", "không ổn định", "khong on dinh") {
+				return true
+			}
+		case "permanent_outage":
+			if !containsAny(lower, "ngưng hoạt động hoàn toàn", "ngung hoat dong hoan toan", "đã ngừng hoạt động", "da ngung hoat dong") {
+				return true
+			}
+		}
+	}
 	return false
 }
 
@@ -54,10 +111,21 @@ func hasCloudminiUnsupportedOutageClaim(state *RunState, lower string) bool {
 	if !containsAny(lower, permanentTerms...) {
 		return false
 	}
+	activeServiceSeen := false
 	for _, fact := range state.Cloudmini.ServiceFacts {
 		if fact.Status == "active" || fact.Status == "running" {
-			return true
+			activeServiceSeen = true
+			incident, matched := state.Cloudmini.IncidentsByIP[fact.IP]
+			if !matched || incident.Severity != "permanent_outage" {
+				return true
+			}
+			if live, checked := state.Cloudmini.LiveChecks[fact.IP]; checked && live {
+				return true
+			}
 		}
+	}
+	if activeServiceSeen {
+		return false
 	}
 	for _, incident := range state.Cloudmini.IncidentsByIP {
 		if incident.Severity != "permanent_outage" {
@@ -165,6 +233,9 @@ func cloudminiSafeGuardResponse(state *RunState) string {
 	if state != nil && state.Cloudmini.EmailMismatch {
 		return "Dạ, hiện tại em chưa thể hỗ trợ khôi phục hoặc gia hạn IP này ạ."
 	}
+	if state != nil && len(state.Cloudmini.RequestHosts) > 0 {
+		return "Dạ, gói Residential VN này dùng hostname " + strings.Join(state.Cloudmini.RequestHosts, ", ") + " thay cho IP dạng số nên anh không cần tìm thêm IPv4. Anh dùng hostname ở trường Host/IP và port đúng trong cột Proxy Port; không gửi lại user/pass. Nếu kết nối vẫn chậm hoặc lỗi, bên em sẽ tiếp nhận xử lý theo hostname này ạ."
+	}
 	return "Dạ, em chưa thể xác minh thông tin IP này ngay lúc này ạ."
 }
 
@@ -174,6 +245,9 @@ func cloudminiResponseGuardInstruction(state *RunState) string {
 		if cloudminiHandoffNeedsServiceExplanation(state) {
 			instruction += " Bắt buộc giải thích trạng thái proxy theo kết quả service_info hiện tại (ví dụ đang hoạt động hoặc chưa thể xác minh); không được chỉ gửi mã ticket."
 		}
+		if messages := cloudminiRequiredIncidentMessages(state); len(messages) > 0 {
+			instruction += " Bắt buộc truyền đạt đúng thông báo vận hành đã match: " + strings.Join(messages, " | ")
+		}
 		return instruction
 	}
 	if state != nil && state.Cloudmini.EmailRequired {
@@ -182,5 +256,32 @@ func cloudminiResponseGuardInstruction(state *RunState) string {
 	if state != nil && state.Cloudmini.EmailMismatch {
 		return "Không nêu tài khoản khác, chủ sở hữu, email không khớp, LIVE, chuyển nhượng hoặc mua IP mới; với yêu cầu khôi phục/gia hạn chỉ trả lời ngắn gọn là chưa thể hỗ trợ."
 	}
+	if state != nil && len(state.Cloudmini.RequestHosts) > 0 {
+		return "Residential VN dùng hostname " + strings.Join(state.Cloudmini.RequestHosts, ", ") + "; không yêu cầu IP dạng số và không gọi cloudmini_proxy_check. Hỗ trợ cấu hình bằng hostname/Proxy Port. Nếu khách đang báo lỗi thực tế, chậm kéo dài hoặc yêu cầu thay proxy và email đã có, gọi escalate_to_admin ngay với đúng hostname và email, không kèm port:user:pass."
+	}
 	return "Không suy đoán dữ liệu dịch vụ hoặc quyền sở hữu."
+}
+
+func cloudminiRequiredIncidentMessages(state *RunState) []string {
+	if state == nil {
+		return nil
+	}
+	messages := make([]string, 0, len(state.Cloudmini.IncidentsByIP))
+	seen := make(map[string]struct{})
+	for ip, incident := range state.Cloudmini.IncidentsByIP {
+		message := strings.TrimSpace(incident.CustomerMessage)
+		if message == "" {
+			continue
+		}
+		if live, checked := state.Cloudmini.LiveChecks[ip]; checked && live {
+			continue
+		}
+		if _, exists := seen[message]; exists {
+			continue
+		}
+		seen[message] = struct{}{}
+		messages = append(messages, message)
+	}
+	sort.Strings(messages)
+	return messages
 }

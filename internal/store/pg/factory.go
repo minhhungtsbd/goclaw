@@ -62,6 +62,7 @@ func NewPGStores(cfg store.StoreConfig) (*store.Stores, error) {
 		SkillEvolution:         NewPGSkillEvolutionStore(db),
 		SystemConfigs:          NewPGSystemConfigStore(db),
 		OperationalIncidents:   store.NewOperationalIncidentStore(NewPGSystemConfigStore(db)),
+		ChannelAdminTakeovers:  NewPGChannelAdminTakeoverStore(db),
 		SubagentTasks:          subagentTasks,
 		SubagentTaskRecovery:   subagentTasks,
 		Vault:                  NewPGVaultStore(db),

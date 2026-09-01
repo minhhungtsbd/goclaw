@@ -1217,6 +1217,38 @@
         "responses": { "200": { "description": "Ticket dismissed" }, "409": { "description": "Ticket is not pending" } }
       }
     },
+    "/v1/channel-admin-takeovers": {
+      "get": {
+        "tags": ["Channels"],
+        "summary": "List active Page Admin takeovers",
+        "description": "Lists non-expired tenant-scoped Messenger conversations currently controlled by a human Page Admin.",
+        "parameters": [
+          {"name": "channel_name", "in": "query", "schema": {"type": "string"}},
+          {"name": "limit", "in": "query", "schema": {"type": "integer", "default": 50, "maximum": 200}},
+          {"name": "offset", "in": "query", "schema": {"type": "integer", "default": 0}}
+        ],
+        "responses": {
+          "200": {"description": "Active takeover list", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ChannelAdminTakeoverList"}}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"description": "Tenant Admin role required"}
+        }
+      }
+    },
+    "/v1/channel-admin-takeovers/{id}/release": {
+      "post": {
+        "tags": ["Channels"],
+        "summary": "Release a Page Admin takeover",
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}],
+        "requestBody": {"required": false, "content": {"application/json": {"schema": {"type": "object", "properties": {"reason": {"type": "string", "maxLength": 1000}}}}}},
+        "responses": {
+          "200": {"description": "Takeover released", "content": {"application/json": {"schema": {"type": "object", "properties": {"takeover": {"$ref": "#/components/schemas/ChannelAdminTakeover"}}}}}},
+          "400": {"$ref": "#/components/responses/BadRequest"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"description": "Tenant Admin role required"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    },
     "/v1/cloudmini/operational-incidents": {
       "get": {
         "tags": ["Cloudmini"], "summary": "List structured Cloudmini operational incidents",
@@ -10686,6 +10718,35 @@
         "type": "object",
         "required": ["items"],
         "properties": {"items": {"type": "array", "items": {"$ref": "#/components/schemas/OperationalIncident"}}}
+      },
+      "ChannelAdminTakeover": {
+        "type": "object",
+        "required": ["id", "channel_name", "chat_id", "taken_over_at", "expires_at", "created_at", "updated_at"],
+        "properties": {
+          "id": {"type": "string", "format": "uuid"},
+          "channel_name": {"type": "string"},
+          "chat_id": {"type": "string"},
+          "agent_key": {"type": "string"},
+          "admin_message_id": {"type": "string"},
+          "last_admin_message": {"type": "string"},
+          "taken_over_at": {"type": "string", "format": "date-time"},
+          "expires_at": {"type": "string", "format": "date-time"},
+          "released_at": {"type": "string", "format": "date-time", "nullable": true},
+          "released_by": {"type": "string"},
+          "release_reason": {"type": "string"},
+          "created_at": {"type": "string", "format": "date-time"},
+          "updated_at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "ChannelAdminTakeoverList": {
+        "type": "object",
+        "required": ["items", "total", "limit", "offset"],
+        "properties": {
+          "items": {"type": "array", "items": {"$ref": "#/components/schemas/ChannelAdminTakeover"}},
+          "total": {"type": "integer"},
+          "limit": {"type": "integer"},
+          "offset": {"type": "integer"}
+        }
       },
       "ApiKey": {
         "type": "object",

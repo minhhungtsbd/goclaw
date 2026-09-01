@@ -20,6 +20,15 @@ func init() {
 		MsgFailedToSave:     "không thể lưu %s: %s",
 		MsgInvalidUpdates:   "cập nhật không hợp lệ",
 
+		// Channel admin takeover
+		MsgTakeoverInvalidID:     "ID takeover không hợp lệ",
+		MsgTakeoverInvalidBody:   "nội dung yêu cầu takeover không hợp lệ",
+		MsgTakeoverMultipleJSON:  "nội dung yêu cầu chỉ được chứa tối đa một đối tượng JSON",
+		MsgTakeoverNotFound:      "không tìm thấy takeover đang hoạt động",
+		MsgTakeoverListFailed:    "không thể tải danh sách takeover đang hoạt động",
+		MsgTakeoverReleaseFailed: "không thể nhả takeover",
+		MsgTakeoverReasonTooLong: "lý do nhả takeover không được vượt quá 1000 ký tự",
+
 		// Agent
 		MsgAgentNotFound:                       "không tìm thấy agent: %s",
 		MsgCannotDeleteDefault:                 "không thể xóa agent mặc định",

@@ -23,6 +23,7 @@ const cloudminiProxyCheckToolName = "cloudmini_proxy_check"
 var cloudminiIPCandidate = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
 var cloudminiEmailCandidate = regexp.MustCompile(`(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b`)
 var cloudminiDeclaredIPCount = regexp.MustCompile(`(?i)\b(\d{1,3})\s*(?:ip|proxy|vps)\b`)
+var cloudminiHostnameCandidate = regexp.MustCompile(`(?i)\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b`)
 
 // CloudminiServicePreflightStage loads service facts before the model answers a
 // customer request about a Proxy IP. It applies only when the scoped agent has
@@ -42,8 +43,14 @@ func (s *CloudminiServicePreflightStage) Execute(ctx context.Context, state *Run
 		return nil
 	}
 	ips := resolveCloudminiRequestIPs(state)
+	hosts := resolveCloudminiRequestHosts(state)
 	state.Cloudmini.RequestIPs = append([]string(nil), ips...)
+	state.Cloudmini.RequestHosts = append([]string(nil), hosts...)
 	appendCloudminiOperationalSubnetNotice(state, ips)
+	appendCloudminiResidentialVNContext(state, hosts)
+	if len(ips) == 0 {
+		return nil
+	}
 	// ContextStage intentionally treats its initial tool snapshot as best effort
 	// for token accounting. A transient filter error must not silently disable a
 	// mandatory support check, so refresh the list before deciding to skip.
@@ -154,16 +161,19 @@ func cloudminiPreflightBudgetExhausted(deps *PipelineDeps, state *RunState) bool
 func prepareCloudminiToolState(state *RunState, call providers.ToolCall) {
 	if state == nil || state.Input == nil || state.Input.SenderID == "system:admin_handoff" ||
 		(call.Name != cloudminiProxyCheckToolName && call.Name != "escalate_to_admin") ||
-		len(state.Cloudmini.RequestIPs) > 0 {
+		(len(state.Cloudmini.RequestIPs) > 0 || len(state.Cloudmini.RequestHosts) > 0) {
 		return
 	}
 	ips := resolveCloudminiRequestIPs(state)
-	if len(ips) == 0 {
+	hosts := resolveCloudminiRequestHosts(state)
+	if len(ips) == 0 && len(hosts) == 0 {
 		return
 	}
 	state.Cloudmini.RequestIPs = append([]string(nil), ips...)
+	state.Cloudmini.RequestHosts = append([]string(nil), hosts...)
 	appendCloudminiOperationalSubnetNotice(state, ips)
 	appendCloudminiRequestScope(state, ips)
+	appendCloudminiResidentialVNContext(state, hosts)
 }
 
 // recordCloudminiProxyCheckResult consumes facts from a service_info call that
@@ -259,6 +269,26 @@ func appendCloudminiRequestScope(state *RunState, ips []string) {
 	state.Messages.SetSystem(system)
 }
 
+// appendCloudminiResidentialVNContext records the explicit exception for the
+// Residential VN product. Its connection identifier is a hostname, so the
+// IPv4-only Cloudmini APIs cannot be a prerequisite for customer support.
+func appendCloudminiResidentialVNContext(state *RunState, hosts []string) {
+	if state == nil || len(hosts) == 0 {
+		return
+	}
+	system := state.Messages.System()
+	if strings.Contains(system.Content, "[CLOUDMINI RESIDENTIAL VN HOSTNAME - BẮT BUỘC]") {
+		return
+	}
+	system.Content += "\n\n[CLOUDMINI RESIDENTIAL VN HOSTNAME - BẮT BUỘC]\n" +
+		"Định danh Residential VN của yêu cầu hiện tại: " + strings.Join(hosts, ", ") + ". " +
+		"Gói này dùng hostname thay cho IPv4 dạng số. Không yêu cầu khách cung cấp IP dạng số và không gọi cloudmini_proxy_check cho hostname vì service_info/live_check có thể không hỗ trợ. " +
+		"Với câu hỏi cấu hình, hướng dẫn dùng hostname ở trường Host/IP và dùng đúng port trong cột Proxy Port; không dùng user/pass khách đã gửi. " +
+		"Nếu khách báo chậm, không vào được website, lỗi thực tế hoặc yêu cầu thay proxy mà hướng dẫn an toàn không giải quyết được, được phép chuyển Admin/Kỹ thuật ngay bằng hostname và email Cloudmini đã có, không cần kết quả API. " +
+		"Handoff phải chứa đúng hostname hiện tại và email do khách cung cấp; tuyệt đối không chứa port:user:pass hoặc thông tin đăng nhập."
+	state.Messages.SetSystem(system)
+}
+
 func resolveCloudminiRequestIPs(state *RunState) []string {
 	current := cloudminiIPs(state.Input.Message)
 	if len(current) == 0 {
@@ -303,6 +333,38 @@ func resolveCloudminiRequestIPs(state *RunState) []string {
 		return current
 	}
 	return combined
+}
+
+func resolveCloudminiRequestHosts(state *RunState) []string {
+	if state == nil || state.Input == nil {
+		return nil
+	}
+	if current := cloudminiResidentialVNHosts(state.Input.Message); len(current) > 0 {
+		return current
+	}
+	message := strings.ToLower(state.Input.Message)
+	if !isCloudminiEmailContinuation(state) && !containsAny(message,
+		"lỗi", "loi", "chậm", "cham", "lag", "treo", "không", "khong", "kko", "ko ",
+		"vẫn", "van", "giúp", "giup", "kiểm tra", "kiem tra", "thay proxy", "đổi proxy", "doi proxy") {
+		return nil
+	}
+	userMessages := 0
+	history := state.Messages.History()
+	for i := len(history) - 1; i >= 0 && userMessages < 6; i-- {
+		if history[i].Role != "user" {
+			continue
+		}
+		userMessages++
+		if hosts := cloudminiResidentialVNHosts(history[i].Content); len(hosts) > 0 {
+			return hosts
+		}
+		// A newer numeric service identifier starts a different support scope;
+		// do not revive an older Residential VN hostname across that boundary.
+		if len(cloudminiIPs(history[i].Content)) > 0 {
+			return nil
+		}
+	}
+	return nil
 }
 
 func appendUniqueCloudminiIPs(base []string, values ...string) []string {
@@ -511,6 +573,9 @@ func isCloudminiServiceRequest(state *RunState) bool {
 	if isCloudminiEmailContinuation(state) {
 		return true
 	}
+	if len(resolveCloudminiRequestHosts(state)) > 0 {
+		return true
+	}
 	if len(cloudminiIPs(message)) == 0 {
 		return false
 	}
@@ -523,6 +588,7 @@ func isCloudminiServiceRequest(state *RunState) bool {
 
 func isCloudminiEmailContinuation(state *RunState) bool {
 	if state == nil || state.Input == nil || len(cloudminiIPs(state.Input.Message)) > 0 ||
+		len(cloudminiResidentialVNHosts(state.Input.Message)) > 0 ||
 		len(cloudminiEmailCandidate.FindAllString(state.Input.Message, -1)) == 0 {
 		return false
 	}
@@ -542,7 +608,7 @@ func isCloudminiEmailContinuation(state *RunState) bool {
 		}
 		for j := i - 1; j >= 0; j-- {
 			if history[j].Role == "user" {
-				return len(cloudminiIPs(history[j].Content)) > 0
+				return len(cloudminiIPs(history[j].Content)) > 0 || len(cloudminiResidentialVNHosts(history[j].Content)) > 0
 			}
 		}
 		return false
@@ -558,7 +624,8 @@ func cloudminiSupportIntentText(state *RunState) string {
 		return state.Input.Message
 	}
 	for i := len(state.Messages.History()) - 1; i >= 0; i-- {
-		if state.Messages.History()[i].Role == "user" && len(cloudminiIPs(state.Messages.History()[i].Content)) > 0 {
+		if state.Messages.History()[i].Role == "user" &&
+			(len(cloudminiIPs(state.Messages.History()[i].Content)) > 0 || len(cloudminiResidentialVNHosts(state.Messages.History()[i].Content)) > 0) {
 			return state.Messages.History()[i].Content + "\n" + state.Input.Message
 		}
 	}
@@ -611,6 +678,23 @@ func cloudminiIPs(message string) []string {
 	return ips
 }
 
+func cloudminiResidentialVNHosts(message string) []string {
+	seen := make(map[string]struct{})
+	hosts := make([]string, 0, 1)
+	for _, candidate := range cloudminiHostnameCandidate.FindAllString(message, -1) {
+		host := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(candidate), "."))
+		if host != "resvn.net" && !strings.HasSuffix(host, ".resvn.net") {
+			continue
+		}
+		if _, exists := seen[host]; exists {
+			continue
+		}
+		seen[host] = struct{}{}
+		hosts = append(hosts, host)
+	}
+	return hosts
+}
+
 // latestCloudminiCustomerEmail reuses an email the customer already supplied,
 // without trusting assistant or Admin messages that may mention other accounts.
 func latestCloudminiCustomerEmail(history []providers.Message) string {
@@ -654,23 +738,34 @@ func validateCloudminiCurrentRequestToolCall(state *RunState, tc providers.ToolC
 	if state == nil || state.Input == nil || state.Input.SenderID == "system:admin_handoff" {
 		return true, ""
 	}
-	current := state.Cloudmini.RequestIPs
-	if len(current) == 0 {
-		current = cloudminiIPs(state.Input.Message)
+	currentIPs := state.Cloudmini.RequestIPs
+	if len(currentIPs) == 0 {
+		currentIPs = cloudminiIPs(state.Input.Message)
 	}
-	if len(current) == 0 {
+	currentHosts := state.Cloudmini.RequestHosts
+	if len(currentHosts) == 0 {
+		currentHosts = cloudminiResidentialVNHosts(state.Input.Message)
+	}
+	if len(currentIPs) == 0 && len(currentHosts) == 0 {
 		return true, ""
 	}
-	allowed := make(map[string]struct{}, len(current))
-	for _, ip := range current {
-		allowed[ip] = struct{}{}
+	allowedIPs := make(map[string]struct{}, len(currentIPs))
+	for _, ip := range currentIPs {
+		allowedIPs[ip] = struct{}{}
+	}
+	allowedHosts := make(map[string]struct{}, len(currentHosts))
+	for _, host := range currentHosts {
+		allowedHosts[strings.ToLower(host)] = struct{}{}
 	}
 
 	switch strings.TrimSpace(tc.Name) {
 	case cloudminiProxyCheckToolName:
+		if len(currentIPs) == 0 && len(currentHosts) > 0 {
+			return false, "Residential VN dùng hostname; không gọi service_info/live_check và không yêu cầu khách cung cấp IPv4 dạng số"
+		}
 		ip, _ := tc.Arguments["ip"].(string)
 		parsed, err := netip.ParseAddr(strings.TrimSpace(ip))
-		if err != nil || !parsed.Is4() || !containsCloudminiIP(allowed, parsed.String()) {
+		if err != nil || !parsed.Is4() || !containsCloudminiIP(allowedIPs, parsed.String()) {
 			return false, "chỉ được kiểm tra IP trong tin nhắn Cloudmini hiện tại; không dùng IP từ lịch sử cuộc trò chuyện"
 		}
 		customerEmail := latestCloudminiCustomerEmailForState(state)
@@ -708,27 +803,57 @@ func validateCloudminiCurrentRequestToolCall(state *RunState, tc providers.ToolC
 		needsOperationalReview := containsAny(intent,
 			"lỗi", "loi", "không kết nối", "khong ket noi", "không vào được", "khong vao duoc",
 			"không hoạt động", "khong hoat dong", "die", "error", "timeout", "manual", "kỹ thuật", "ky thuat",
+			"chậm", "cham", "lag", "treo", "không load", "khong load", "thay proxy", "đổi proxy", "doi proxy",
 			"khôi phục", "khoi phuc", "gia hạn", "gia han", "hủy", "huỷ", "huy", "hoàn tiền", "hoan tien")
-		referenced := cloudminiHandoffIPs(tc.Arguments)
-		if len(referenced) == 0 {
+		referencedIPs := cloudminiHandoffIPs(tc.Arguments)
+		referencedHosts := cloudminiHandoffResidentialVNHosts(tc.Arguments)
+		if len(referencedIPs) == 0 && len(referencedHosts) == 0 {
+			return false, "Admin handoff cho yêu cầu Cloudmini hiện tại phải chứa đúng IP hoặc hostname Residential VN hiện tại"
+		}
+		if len(currentIPs) > 0 && len(referencedIPs) == 0 {
 			return false, "Admin handoff cho yêu cầu Cloudmini hiện tại phải chứa IP trong tin nhắn khách vừa gửi"
 		}
-		if !needsOperationalReview && !cloudminiIncidentsAllowHandoff(state, referenced) {
+		if cloudminiIncidentBlocksHandoff(state, referencedIPs) {
+			return false, "thông báo vận hành đã match IP này không cho phép tạo Admin handoff; phải giải thích đúng thông báo cho khách"
+		}
+		if !needsOperationalReview && !cloudminiIncidentsAllowHandoff(state, referencedIPs) {
 			return false, "chỉ tạo Admin handoff khi khách báo lỗi/cần xử lý kỹ thuật hoặc incident cho phép handoff"
 		}
-		for _, ip := range referenced {
-			if !containsCloudminiIP(allowed, ip) {
+		for _, ip := range referencedIPs {
+			if !containsCloudminiIP(allowedIPs, ip) {
 				return false, "Admin handoff chỉ được chứa IP trong tin nhắn Cloudmini hiện tại; không dùng danh sách IP cũ"
 			}
 		}
-		if blocked, reason := cloudminiHandoffNeedsMoreLiveTriage(state, referenced, intent); blocked {
+		if blocked, reason := cloudminiHandoffNeedsMoreLiveTriage(state, referencedIPs, intent); blocked {
 			return false, reason
 		}
 		if requiresAllCloudminiIPs(state.Input.Message) {
-			for _, ip := range current {
-				if !containsCloudminiString(referenced, ip) {
+			for _, ip := range currentIPs {
+				if !containsCloudminiString(referencedIPs, ip) {
 					return false, "Admin handoff cho yêu cầu nhiều IP phải chứa đầy đủ toàn bộ IP trong tin nhắn khách vừa gửi"
 				}
+			}
+		}
+		if len(currentHosts) > 0 {
+			if len(referencedHosts) == 0 {
+				return false, "Admin handoff Residential VN phải chứa hostname hiện tại; không yêu cầu IPv4 dạng số"
+			}
+			for _, host := range referencedHosts {
+				if _, ok := allowedHosts[strings.ToLower(host)]; !ok {
+					return false, "Admin handoff chỉ được chứa hostname Residential VN trong yêu cầu hiện tại"
+				}
+			}
+			for _, host := range currentHosts {
+				if !containsCloudminiString(referencedHosts, strings.ToLower(host)) {
+					return false, "Admin handoff Residential VN phải chứa đầy đủ hostname hiện tại"
+				}
+			}
+			customerEmail := latestCloudminiCustomerEmailForState(state)
+			if customerEmail == "" {
+				return false, "phải xin email tài khoản Cloudmini trước khi chuyển Admin cho Residential VN"
+			}
+			if !containsCloudminiString(cloudminiHandoffEmails(tc.Arguments), customerEmail) {
+				return false, "Admin handoff Residential VN phải dùng đúng email Cloudmini do khách cung cấp"
 			}
 		}
 	}
@@ -776,6 +901,18 @@ func cloudminiIncidentsAllowHandoff(state *RunState, ips []string) bool {
 	return true
 }
 
+func cloudminiIncidentBlocksHandoff(state *RunState, ips []string) bool {
+	if state == nil {
+		return false
+	}
+	for _, ip := range ips {
+		if incident, matched := state.Cloudmini.IncidentsByIP[ip]; matched && !incident.AllowsAdminHandoff {
+			return true
+		}
+	}
+	return false
+}
+
 func cloudminiHandoffIPs(args map[string]any) []string {
 	var values []string
 	for _, key := range []string{"service", "summary"} {
@@ -805,6 +942,69 @@ func cloudminiHandoffIPs(args map[string]any) []string {
 		}
 	}
 	return ips
+}
+
+func cloudminiHandoffResidentialVNHosts(args map[string]any) []string {
+	var values []string
+	for _, key := range []string{"service", "summary"} {
+		if value, ok := args[key].(string); ok {
+			values = append(values, value)
+		}
+	}
+	switch identifiers := args["identifiers"].(type) {
+	case []any:
+		for _, identifier := range identifiers {
+			if value, ok := identifier.(string); ok {
+				values = append(values, value)
+			}
+		}
+	case []string:
+		values = append(values, identifiers...)
+	}
+
+	seen := make(map[string]struct{})
+	var hosts []string
+	for _, value := range values {
+		for _, host := range cloudminiResidentialVNHosts(value) {
+			if _, exists := seen[host]; !exists {
+				seen[host] = struct{}{}
+				hosts = append(hosts, host)
+			}
+		}
+	}
+	return hosts
+}
+
+func cloudminiHandoffEmails(args map[string]any) []string {
+	var values []string
+	for _, key := range []string{"service", "summary"} {
+		if value, ok := args[key].(string); ok {
+			values = append(values, value)
+		}
+	}
+	switch identifiers := args["identifiers"].(type) {
+	case []any:
+		for _, identifier := range identifiers {
+			if value, ok := identifier.(string); ok {
+				values = append(values, value)
+			}
+		}
+	case []string:
+		values = append(values, identifiers...)
+	}
+
+	seen := make(map[string]struct{})
+	var emails []string
+	for _, value := range values {
+		for _, email := range cloudminiEmailCandidate.FindAllString(value, -1) {
+			email = strings.ToLower(email)
+			if _, exists := seen[email]; !exists {
+				seen[email] = struct{}{}
+				emails = append(emails, email)
+			}
+		}
+	}
+	return emails
 }
 
 func containsCloudminiIP(ips map[string]struct{}, ip string) bool {

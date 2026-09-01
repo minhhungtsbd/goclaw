@@ -2,14 +2,19 @@ package facebook
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/sessions"
+	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
 type recordedSessionMessage struct {
@@ -17,10 +22,64 @@ type recordedSessionMessage struct {
 	msg providers.Message
 }
 
-type recordingSessionMessages struct{ messages []recordedSessionMessage }
+type recordingSessionMessages struct {
+	messages []recordedSessionMessage
+	saves    []string
+}
 
 func (s *recordingSessionMessages) AddMessage(_ context.Context, key string, msg providers.Message) {
 	s.messages = append(s.messages, recordedSessionMessage{key: key, msg: msg})
+}
+
+func (s *recordingSessionMessages) Save(_ context.Context, key string) error {
+	s.saves = append(s.saves, key)
+	return nil
+}
+
+type memoryTakeoverStore struct {
+	mu          sync.Mutex
+	item        *store.ChannelAdminTakeover
+	activateErr error
+}
+
+func (s *memoryTakeoverStore) Activate(_ context.Context, item store.ChannelAdminTakeover) (*store.ChannelAdminTakeover, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.activateErr != nil {
+		return nil, s.activateErr
+	}
+	item.ID = uuid.Must(uuid.NewV7())
+	copy := item
+	s.item = &copy
+	return &copy, nil
+}
+
+func (s *memoryTakeoverStore) GetActive(_ context.Context, channelName, chatID string, now time.Time) (*store.ChannelAdminTakeover, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.item == nil || s.item.ChannelName != channelName || s.item.ChatID != chatID ||
+		s.item.ReleasedAt != nil || !s.item.ExpiresAt.After(now) {
+		return nil, store.ErrChannelAdminTakeoverNotFound
+	}
+	copy := *s.item
+	return &copy, nil
+}
+
+func (s *memoryTakeoverStore) ListActive(context.Context, store.ChannelAdminTakeoverListOptions) ([]store.ChannelAdminTakeover, int, error) {
+	return nil, 0, nil
+}
+
+func (s *memoryTakeoverStore) Release(_ context.Context, id uuid.UUID, releasedBy, reason string, now time.Time) (*store.ChannelAdminTakeover, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.item == nil || s.item.ID != id || s.item.ReleasedAt != nil {
+		return nil, store.ErrChannelAdminTakeoverNotFound
+	}
+	s.item.ReleasedAt = &now
+	s.item.ReleasedBy = releasedBy
+	s.item.ReleaseReason = reason
+	copy := *s.item
+	return &copy, nil
 }
 
 // newTestChannel wires a facebook Channel to a mock Graph API server with
@@ -374,6 +433,7 @@ func TestHandleMessagingEvent_PageEchoDoesNotTrackAdminReply(t *testing.T) {
 
 	now := time.Now()
 	ch.botSentAt.Store("user-1", now)
+	ch.botMessageIDs.Store("echo-1", now.Add(time.Hour))
 
 	ch.handleMessagingEvent(context.Background(), WebhookEntry{ID: "111"}, MessagingEvent{
 		Sender:    FBUser{ID: "111"},
@@ -384,6 +444,121 @@ func TestHandleMessagingEvent_PageEchoDoesNotTrackAdminReply(t *testing.T) {
 
 	if _, ok := ch.adminReplied.Load("user-1"); ok {
 		t.Fatal("bot echo should not be tracked as admin reply")
+	}
+}
+
+func TestHandleMessagingEvent_HumanReplyWithinBotWindowIsNotMisclassified(t *testing.T) {
+	cfg := facebookInstanceConfig{}
+	cfg.Features.MessengerAutoReply = true
+	recorded := &recordingSessionMessages{}
+	ch := newTestChannel(t, "111", cfg)
+	ch.SetName("cloudmini-net-page")
+	ch.SetAgentID("linh-nhi-support-lead")
+	ch.sessionMessages = recorded
+	now := time.Now()
+	ch.botSentAt.Store("user-1", now)
+	ch.botMessageIDs.Store("actual-bot-mid", now.Add(time.Hour))
+
+	ch.handleMessagingEvent(context.Background(), WebhookEntry{ID: "111"}, MessagingEvent{
+		Sender:    FBUser{ID: "111"},
+		Recipient: FBUser{ID: "user-1"},
+		Timestamp: now.Add(time.Second).UnixMilli(),
+		Message:   &IncomingMessage{MID: "human-admin-mid", Text: "Admin đang xử lý."},
+	})
+
+	if len(recorded.messages) != 1 {
+		t.Fatalf("persisted messages = %d, want 1 human Admin message", len(recorded.messages))
+	}
+}
+
+func TestHandleMessagingEvent_PageReceiptDoesNotActivateTakeover(t *testing.T) {
+	cfg := facebookInstanceConfig{}
+	cfg.Features.MessengerAutoReply = true
+	takeovers := &memoryTakeoverStore{}
+	ch := newTestChannel(t, "111", cfg)
+	ch.SetName("cloudmini-net-page")
+	ch.SetAgentID("linh-nhi-support-lead")
+	ch.takeovers = takeovers
+
+	ch.handleMessagingEvent(context.Background(), WebhookEntry{ID: "111"}, MessagingEvent{
+		Sender: FBUser{ID: "111"}, Recipient: FBUser{ID: "user-1"}, Timestamp: time.Now().UnixMilli(),
+	})
+
+	if takeovers.item != nil {
+		t.Fatalf("non-message Page event activated takeover: %#v", takeovers.item)
+	}
+}
+
+func TestHandleMessagingEvent_DuplicateAdminMIDPersistsOnce(t *testing.T) {
+	cfg := facebookInstanceConfig{}
+	cfg.Features.MessengerAutoReply = true
+	takeovers := &memoryTakeoverStore{}
+	recorded := &recordingSessionMessages{}
+	ch := newTestChannel(t, "111", cfg)
+	ch.SetName("cloudmini-net-page")
+	ch.SetAgentID("linh-nhi-support-lead")
+	ch.takeovers = takeovers
+	ch.sessionMessages = recorded
+	event := MessagingEvent{
+		Sender: FBUser{ID: "111"}, Recipient: FBUser{ID: "user-1"}, Timestamp: time.Now().UnixMilli(),
+		Message: &IncomingMessage{MID: "admin-duplicate", Text: "Admin đang xử lý."},
+	}
+
+	ch.handleMessagingEvent(context.Background(), WebhookEntry{ID: "111"}, event)
+	ch.handleMessagingEvent(context.Background(), WebhookEntry{ID: "111"}, event)
+
+	if len(recorded.messages) != 1 || len(recorded.saves) != 1 {
+		t.Fatalf("duplicate Admin MID persisted messages=%d saves=%d, want 1/1", len(recorded.messages), len(recorded.saves))
+	}
+}
+
+func TestHandleMessagingEvent_FailedTakeoverRemainsRetryable(t *testing.T) {
+	cfg := facebookInstanceConfig{}
+	cfg.Features.MessengerAutoReply = true
+	takeovers := &memoryTakeoverStore{activateErr: errors.New("database unavailable")}
+	ch := newTestChannel(t, "111", cfg)
+	ch.SetName("cloudmini-net-page")
+	ch.SetAgentID("linh-nhi-support-lead")
+	ch.takeovers = takeovers
+	event := MessagingEvent{
+		Sender: FBUser{ID: "111"}, Recipient: FBUser{ID: "user-1"}, Timestamp: time.Now().UnixMilli(),
+		Message: &IncomingMessage{MID: "admin-retry", Text: "Admin đang xử lý."},
+	}
+
+	ch.handleMessagingEvent(context.Background(), WebhookEntry{ID: "111"}, event)
+	if _, seen := ch.dedup.Load("page:admin-retry"); seen {
+		t.Fatal("failed durable takeover consumed the Page message dedup key")
+	}
+	takeovers.mu.Lock()
+	takeovers.activateErr = nil
+	takeovers.mu.Unlock()
+	ch.handleMessagingEvent(context.Background(), WebhookEntry{ID: "111"}, event)
+	if takeovers.item == nil {
+		t.Fatal("retry did not persist the Admin takeover")
+	}
+}
+
+func TestHandleMessagingEvent_AdminAttachmentPersistsContextAndTakeover(t *testing.T) {
+	cfg := facebookInstanceConfig{}
+	cfg.Features.MessengerAutoReply = true
+	takeovers := &memoryTakeoverStore{}
+	recorded := &recordingSessionMessages{}
+	ch := newTestChannel(t, "111", cfg)
+	ch.SetName("cloudmini-net-page")
+	ch.SetAgentID("linh-nhi-support-lead")
+	ch.takeovers = takeovers
+	ch.sessionMessages = recorded
+
+	ch.handleMessagingEvent(context.Background(), WebhookEntry{ID: "111"}, MessagingEvent{
+		Sender: FBUser{ID: "111"}, Recipient: FBUser{ID: "user-1"}, Timestamp: time.Now().UnixMilli(),
+		Message: &IncomingMessage{MID: "admin-image", Attachments: []Attachment{{Type: "image"}}},
+	})
+
+	if takeovers.item == nil || takeovers.item.LastAdminMessage != "[Admin gửi đính kèm: image]" {
+		t.Fatalf("attachment takeover = %#v", takeovers.item)
+	}
+	if len(recorded.messages) != 1 || !strings.Contains(recorded.messages[0].msg.Content, "[Admin gửi đính kèm: image]") {
+		t.Fatalf("attachment session messages = %#v", recorded.messages)
 	}
 }
 
@@ -413,7 +588,89 @@ func TestHandleMessagingEvent_HumanPageReplyPersistsSessionContext(t *testing.T)
 	if got.msg.Role != "assistant" || got.msg.Content != "[Tin nhắn do nhân viên Admin Cloudmini gửi cho khách]\nAdmin đã kiểm tra và khôi phục xong." {
 		t.Fatalf("stored message = %#v", got.msg)
 	}
+	if len(recorded.saves) != 1 || recorded.saves[0] != got.key {
+		t.Fatalf("saved sessions = %#v, want [%q]", recorded.saves, got.key)
+	}
 }
+
+func TestHandleMessagingEvent_DurableTakeoverSurvivesChannelRestart(t *testing.T) {
+	takeovers := &memoryTakeoverStore{}
+	recorded := &recordingSessionMessages{}
+	cfg := facebookInstanceConfig{}
+	cfg.Features.MessengerAutoReply = true
+	cfg.MessengerOptions.AdminReplyCooldownMinutes = 10
+
+	first := newTestChannel(t, "111", cfg)
+	first.SetName("cloudmini-net-page")
+	first.SetAgentID("linh-nhi-support-lead")
+	first.sessionMessages = recorded
+	first.takeovers = takeovers
+	first.handleMessagingEvent(context.Background(), WebhookEntry{ID: "111"}, MessagingEvent{
+		Sender: FBUser{ID: "111"}, Recipient: FBUser{ID: "customer-1"},
+		Timestamp: time.Now().UnixMilli(), Message: &IncomingMessage{MID: "admin-mid", Text: "Để Admin xử lý."},
+	})
+
+	if takeovers.item == nil {
+		t.Fatal("admin reply did not persist takeover")
+	}
+	if len(recorded.saves) != 1 {
+		t.Fatalf("session saves = %d, want 1", len(recorded.saves))
+	}
+
+	// A fresh Channel has empty in-memory maps, like a process after restart,
+	// but must still suppress inbound scheduling from the shared durable store.
+	mb := bus.New()
+	cfg.PageID = "111"
+	restarted, err := New(cfg, facebookCreds{PageAccessToken: "t", AppSecret: "s", VerifyToken: "v"}, mb, nil,
+		WithTakeoverStore(takeovers))
+	if err != nil {
+		t.Fatalf("New restarted channel: %v", err)
+	}
+	restarted.SetName("cloudmini-net-page")
+	restarted.SetAgentID("linh-nhi-support-lead")
+	restarted.handleMessagingEvent(context.Background(), WebhookEntry{ID: "111"}, MessagingEvent{
+		Sender: FBUser{ID: "customer-1"}, Message: &IncomingMessage{MID: "customer-mid", Text: "ok b"},
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if _, ok := mb.ConsumeInbound(ctx); ok {
+		t.Fatal("customer message was scheduled while durable Admin takeover was active")
+	}
+}
+
+func TestSend_DurableTakeoverSuppressesAfterRestart(t *testing.T) {
+	var sends int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		sends++
+		_, _ = w.Write([]byte(`{"message_id":"bot-mid"}`))
+	}))
+	t.Cleanup(srv.Close)
+	swapGraphBase(t, srv.URL)
+	now := time.Now()
+	takeovers := &memoryTakeoverStore{item: &store.ChannelAdminTakeover{
+		ID: uuid.Must(uuid.NewV7()), ChannelName: "cloudmini-net-page", ChatID: "customer-1",
+		AgentKey: "linh-nhi-support-lead", TakenOverAt: now, ExpiresAt: now.Add(10 * time.Minute),
+	}}
+	cfg := facebookInstanceConfig{PageID: "111"}
+	ch, err := New(cfg, facebookCreds{PageAccessToken: "t", AppSecret: "s", VerifyToken: "v"}, bus.New(), nil,
+		WithTakeoverStore(takeovers))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	ch.SetName("cloudmini-net-page")
+
+	if err := ch.Send(t.Context(), bus.OutboundMessage{
+		ChatID: "customer-1", Content: "should not send", Metadata: map[string]string{"fb_mode": "messenger"},
+	}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if sends != 0 {
+		t.Fatalf("Graph sends = %d, want 0 during durable takeover", sends)
+	}
+}
+
+var _ store.ChannelAdminTakeoverStore = (*memoryTakeoverStore)(nil)
 
 // TestSend_MessengerModeSkipsWhenAdminReplyTracked verifies bot replies are
 // suppressed when an admin reply was observed recently via webhook.

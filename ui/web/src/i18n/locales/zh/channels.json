@@ -142,11 +142,24 @@
       "selectAgent": "选择Agent",
       "enabled": "已启用",
       "adminReplyCooldown": {
-        "title": "管理员回复冷却时间",
-        "description": "当页面管理员在同一 Messenger 对话中回复后，暂停 AI 回复。",
-        "label": "等待时间（分钟）",
-        "hint": "默认：5 分钟。允许范围：1-1440 分钟。",
+        "title": "管理员接管",
+        "description": "页面管理员回复后，持久保存接管状态并暂停该 Messenger 对话中的 Agent，重启后仍然有效。",
+        "label": "自动释放时间（分钟）",
+        "hint": "默认：5 分钟。允许范围：1-1440 分钟。管理员也可在下方手动释放。",
         "error": "请输入 1 到 1440 之间的整数。"
+      },
+      "takeovers": {
+        "title": "管理员正在接管的对话",
+        "description": "在接管被释放或到期之前，Agent 不会在这些对话中安排或发送回复。",
+        "refresh": "刷新",
+        "empty": "当前没有管理员接管的对话。",
+        "expires": "将在 {{value}} 自动释放",
+        "release": "释放接管",
+        "releasing": "正在释放…",
+        "released": "接管已释放",
+        "releaseReason": "已从频道设置中释放",
+        "loadFailed": "无法加载接管状态",
+        "releaseFailed": "无法释放接管"
       },
       "saved": "已保存",
       "saveChanges": "保存更改",
@@ -404,8 +417,8 @@
       "label": "表情回应级别"
     },
     "messenger_options.admin_reply_cooldown_minutes": {
-      "label": "管理员回复冷却时间（分钟）",
-      "help": "Page 管理员在同一 Messenger 对话回复后暂停 AI 回复。范围：1–1440 分钟。"
+      "label": "管理员接管时长（分钟）",
+      "help": "页面管理员回复后持久保存接管并暂停 AI，重启后仍有效。范围：1–1440 分钟。"
     },
     "activity_indicator": {
       "label": "活动指示器",

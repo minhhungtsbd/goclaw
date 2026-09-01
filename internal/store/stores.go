@@ -41,6 +41,7 @@ type Stores struct {
 	SkillEvolution        SkillEvolutionStore
 	SystemConfigs         SystemConfigStore
 	OperationalIncidents  OperationalIncidentStore
+	ChannelAdminTakeovers ChannelAdminTakeoverStore
 	SubagentTasks         SubagentTaskStore
 	SubagentTaskRecovery  SubagentTaskRecoveryStore
 	Vault                 VaultStore

@@ -16,6 +16,7 @@ import { configSchema } from "../channel-schemas";
 import type { ChannelInstanceData } from "@/types/channel";
 import type { AgentData } from "@/types/agent";
 import { channelTypeLabels } from "../channels-status-view";
+import { ChannelAdminTakeovers } from "./channel-admin-takeovers";
 
 const ESSENTIAL_CONFIG_KEYS: Record<string, string[]> = {
   _default: ["dm_policy", "group_policy", "require_mention"],
@@ -187,6 +188,8 @@ export function ChannelGeneralTab({ instance, agents, onUpdate }: ChannelGeneral
           </div>
         </section>
       )}
+
+      {isFacebook && <ChannelAdminTakeovers channelName={instance.name} />}
 
       <StickySaveBar
         onSave={handleSave}

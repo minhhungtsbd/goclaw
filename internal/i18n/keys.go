@@ -378,3 +378,14 @@ const (
 	MsgGitCredBlobMissingField         = "error.git_cred_blob_missing_field"         // "blob missing required field %q"
 	MsgGitCredUnsupportedCredType      = "error.git_cred_unsupported_cred_type"      // "credential_type %q is not supported"
 )
+
+// Channel admin takeover.
+const (
+	MsgTakeoverInvalidID     = "takeover.invalid_id"
+	MsgTakeoverInvalidBody   = "takeover.invalid_body"
+	MsgTakeoverMultipleJSON  = "takeover.multiple_json"
+	MsgTakeoverNotFound      = "takeover.not_found"
+	MsgTakeoverListFailed    = "takeover.list_failed"
+	MsgTakeoverReleaseFailed = "takeover.release_failed"
+	MsgTakeoverReasonTooLong = "takeover.reason_too_long"
+)

@@ -57,3 +57,73 @@ func TestActiveServiceRejectsPermanentOutageClaim(t *testing.T) {
 		t.Fatal("forbidden incident claim should be rejected")
 	}
 }
+
+func TestMatchedTemporaryIncidentMustBeExplainedWhenLiveCheckFails(t *testing.T) {
+	state := &RunState{Cloudmini: CloudminiState{
+		ServiceFacts: []CloudminiServiceFact{{IP: "147.189.140.177", Status: "active"}},
+		LiveAttempts: map[string]bool{"147.189.140.177": true},
+		IncidentsByIP: map[string]store.OperationalIncident{
+			"147.189.140.177": {
+				Severity: "temporary_issue", CustomerMessage: "Các dải Proxy PrivateV4 Michigan này đang gặp lỗi tạm thời.",
+			},
+		},
+	}}
+	if !cloudminiResponseViolatesGuard(state, "IP đang hoạt động nhưng live_check chưa trả kết quả.") {
+		t.Fatal("reply that omits the matched temporary incident should be rejected")
+	}
+	if cloudminiResponseViolatesGuard(state, "Các dải Proxy PrivateV4 Michigan này đang gặp lỗi tạm thời. IP vẫn active nhưng live_check chưa trả kết quả.") {
+		t.Fatal("reply that explains the matched temporary incident should pass")
+	}
+	if !cloudminiResponseViolatesGuard(state, "Dải Michigan đang gặp lỗi tạm thời; IP vẫn active nhưng live_check chưa trả kết quả.") {
+		t.Fatal("a generic severity phrase must not replace the operator-authored customer_message")
+	}
+}
+
+func TestSuccessfulLiveCheckSupersedesMatchedTemporaryIncident(t *testing.T) {
+	state := &RunState{Cloudmini: CloudminiState{
+		LiveChecks: map[string]bool{"147.189.140.177": true},
+		IncidentsByIP: map[string]store.OperationalIncident{
+			"147.189.140.177": {Severity: "temporary_issue", CustomerMessage: "Đang lỗi tạm thời."},
+		},
+	}}
+	if cloudminiResponseViolatesGuard(state, "IP hiện đang LIVE và kết nối bình thường.") {
+		t.Fatal("current successful LIVE result should supersede the incident message requirement")
+	}
+}
+
+func TestPermanentIncidentAllowsOutageClaimForActiveSubscription(t *testing.T) {
+	state := &RunState{Cloudmini: CloudminiState{
+		ServiceFacts: []CloudminiServiceFact{{IP: "77.111.118.1", Status: "active"}},
+		IncidentsByIP: map[string]store.OperationalIncident{
+			"77.111.118.1": {Severity: "permanent_outage", CustomerMessage: "Dải này đã ngừng hoạt động hoàn toàn."},
+		},
+	}}
+	if cloudminiResponseViolatesGuard(state, "Dải này đã ngừng hoạt động hoàn toàn. Đây là thông báo vận hành hiện tại.") {
+		t.Fatal("a matched permanent outage must not be rejected merely because the subscription is active")
+	}
+}
+
+func TestPermanentIncidentForOneIPDoesNotAuthorizeOutageClaimForAnotherActiveIP(t *testing.T) {
+	state := &RunState{}
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{
+		{IP: "147.189.140.177", Status: "active"},
+		{IP: "198.51.100.10", Status: "active"},
+	}
+	state.Cloudmini.IncidentsByIP = map[string]store.OperationalIncident{
+		"147.189.140.177": {Severity: "permanent_outage", CustomerMessage: "Dải này đã ngừng hoạt động."},
+	}
+
+	if !cloudminiResponseViolatesGuard(state, "Dạ, hệ thống proxy đã ngừng hoạt động hoàn toàn.") {
+		t.Fatal("one matched permanent incident authorized an outage claim covering another active IP")
+	}
+}
+
+func TestResidentialVNResponseMustNotDemandNumericIP(t *testing.T) {
+	state := &RunState{Cloudmini: CloudminiState{RequestHosts: []string{"ipv4-vt-04.resvn.net"}}}
+	if !cloudminiResponseViolatesGuard(state, "Anh gửi em IP dạng số vì hostname chưa đủ để tra cứu nhé.") {
+		t.Fatal("numeric IPv4 demand for Residential VN hostname was not rejected")
+	}
+	if cloudminiResponseViolatesGuard(state, "Residential VN dùng hostname ipv4-vt-04.resvn.net nên anh không cần IP dạng số ạ.") {
+		t.Fatal("correct Residential VN hostname explanation was rejected")
+	}
+}

@@ -94,6 +94,9 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 	if d.pgStores != nil && d.pgStores.OperationalIncidents != nil {
 		d.server.SetOperationalIncidentsHandler(httpapi.NewOperationalIncidentsHandler(d.pgStores.OperationalIncidents, d.pgStores.Tenants))
 	}
+	if d.pgStores != nil && d.pgStores.ChannelAdminTakeovers != nil {
+		d.server.SetChannelAdminTakeoversHandler(httpapi.NewChannelAdminTakeoversHandler(d.pgStores.ChannelAdminTakeovers, d.pgStores.Tenants))
+	}
 	if h.pendingMessages != nil {
 		if pc := d.cfg.Channels.PendingCompaction; pc != nil {
 			h.pendingMessages.SetKeepRecent(pc.KeepRecent)
