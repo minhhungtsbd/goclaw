@@ -184,7 +184,7 @@ func handoffReplyHasServiceExplanation(state *RunState, lower string) bool {
 				return false
 			}
 		} else if state.Cloudmini.LiveAttempts[fact.IP] &&
-			!containsAny(scope, "chưa trả", "chua tra", "không có kết quả", "khong co ket qua", "không thể kiểm tra", "khong the kiem tra", "tool lỗi", "tool loi") {
+			!containsAny(scope, "die", "gián đoạn", "gian doan", "không kết nối", "khong ket noi") {
 			return false
 		}
 	}
@@ -210,7 +210,7 @@ func cloudminiReplyClauseForIP(content, ip string) (string, bool) {
 func cloudminiFactStatusExplained(content, status string) bool {
 	switch status {
 	case "active", "running", "linked":
-		return containsAny(content, "đang hoạt động", "dang hoat dong", "active", "đang chạy", "dang chay")
+		return containsAny(content, "còn hiệu lực", "con hieu luc", "đang hoạt động", "dang hoat dong", "active", "đang chạy", "dang chay")
 	case "not_verified", "unavailable":
 		return containsAny(content, "chưa thể xác minh", "chua the xac minh", "chưa xác minh", "chua xac minh")
 	case "email_required":
@@ -250,7 +250,7 @@ func cloudminiResponseGuardInstruction(state *RunState) string {
 	if state != nil && state.Tool.AdminHandoffCustomerReplyRequired && state.Tool.AdminHandoffTicket != "" {
 		instruction := "Chỉ gửi một response cuối cho khách, gộp xác nhận đã chuyển yêu cầu và mã Ticket " + state.Tool.AdminHandoffTicket + ". Không gửi thêm tin riêng và không gọi escalate_to_admin lần nữa."
 		if cloudminiHandoffNeedsServiceExplanation(state) {
-			instruction += " Bắt buộc giải thích trạng thái proxy theo kết quả service_info hiện tại (ví dụ đang hoạt động hoặc chưa thể xác minh); không được chỉ gửi mã ticket."
+			instruction += " Bắt buộc tách rõ trạng thái dịch vụ và kết quả kết nối: service_info active chỉ có nghĩa dịch vụ còn hiệu lực; live_check chỉ có LIVE hoặc DIE. Không được chỉ gửi mã ticket."
 		}
 		if messages := cloudminiRequiredIncidentMessages(state); len(messages) > 0 {
 			instruction += " Bắt buộc truyền đạt đúng thông báo vận hành đã match: " + strings.Join(messages, " | ")
@@ -290,7 +290,7 @@ func cloudminiEmailMismatchReply(state *RunState, ticket string) string {
 			switch fact.Status {
 			case "active", "running", "linked":
 				if fact.AccountEmailMatches {
-					status = "đang hoạt động theo kết quả kiểm tra hiện tại"
+					status = "có dịch vụ còn hiệu lực trên hệ thống"
 				} else {
 					status = "hiện tại chưa thể xác minh được thông tin"
 				}

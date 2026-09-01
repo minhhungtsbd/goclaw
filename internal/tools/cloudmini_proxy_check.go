@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -101,22 +102,61 @@ func (t *CloudminiProxyCheckTool) Execute(ctx context.Context, args map[string]a
 	}
 	resp, err := client.Do(req)
 	if err != nil {
+		if operation == "live_check" {
+			return cloudminiLiveCheckResult(ip.String(), false)
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			return ErrorResult("Cloudmini service information check timed out")
+		}
 		return ErrorResult("Cloudmini proxy check failed to reach the service")
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxCloudminiResponseSize))
 	if err != nil {
+		if operation == "live_check" {
+			return cloudminiLiveCheckResult(ip.String(), false)
+		}
 		return ErrorResult("Cloudmini proxy check could not read the service response")
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		if operation == "live_check" {
+			return cloudminiLiveCheckResult(ip.String(), false)
+		}
 		return ErrorResult(fmt.Sprintf("Cloudmini proxy check returned HTTP %d", resp.StatusCode))
 	}
 
 	result, err := sanitizeCloudminiProxyResponse(operation, ip.String(), argString(args, "account_email"), t.settings(ctx).ResellerEmails, body)
 	if err != nil {
+		if operation == "live_check" {
+			return cloudminiLiveCheckResult(ip.String(), false)
+		}
 		return ErrorResult("Cloudmini proxy check returned an invalid response")
 	}
 	return SilentResult(result)
+}
+
+func cloudminiLiveCheckResult(ip string, live bool) *Result {
+	payload, err := marshalCloudminiLiveCheckResult(ip, live)
+	if err != nil {
+		return ErrorResult("Cloudmini proxy check could not encode the result")
+	}
+	return SilentResult(payload)
+}
+
+func marshalCloudminiLiveCheckResult(ip string, live bool) (string, error) {
+	status := "DIE (Proxy gián đoạn hoặc không kết nối được)"
+	if live {
+		status = "LIVE (Proxy đang kết nối hoạt động bình thường)"
+	}
+	payload, err := json.Marshal(map[string]any{
+		"operation": "live_check",
+		"ip":        ip,
+		"success":   live,
+		"live_check": map[string]any{
+			"ip": ip, "live": live, "status": status,
+		},
+	})
+	return string(payload), err
 }
 
 func (t *CloudminiProxyCheckTool) allowedForAgent(ctx context.Context) bool {
@@ -248,6 +288,24 @@ func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, reseller
 		return "", err
 	}
 	result := map[string]any{"operation": operation, "ip": ip, "success": !response.Error, "message": response.Msg}
+	if operation == "live_check" {
+		isLive := false
+		if !response.Error && len(response.Data) > 0 {
+			var rawMap map[string]any
+			if err := json.Unmarshal(response.Data, &rawMap); err == nil {
+				switch value := rawMap["live"].(type) {
+				case bool:
+					isLive = value
+				case string:
+					isLive = strings.EqualFold(value, "true") || strings.EqualFold(value, "live")
+				}
+				if status, ok := rawMap["status"].(string); ok {
+					isLive = strings.EqualFold(status, "live") || strings.EqualFold(status, "ok") || strings.EqualFold(status, "active")
+				}
+			}
+		}
+		return marshalCloudminiLiveCheckResult(ip, isLive)
+	}
 	if response.Error || len(response.Data) == 0 {
 		encoded, err := json.Marshal(result)
 		return string(encoded), err
@@ -315,7 +373,7 @@ func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, reseller
 						} else if items[i].ServiceStatus == "expired" {
 							items[i].StatusNote = "Dịch vụ đã hết hạn đúng tài khoản của khách hàng nhưng vẫn còn bản ghi trên hệ thống." + classNote + " Hướng dẫn khách kiểm tra khả năng tự gia hạn trong trang quản lý; không coi đây là lỗi kết nối và không gọi live_check."
 						} else {
-							items[i].StatusNote = "IP đang hoạt động đúng tài khoản của khách hàng." + classNote
+							items[i].StatusNote = "Dịch vụ của IP còn hiệu lực và đã xác minh đúng tài khoản khách hàng." + classNote
 							items[i].CancellationPolicy, items[i].CancellationInstruction = cancellationPolicy(items[i].Plan)
 						}
 					} else {
@@ -329,38 +387,6 @@ func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, reseller
 			}
 		}
 		result["services"] = items
-	} else {
-		isLive := !response.Error
-		if len(response.Data) > 0 {
-			var rawMap map[string]any
-			if err := json.Unmarshal(response.Data, &rawMap); err == nil {
-				if l, ok := rawMap["live"].(bool); ok {
-					isLive = l
-				} else if s, ok := rawMap["status"].(string); ok {
-					sLower := strings.ToLower(s)
-					if sLower == "die" || sLower == "dead" || sLower == "failed" || sLower == "error" {
-						isLive = false
-					} else if sLower == "live" || sLower == "ok" || sLower == "active" {
-						isLive = true
-					}
-				} else if lStr, ok := rawMap["live"].(string); ok {
-					if strings.ToLower(lStr) == "false" || strings.ToLower(lStr) == "die" {
-						isLive = false
-					}
-				}
-			}
-		}
-
-		statusText := "LIVE (Proxy đang kết nối hoạt động bình thường)"
-		if !isLive {
-			statusText = "DIE (Proxy gián đoạn hoặc không kết nối được)"
-		}
-
-		result["live_check"] = map[string]any{
-			"ip":     ip,
-			"live":   isLive,
-			"status": statusText,
-		}
 	}
 	encoded, err := json.Marshal(result)
 	return string(encoded), err

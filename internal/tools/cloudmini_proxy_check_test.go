@@ -11,6 +11,12 @@ import (
 
 type cloudminiTestSecretsStore struct{ data map[string]string }
 
+type cloudminiRoundTripper func(*http.Request) (*http.Response, error)
+
+func (fn cloudminiRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
 func (s *cloudminiTestSecretsStore) Get(_ context.Context, key string) (string, error) {
 	return s.data[key], nil
 }
@@ -172,6 +178,69 @@ func TestCloudminiProxyCheckCallsFixedEndpoint(t *testing.T) {
 	result := tool.Execute(ctx, map[string]any{"ip": "51.194.203.22", "operation": "live_check", "account_email": "customer@example.com"})
 	if result.IsError || !strings.Contains(result.ForLLM, `"live":true`) {
 		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestCloudminiProxyCheckMapsLiveCheckDeadlineToDie(t *testing.T) {
+	secrets := &cloudminiTestSecretsStore{data: map[string]string{cloudminiProxyTokenKey: "secret"}}
+	tool := NewCloudminiProxyCheckTool(secrets)
+	tool.client = &http.Client{Transport: cloudminiRoundTripper(func(*http.Request) (*http.Response, error) {
+		return nil, context.DeadlineExceeded
+	})}
+	ctx := WithToolAgentKey(context.Background(), "linh-nhi-support-lead")
+	ctx = WithBuiltinToolSettings(ctx, BuiltinToolSettings{"cloudmini_proxy_check": []byte(`{"allowed_agent_keys":["linh-nhi-support-lead"]}`)})
+
+	result := tool.Execute(ctx, map[string]any{"ip": "51.194.203.22", "operation": "live_check", "account_email": "customer@example.com"})
+	if result.IsError || !strings.Contains(result.ForLLM, `"live":false`) || !strings.Contains(result.ForLLM, "DIE") {
+		t.Fatalf("result = %#v, want DIE", result)
+	}
+}
+
+func TestCloudminiProxyCheckKeepsServiceInfoDeadlineAsToolError(t *testing.T) {
+	secrets := &cloudminiTestSecretsStore{data: map[string]string{cloudminiProxyTokenKey: "secret"}}
+	tool := NewCloudminiProxyCheckTool(secrets)
+	tool.client = &http.Client{Transport: cloudminiRoundTripper(func(*http.Request) (*http.Response, error) {
+		return nil, context.DeadlineExceeded
+	})}
+	ctx := WithToolAgentKey(context.Background(), "linh-nhi-support-lead")
+	ctx = WithBuiltinToolSettings(ctx, BuiltinToolSettings{"cloudmini_proxy_check": []byte(`{"allowed_agent_keys":["linh-nhi-support-lead"]}`)})
+
+	result := tool.Execute(ctx, map[string]any{"ip": "51.194.203.22", "operation": "service_info", "account_email": "customer@example.com"})
+	if !result.IsError || !strings.Contains(result.ForLLM, "service information check timed out") {
+		t.Fatalf("result = %#v, want service_info timeout error", result)
+	}
+}
+
+func TestCloudminiProxyCheckMapsLiveCheckHTTP500ToDie(t *testing.T) {
+	secrets := &cloudminiTestSecretsStore{data: map[string]string{cloudminiProxyTokenKey: "secret"}}
+	tool := NewCloudminiProxyCheckTool(secrets)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	tool.client = server.Client()
+	tool.baseURL = server.URL
+	ctx := WithToolAgentKey(context.Background(), "linh-nhi-support-lead")
+	ctx = WithBuiltinToolSettings(ctx, BuiltinToolSettings{"cloudmini_proxy_check": []byte(`{"allowed_agent_keys":["linh-nhi-support-lead"]}`)})
+
+	result := tool.Execute(ctx, map[string]any{"ip": "154.16.151.89", "operation": "live_check", "account_email": "customer@example.com"})
+	if result.IsError || !strings.Contains(result.ForLLM, `"live":false`) || !strings.Contains(result.ForLLM, "DIE") {
+		t.Fatalf("result = %#v, want HTTP 500 mapped to DIE", result)
+	}
+}
+
+func TestSanitizeCloudminiLiveCheckRequiresExplicitLiveResult(t *testing.T) {
+	for name, body := range map[string]string{
+		"upstream error": `{"error":true,"msg":"failed","data":null}`,
+		"missing data":   `{"error":false,"msg":"Success","data":null}`,
+		"unknown data":   `{"error":false,"msg":"Success","data":{"status":"unknown"}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := sanitizeCloudminiProxyResponse("live_check", "154.16.151.89", "customer@example.com", nil, []byte(body))
+			if err != nil || !strings.Contains(got, `"live":false`) || !strings.Contains(got, "DIE") {
+				t.Fatalf("result = %q, err = %v, want DIE", got, err)
+			}
+		})
 	}
 }
 

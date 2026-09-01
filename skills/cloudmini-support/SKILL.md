@@ -55,7 +55,8 @@ Chỉ gọi `live_check` khi **đồng thời** có đủ: (1) khách đang báo
 
 - Không gọi `live_check` cho VPS.
 - Không dùng GeoIP/live-check để kết luận location; chỉ dùng `region` của `service_info`.
-- Nếu live là LIVE, đọc `proxy-troubleshooting.md` và hướng dẫn bước phù hợp trước khi chuyển xử lý. Nếu DIE hoặc tool lỗi hệ thống, đọc `escalation.md` rồi chuyển xử lý khi đủ dữ kiện.
+- `live_check` chỉ có hai kết quả cuối cùng: LIVE hoặc DIE. Chỉ kết quả dương tính rõ ràng mới là LIVE; timeout, HTTP lỗi, lỗi hệ thống, dữ liệu thiếu/không hợp lệ hoặc mọi kết quả khác đều được chuẩn hóa thành DIE.
+- Nếu LIVE, đọc `proxy-troubleshooting.md` và hướng dẫn bước phù hợp trước khi chuyển xử lý. Nếu DIE, đọc `escalation.md` rồi chuyển xử lý khi đủ dữ kiện.
 
 ### Thông báo vận hành có cấu trúc
 
@@ -81,10 +82,10 @@ Tool trả dữ kiện, không thay thế suy luận CSKH. Kết hợp kết qu�
 
 ## 5. Chuyển Admin/Kỹ thuật
 
-Chỉ gọi `escalate_to_admin` khi tài liệu đúng loại case hoặc kết quả hiện tại cho thấy cần thao tác nội bộ: `not_verified` trong yêu cầu khôi phục/gia hạn đã có đủ IP và email; service deleted cần khôi phục **sau khi đã hoàn tất các điều kiện riêng của gói**; Proxy DIE/tool lỗi sau triage; khách đã thực hiện bước chẩn đoán thích hợp vẫn lỗi; lỗi thao tác hợp lệ; hoặc case Reseller. Nếu chỉ thiếu dữ liệu đầu vào thì hỏi phần còn thiếu, không tạo ticket. Ví dụ Residential Static phải thông báo phí và chờ khách xác nhận đã nạp đủ số dư trước khi tạo ticket; không chuyển Admin ngay chỉ vì tool trả `deleted`.
+Chỉ gọi `escalate_to_admin` khi tài liệu đúng loại case hoặc kết quả hiện tại cho thấy cần thao tác nội bộ: `not_verified` trong yêu cầu khôi phục/gia hạn đã có đủ IP và email; service deleted cần khôi phục **sau khi đã hoàn tất các điều kiện riêng của gói**; Proxy DIE sau triage; khách đã thực hiện bước chẩn đoán thích hợp vẫn lỗi; lỗi thao tác hợp lệ; hoặc case Reseller. Nếu chỉ thiếu dữ liệu đầu vào thì hỏi phần còn thiếu, không tạo ticket. Ví dụ Residential Static phải thông báo phí và chờ khách xác nhận đã nạp đủ số dư trước khi tạo ticket; không chuyển Admin ngay chỉ vì tool trả `deleted`.
 
 - Nếu hệ thống đã match một Thông báo vận hành có cấu trúc cho IP hiện tại, bắt buộc truyền đạt đúng `customer_message` và đúng `severity`; không được bỏ qua hoặc nâng mức độ sự cố.
-- `allows_admin_handoff=false` là lệnh cấm tạo handoff cho IP đã match incident, kể cả khi khách đang báo lỗi hoặc `live_check` lỗi. Chỉ tạo handoff khi incident đã match đặt `allows_admin_handoff=true` và các điều kiện dữ liệu còn lại đều hợp lệ.
+- `allows_admin_handoff=false` là lệnh cấm tạo handoff cho IP đã match incident, kể cả khi khách đang báo lỗi hoặc `live_check` trả DIE. Chỉ tạo handoff khi incident đã match đặt `allows_admin_handoff=true` và các điều kiện dữ liệu còn lại đều hợp lệ.
 
 Trước khi gọi, handoff phải có tóm tắt tiếng Việt, IP (hoặc hostname `*.resvn.net` với Residential VN), email Cloudmini và bằng chứng cần thiết. Không gửi password, OTP, token, cookie, `IP/host:port:user:pass`, hay nội dung nội bộ. Chỉ nói đã chuyển khi tool thành công.
 

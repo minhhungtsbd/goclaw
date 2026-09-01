@@ -36,7 +36,7 @@ Dữ liệu tối thiểu là IP Proxy; riêng Residential VN chấp nhận host
 
 1. Nếu đã có IP, dùng `cloudmini_proxy_check` với `service_info` trước để kiểm tra IP thuộc gói nào và còn hạn hay không. Không hỏi lại gói hoặc email nếu API và hội thoại đã đủ dữ liệu.
 2. Nếu API cho thấy dịch vụ hết hạn hoặc không còn trong trạng thái sử dụng, giải thích theo trạng thái đó và chuyển sang luồng gia hạn/khôi phục; không kết luận đây là lỗi kết nối.
-3. Với dịch vụ còn hạn, dùng `live_check`. Nếu API báo lỗi hoặc không trả được dữ liệu, chuyển Admin/Kỹ thuật kèm IP, gói/hạn đã tra được và nội dung lỗi khách gửi.
+3. Với dịch vụ còn hạn, dùng `live_check`. Kết quả cuối chỉ có LIVE hoặc DIE: chỉ phản hồi dương tính rõ ràng là LIVE; timeout, HTTP lỗi, lỗi hệ thống, dữ liệu thiếu/không hợp lệ hoặc mọi kết quả khác đều là DIE. Với DIE, chuyển Admin/Kỹ thuật kèm IP, gói/hạn đã tra được và nội dung lỗi khách gửi.
 4. Nếu có kết quả live nhưng khách vẫn không dùng được, hướng dẫn thử mạng khác/4G/5G, Cloudflare WARP, kiểm tra ứng dụng, xóa cache antidetect browser hoặc thử ứng dụng khác khi phù hợp.
 5. Ping chỉ là tín hiệu bổ sung, không dùng một kết quả ping để kết luận.
 6. Vẫn lỗi sau kiểm tra cơ bản → chuyển Admin/Kỹ thuật.

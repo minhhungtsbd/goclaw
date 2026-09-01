@@ -175,13 +175,14 @@ func TestValidateCloudminiCurrentRequestToolCallHonorsIncidentHandoffFlag(t *tes
 			IP: ip, Status: "active", PlanFamily: "private_v4", AccountEmailMatches: true,
 		}}
 		state.Cloudmini.LiveAttempts = map[string]bool{ip: true}
+		state.Cloudmini.LiveChecks = map[string]bool{ip: false}
 		state.Cloudmini.IncidentsByIP = map[string]store.OperationalIncident{
 			ip: {Severity: "temporary_issue", AllowsAdminHandoff: allows, CustomerMessage: "Dải này đang lỗi tạm thời."},
 		}
 		return state
 	}
 	call := providers.ToolCall{Name: "escalate_to_admin", Arguments: map[string]any{
-		"summary": "Proxy " + ip + " lỗi kết nối; live_check không trả trạng thái",
+		"summary": "Proxy " + ip + " lỗi kết nối; live_check DIE",
 	}}
 
 	if ok, reason := validateCloudminiCurrentRequestToolCall(newState(false), call); ok || !strings.Contains(reason, "không cho phép") {
@@ -672,14 +673,58 @@ func TestCloudminiHandoffRequiresTriageWhenProxyIsLive(t *testing.T) {
 	}
 }
 
-func TestCloudminiHandoffAllowsEscalationAfterLiveCheckToolFailure(t *testing.T) {
+func TestCloudminiHandoffAllowsEscalationAfterLiveCheckDie(t *testing.T) {
 	state := NewRunState(&RunInput{Message: "Proxy 94.103.56.231 lỗi kết nối"}, nil, "", nil)
 	state.Cloudmini.RequestIPs = []string{"94.103.56.231"}
 	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{{IP: "94.103.56.231", PlanFamily: "private_v4", Status: "active", AccountEmailMatches: true}}
 	state.Cloudmini.LiveAttempts = map[string]bool{"94.103.56.231": true}
-	call := providers.ToolCall{Name: "escalate_to_admin", Arguments: map[string]any{"summary": "Proxy 94.103.56.231 lỗi kết nối; live_check không trả trạng thái"}}
+	state.Cloudmini.LiveChecks = map[string]bool{"94.103.56.231": false}
+	call := providers.ToolCall{Name: "escalate_to_admin", Arguments: map[string]any{"summary": "Proxy 94.103.56.231 lỗi kết nối; live_check DIE"}}
 	if ok, reason := validateCloudminiCurrentRequestToolCall(state, call); !ok {
-		t.Fatalf("handoff after live_check tool failure rejected: %s", reason)
+		t.Fatalf("handoff after live_check DIE rejected: %s", reason)
+	}
+}
+
+func TestCaptureCloudminiLiveCheckMapsHTTPFailureToDieForTheRequestedIP(t *testing.T) {
+	const ip = "154.16.151.89"
+	state := NewRunState(&RunInput{Message: "Proxy " + ip + " lỗi kết nối"}, nil, "", nil)
+	markCloudminiLiveCheckAttempt(state, ip)
+
+	if captured := captureCloudminiLiveCheck(state, ip, []providers.Message{{
+		Role: "tool", IsError: true, Content: "Cloudmini proxy check returned HTTP 500",
+	}}); captured != 0 {
+		t.Fatalf("captured = %d, want 0", captured)
+	}
+	if live, checked := state.Cloudmini.LiveChecks[ip]; !checked || live {
+		t.Fatalf("live check = %v, checked = %v, want DIE", live, checked)
+	}
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{{IP: ip, Status: "active"}}
+	reply := strings.ToLower(adminHandoffCustomerConfirmationWithFacts(state, "Ticket-000307"))
+	if !strings.Contains(reply, "dịch vụ còn hiệu lực") || !strings.Contains(reply, "die") || strings.Contains(reply, "chưa trả trạng thái") {
+		t.Fatalf("unexpected failed-check explanation: %s", reply)
+	}
+}
+
+func TestCloudminiLiveCheckLatestFailedAttemptOverridesEarlierLive(t *testing.T) {
+	const ip = "154.16.151.89"
+	state := NewRunState(&RunInput{Message: "Proxy " + ip + " lỗi kết nối"}, nil, "", nil)
+	markCloudminiLiveCheckAttempt(state, ip)
+	captureCloudminiLiveCheck(state, ip, []providers.Message{{
+		Role: "tool", Content: `{"live_check":{"ip":"154.16.151.89","live":true}}`,
+	}})
+	if live := state.Cloudmini.LiveChecks[ip]; !live {
+		t.Fatal("first result should be LIVE")
+	}
+
+	markCloudminiLiveCheckAttempt(state, ip)
+	if _, checked := state.Cloudmini.LiveChecks[ip]; checked {
+		t.Fatal("a new attempt must clear the previous result")
+	}
+	captureCloudminiLiveCheck(state, ip, []providers.Message{{
+		Role: "tool", IsError: true, Content: "Cloudmini proxy check returned HTTP 500",
+	}})
+	if live, checked := state.Cloudmini.LiveChecks[ip]; !checked || live {
+		t.Fatalf("latest result = %v, checked = %v, want DIE", live, checked)
 	}
 }
 

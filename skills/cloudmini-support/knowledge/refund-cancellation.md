@@ -89,9 +89,10 @@ Mẫu phản hồi:
 
 - Không hủy/hoàn trong quá trình sử dụng.
 - Hết dung lượng có thể mua thêm GB.
-- Khách tự cấu hình quốc gia, thành phố, xoay 5–30 phút hoặc random mỗi request tại Quản lý Rotating Proxy.
+- Khách tự cấu hình Country, State/Region, City và TTL (xoay 5–30 phút hoặc random mỗi request) tại Quản lý Rotating Proxy; hostname kết nối là `rota.cloudmini.net`, và khi tạo Authentication có thể chọn endpoint Hostname hoặc IP theo cấu hình dashboard.
 - Có IP dân cư xoay tại hơn 180 quốc gia.
 - Dung lượng có hạn tối đa 120 ngày từ khi đăng ký thành công; khuyến nghị dùng hết trước hạn.
+- Với lỗi kết nối, đọc `proxy-operations.md`: thử kết nối lại để nhận IP xoay khác, sau đó đổi Region nếu cần trước khi chuyển Kỹ thuật.
 
 ## VPS
 

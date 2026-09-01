@@ -140,7 +140,7 @@ func (s *CloudminiServicePreflightStage) Execute(ctx context.Context, state *Run
 			for _, message := range liveMessages {
 				state.Messages.AppendPending(message)
 			}
-			captureCloudminiLiveCheck(state, liveMessages)
+			captureCloudminiLiveCheck(state, ip, liveMessages)
 			state.Tool.TotalToolCalls++
 		}
 	}
@@ -185,8 +185,9 @@ func recordCloudminiProxyCheckResult(state *RunState, call providers.ToolCall, m
 		return
 	}
 	if strings.TrimSpace(cloudminiToolStringArg(call.Arguments, "operation")) == "live_check" {
-		markCloudminiLiveCheckAttempt(state, cloudminiToolStringArg(call.Arguments, "ip"))
-		captureCloudminiLiveCheck(state, messages)
+		ip := cloudminiToolStringArg(call.Arguments, "ip")
+		markCloudminiLiveCheckAttempt(state, ip)
+		captureCloudminiLiveCheck(state, ip, messages)
 		return
 	}
 	if strings.TrimSpace(cloudminiToolStringArg(call.Arguments, "operation")) != "service_info" {
@@ -451,13 +452,18 @@ func cloudminiIPInOutage(state *RunState, value string) bool {
 	return false
 }
 
-func captureCloudminiLiveCheck(state *RunState, messages []providers.Message) int {
+func captureCloudminiLiveCheck(state *RunState, requestedIP string, messages []providers.Message) int {
 	if state == nil {
 		return 0
 	}
+	requestedIP = strings.TrimSpace(requestedIP)
 	captured := 0
 	for _, message := range messages {
-		if message.Role != "tool" || message.IsError {
+		if message.Role != "tool" {
+			continue
+		}
+		if message.IsError {
+			recordCloudminiLiveCheck(state, requestedIP, false)
 			continue
 		}
 		var response struct {
@@ -466,16 +472,29 @@ func captureCloudminiLiveCheck(state *RunState, messages []providers.Message) in
 				Live *bool  `json:"live"`
 			} `json:"live_check"`
 		}
-		if json.Unmarshal([]byte(message.Content), &response) != nil || response.LiveCheck.IP == "" || response.LiveCheck.Live == nil {
+		if json.Unmarshal([]byte(message.Content), &response) != nil || response.LiveCheck.IP == "" || response.LiveCheck.Live == nil || response.LiveCheck.IP != requestedIP {
+			recordCloudminiLiveCheck(state, requestedIP, false)
 			continue
 		}
-		if state.Cloudmini.LiveChecks == nil {
-			state.Cloudmini.LiveChecks = make(map[string]bool)
-		}
-		state.Cloudmini.LiveChecks[response.LiveCheck.IP] = *response.LiveCheck.Live
+		recordCloudminiLiveCheck(state, requestedIP, *response.LiveCheck.Live)
 		captured++
 	}
+	if captured == 0 && requestedIP != "" {
+		// Business contract: a completed live_check has only LIVE or DIE. Any
+		// missing, malformed, timed-out, or failed result is deterministically DIE.
+		recordCloudminiLiveCheck(state, requestedIP, false)
+	}
 	return captured
+}
+
+func recordCloudminiLiveCheck(state *RunState, ip string, live bool) {
+	if state == nil || strings.TrimSpace(ip) == "" {
+		return
+	}
+	if state.Cloudmini.LiveChecks == nil {
+		state.Cloudmini.LiveChecks = make(map[string]bool)
+	}
+	state.Cloudmini.LiveChecks[strings.TrimSpace(ip)] = live
 }
 
 func markCloudminiLiveCheckAttempt(state *RunState, ip string) {
@@ -485,7 +504,14 @@ func markCloudminiLiveCheckAttempt(state *RunState, ip string) {
 	if state.Cloudmini.LiveAttempts == nil {
 		state.Cloudmini.LiveAttempts = make(map[string]bool)
 	}
-	state.Cloudmini.LiveAttempts[strings.TrimSpace(ip)] = true
+	ip = strings.TrimSpace(ip)
+	state.Cloudmini.LiveAttempts[ip] = true
+	// A new attempt supersedes any earlier result in this run. capture will set
+	// the latest attempt to LIVE only on an explicit positive result; otherwise
+	// it records DIE.
+	if state.Cloudmini.LiveChecks != nil {
+		delete(state.Cloudmini.LiveChecks, ip)
+	}
 }
 
 func cloudminiServiceDeleted(messages []providers.Message) bool {

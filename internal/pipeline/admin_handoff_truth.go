@@ -125,7 +125,7 @@ func adminHandoffCustomerConfirmationWithFacts(state *RunState, ticket string) s
 		status := "chưa thể xác định trạng thái dịch vụ"
 		switch fact.Status {
 		case "active", "running", "linked":
-			status = "đang hoạt động theo kết quả kiểm tra hiện tại"
+			status = "có dịch vụ còn hiệu lực trên hệ thống"
 		case "not_verified":
 			status = "hiện chưa thể xác minh theo thông tin tài khoản"
 		case "unavailable":
@@ -144,7 +144,7 @@ func adminHandoffCustomerConfirmationWithFacts(state *RunState, ticket string) s
 				status += ", kiểm tra kết nối hiện là DIE"
 			}
 		} else if state.Cloudmini.LiveAttempts[fact.IP] {
-			status += ", live_check đã chạy nhưng chưa trả trạng thái sử dụng được"
+			status += ", kiểm tra kết nối hiện là DIE"
 		}
 		facts = append(facts, label+" "+status)
 	}

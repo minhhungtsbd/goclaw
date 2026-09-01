@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/nextlevelbuilder/goclaw/internal/store"
@@ -16,6 +17,21 @@ func TestAdminHandoffReplyRequiresServiceExplanation(t *testing.T) {
 	}
 	if adminHandoffResponseViolatesGuard(state, "Em chưa thể xác minh dịch vụ. Đã chuyển Admin, mã Ticket-000294") {
 		t.Fatal("reply with status explanation should pass")
+	}
+}
+
+func TestAdminHandoffReplyAcceptsActiveServiceWithDieConnection(t *testing.T) {
+	const ip = "154.16.151.89"
+	state := &RunState{}
+	state.Tool.AdminHandoffCustomerReplyRequired = true
+	state.Tool.AdminHandoffTicket = "Ticket-000307"
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{{IP: ip, Status: "active"}}
+	state.Cloudmini.LiveAttempts = map[string]bool{ip: true}
+	state.Cloudmini.LiveChecks = map[string]bool{ip: false}
+
+	reply := strings.ToLower(adminHandoffCustomerConfirmationWithFacts(state, state.Tool.AdminHandoffTicket))
+	if adminHandoffResponseViolatesGuard(state, reply) {
+		t.Fatalf("active-service plus DIE explanation should pass: %s", reply)
 	}
 }
 

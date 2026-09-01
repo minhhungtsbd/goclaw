@@ -137,7 +137,7 @@ func TestEnsureAdminHandoffCustomerReplyIncludesEveryCheckedIP(t *testing.T) {
 	ensureAdminHandoffCustomerReply(state)
 
 	content := strings.ToLower(state.Observe.FinalContent)
-	for _, required := range []string{"ticket-000301", "37.221.109.121", "đang hoạt động", "37.221.109.122", "chưa thể xác minh"} {
+	for _, required := range []string{"ticket-000301", "37.221.109.121", "dịch vụ còn hiệu lực", "37.221.109.122", "chưa thể xác minh"} {
 		if !strings.Contains(content, required) {
 			t.Fatalf("deterministic reply missing %q: %s", required, state.Observe.FinalContent)
 		}
@@ -168,5 +168,23 @@ func TestAdminHandoffConfirmationIncludesLiveCheckResult(t *testing.T) {
 	content := adminHandoffCustomerConfirmationWithFacts(state, "Ticket-000303")
 	if !strings.Contains(content, "37.221.109.121") || !strings.Contains(content, "DIE") {
 		t.Fatalf("live result missing from confirmation: %s", content)
+	}
+}
+
+func TestAdminHandoffConfirmationSeparatesActiveServiceFromDieConnection(t *testing.T) {
+	const ip = "154.16.151.89"
+	state := NewRunState(&RunInput{Message: "Proxy " + ip + " lỗi kết nối"}, nil, "", nil)
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{{IP: ip, Status: "active"}}
+	state.Cloudmini.LiveAttempts = map[string]bool{ip: true}
+	state.Cloudmini.LiveChecks = map[string]bool{ip: false}
+
+	content := strings.ToLower(adminHandoffCustomerConfirmationWithFacts(state, "Ticket-000307"))
+	for _, required := range []string{"dịch vụ còn hiệu lực", "die", "ticket-000307"} {
+		if !strings.Contains(content, required) {
+			t.Fatalf("DIE confirmation missing %q: %s", required, content)
+		}
+	}
+	if strings.Contains(content, "ip "+ip+" đang hoạt động") || strings.Contains(content, "chưa trả trạng thái") {
+		t.Fatalf("confirmation conflates service validity with connectivity: %s", content)
 	}
 }
