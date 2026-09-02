@@ -214,6 +214,49 @@ func TestThinkStageDoesNotForceHandoffFromCloudminiFacts(t *testing.T) {
 	}
 }
 
+func TestThinkStageUsesDeterministicOperationalIncidentResponse(t *testing.T) {
+	const (
+		ip      = "185.255.115.190"
+		notice  = "Proxy thuộc dải này đã ngưng hoạt động hoàn toàn do thay đổi hạ tầng từ nhà cung cấp. Cloudmini có thể hỗ trợ thay Proxy mới miễn phí hoặc xem xét hoàn tiền; Admin sẽ xác nhận phương án cụ thể."
+		badText = "Dạ em kiểm tra IP 185.255.115.190 thuộc gói PrivateV4 và đang active ạ."
+	)
+	var calls int
+	deps := &PipelineDeps{
+		Config: PipelineConfig{MaxIterations: 10, MaxTokens: 1000},
+		CallLLM: func(_ context.Context, _ *RunState, _ providers.ChatRequest) (*providers.ChatResponse, error) {
+			calls++
+			return &providers.ChatResponse{Content: badText, FinishReason: "stop"}, nil
+		},
+	}
+	stage := NewThinkStage(deps)
+	state := defaultState()
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{{
+		IP: ip, Plan: "PrivateV4", Status: "active", AccountEmailMatches: true,
+	}}
+	state.Cloudmini.IncidentsByIP = map[string]store.OperationalIncident{
+		ip: {Severity: "permanent_outage", CustomerMessage: notice},
+	}
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("LLM calls = %d, want 1 deterministic correction without retry", calls)
+	}
+	got := state.Think.LastResponse.Content
+	for _, required := range []string{ip, "gói PrivateV4", "có dịch vụ còn hiệu lực", "đã xác minh đúng tài khoản", notice} {
+		if !strings.Contains(got, required) {
+			t.Fatalf("deterministic response missing %q: %q", required, got)
+		}
+	}
+	if strings.Contains(strings.ToLower(got), "chưa thể xác minh") {
+		t.Fatalf("verified service degraded to an unverified fallback: %q", got)
+	}
+	if cloudminiResponseViolatesGuard(state, got) {
+		t.Fatalf("deterministic response must satisfy the response guard: %q", got)
+	}
+}
+
 func TestThinkStageForcesAdminHandoffForUnverifiedRecovery(t *testing.T) {
 	var calls int
 	handoffTool := providers.ToolDefinition{Function: &providers.ToolFunctionSchema{Name: "escalate_to_admin"}}

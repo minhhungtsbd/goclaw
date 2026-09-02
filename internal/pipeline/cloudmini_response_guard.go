@@ -85,6 +85,25 @@ func cloudminiIncidentExplanationMissing(state *RunState, lower string) bool {
 		if !strings.Contains(lower, strings.ToLower(message)) {
 			return true
 		}
+		// A service can remain active in billing/account data while its network
+		// range is affected by an incident. Require both facts so the incident
+		// notice cannot silently replace a successful service_info result.
+		for _, fact := range state.Cloudmini.ServiceFacts {
+			if fact.IP != ip {
+				continue
+			}
+			scope := lower
+			if len(state.Cloudmini.ServiceFacts) > 1 {
+				var ok bool
+				scope, ok = cloudminiReplyClauseForIP(lower, strings.ToLower(ip))
+				if !ok {
+					return true
+				}
+			}
+			if !cloudminiFactStatusExplained(scope, fact.Status) {
+				return true
+			}
+		}
 		switch incident.Severity {
 		case "temporary_issue":
 			if !containsAny(lower, "lỗi tạm thời", "loi tam thoi", "sự cố tạm thời", "su co tam thoi") {
@@ -244,6 +263,65 @@ func cloudminiSafeGuardResponse(state *RunState) string {
 		return "Dạ, gói Residential VN này dùng hostname " + strings.Join(state.Cloudmini.RequestHosts, ", ") + " thay cho IP dạng số nên anh không cần tìm thêm IPv4. Anh dùng hostname ở trường Host/IP và port đúng trong cột Proxy Port; không gửi lại user/pass. Nếu kết nối vẫn chậm hoặc lỗi, bên em sẽ tiếp nhận xử lý theo hostname này ạ."
 	}
 	return "Dạ, em chưa thể xác minh thông tin IP này ngay lúc này ạ."
+}
+
+// cloudminiOperationalIncidentResponse builds a deterministic customer reply
+// from service_info facts and operator-authored incident data. It is used when
+// the model omits or rewrites a matched incident incorrectly, so verified
+// service facts never degrade into the generic "cannot verify" fallback.
+func cloudminiOperationalIncidentResponse(state *RunState) (string, bool) {
+	if state == nil || state.Cloudmini.EmailRequired || state.Cloudmini.EmailMismatch ||
+		len(state.Cloudmini.ServiceFacts) == 0 {
+		return "", false
+	}
+	messages := cloudminiRequiredIncidentMessages(state)
+	if len(messages) == 0 {
+		return "", false
+	}
+
+	facts := make([]string, 0, len(state.Cloudmini.ServiceFacts))
+	for _, fact := range state.Cloudmini.ServiceFacts {
+		label := "Dịch vụ"
+		if ip := strings.TrimSpace(fact.IP); ip != "" {
+			label = "IP " + ip
+		}
+		if plan := strings.TrimSpace(fact.Plan); plan != "" {
+			label += " thuộc gói " + plan
+		}
+
+		status := "hiện chưa thể xác định trạng thái dịch vụ"
+		switch fact.Status {
+		case "active", "running", "linked":
+			status = "có dịch vụ còn hiệu lực trên hệ thống"
+			if fact.AccountEmailMatches {
+				status += " và đã xác minh đúng tài khoản"
+			}
+		case "not_verified":
+			status = "hiện chưa thể xác minh theo thông tin tài khoản"
+		case "unavailable":
+			status = "hiện chưa thể xác minh do công cụ kiểm tra chưa trả dữ liệu"
+		case "expired":
+			status = "đã hết hạn theo kết quả kiểm tra hiện tại"
+		case "deleted":
+			status = "đã bị xoá theo kết quả kiểm tra hiện tại"
+		}
+		if live, checked := state.Cloudmini.LiveChecks[fact.IP]; checked {
+			if live {
+				status += ", kiểm tra kết nối hiện là LIVE"
+			} else {
+				status += ", kiểm tra kết nối hiện là DIE"
+			}
+		} else if state.Cloudmini.LiveAttempts[fact.IP] {
+			status += ", kiểm tra kết nối hiện là DIE"
+		}
+		facts = append(facts, label+" "+status)
+	}
+	if len(facts) == 0 {
+		return "", false
+	}
+
+	return "Dạ em đã kiểm tra: " + strings.Join(facts, "; ") + " ạ.\n\n" +
+		strings.Join(messages, "\n\n"), true
 }
 
 func cloudminiResponseGuardInstruction(state *RunState) string {

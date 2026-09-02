@@ -65,6 +65,7 @@ Nếu prompt có block `<operational_incidents>`, đó là dữ liệu vận hà
 - Không dùng mục “Thông báo vận hành”, subnet hoặc câu mô tả sự cố dạng văn bản tự do trong `AGENTS.md`/context file làm dữ kiện vận hành. Chỉ block có cấu trúc nói trên mới có hiệu lực.
 
 - Kết quả `cloudmini_proxy_check` thành công mới nhất luôn có quyền quyết định trạng thái dịch vụ; không biến `temporary_issue` hoặc `degraded` thành “ngưng hoạt động hoàn toàn”, “hạ tầng lỗi” hay nguyên nhân khác nếu tool không trả dữ kiện đó.
+- Nếu `service_info` xác minh dịch vụ còn hiệu lực nhưng IP đồng thời khớp một thông báo `permanent_outage`, phải tách rõ hai dữ kiện: dịch vụ còn hiệu lực trên hệ thống và tình trạng kết nối theo đúng `customer_message` của thông báo vận hành. Không được đổi thành “chưa thể xác minh”.
 - Chỉ được nêu `customer_message`/`allowed_claims`; tuyệt đối không nêu `forbidden_claims`, không tự thêm đổi IP, hoàn tiền, ETA hoặc cam kết kỹ thuật.
 - `requires_live_check` chỉ là điều kiện bổ sung; vẫn phải thỏa toàn bộ gate của `live_check`. `allows_admin_handoff` không tự tạo ticket nếu khách không báo lỗi hoặc không có nhu cầu xử lý thủ công.
 

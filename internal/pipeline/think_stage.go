@@ -144,6 +144,16 @@ func (s *ThinkStage) Execute(ctx context.Context, state *RunState) error {
 		strings.TrimSpace(state.Tool.AdminHandoffTicket) != "" {
 		resp.Content = cloudminiEmailMismatchReply(state, state.Tool.AdminHandoffTicket)
 	}
+	// A matched operational incident is structured, operator-authored data. If
+	// the model omits or rewrites it unsafely, produce the grounded response
+	// locally instead of spending another LLM call and risking a generic fallback
+	// that contradicts service_info facts already verified in this run.
+	if len(resp.ToolCalls) == 0 && cloudminiResponseViolatesGuard(state, resp.Content) {
+		if deterministic, ok := cloudminiOperationalIncidentResponse(state); ok {
+			resp.Content = deterministic
+			resp.FinishReason = "stop"
+		}
+	}
 
 	// A model may cite a historical ticket only after the read-only status tool
 	// verifies it for this exact customer route. A pending historical ticket also

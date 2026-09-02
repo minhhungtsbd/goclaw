@@ -129,8 +129,11 @@ func TestPermanentIncidentAllowsOutageClaimForActiveSubscription(t *testing.T) {
 			"77.111.118.1": {Severity: "permanent_outage", CustomerMessage: "Dải này đã ngừng hoạt động hoàn toàn."},
 		},
 	}}
-	if cloudminiResponseViolatesGuard(state, "Dải này đã ngừng hoạt động hoàn toàn. Đây là thông báo vận hành hiện tại.") {
-		t.Fatal("a matched permanent outage must not be rejected merely because the subscription is active")
+	if !cloudminiResponseViolatesGuard(state, "Dải này đã ngừng hoạt động hoàn toàn. Đây là thông báo vận hành hiện tại.") {
+		t.Fatal("incident-only reply must not hide the verified active service status")
+	}
+	if cloudminiResponseViolatesGuard(state, "IP 77.111.118.1 có dịch vụ còn hiệu lực trên hệ thống. Dải này đã ngừng hoạt động hoàn toàn.") {
+		t.Fatal("reply that separates active service from the matched permanent outage should pass")
 	}
 }
 
