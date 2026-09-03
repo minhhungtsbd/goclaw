@@ -27,6 +27,11 @@ func cloudminiResponseViolatesGuard(state *RunState, content string) bool {
 		return containsAny(intent, "khôi phục", "khoi phuc", "phục hồi", "phuc hoi", "gia hạn", "gia han") &&
 			containsAny(lower, "khôi phục", "khoi phuc", "phục hồi", "phuc hoi", "gia hạn", "gia han")
 	}
+	if cloudminiNeedsConfiguredEmailAdminReview(state) && strings.TrimSpace(state.Tool.AdminHandoffTicket) == "" {
+		// A response cannot replace the mandatory tool call. The customer may only
+		// be told that the request was transferred after a real ticket exists.
+		return true
+	}
 	if cloudminiNeedsEmailMismatchAdminReview(state) {
 		// A text-only answer is never sufficient here. The customer may only be
 		// told about an Admin review after escalate_to_admin produced a real ticket.
@@ -256,6 +261,9 @@ func cloudminiSafeGuardResponse(state *RunState) string {
 	if cloudminiNeedsEmailMismatchAdminReview(state) {
 		return cloudminiEmailMismatchReply(state, "")
 	}
+	if cloudminiNeedsConfiguredEmailAdminReview(state) {
+		return "Dạ, yêu cầu này cần được Admin kiểm tra trực tiếp nhưng hiện em chưa tạo được mã Ticket nên chưa thể xác nhận đã chuyển ạ."
+	}
 	if state != nil && state.Cloudmini.EmailMismatch {
 		return "Dạ em chưa thể xác minh thông tin IP này theo dữ liệu hiện tại ạ."
 	}
@@ -341,6 +349,9 @@ func cloudminiResponseGuardInstruction(state *RunState) string {
 	if cloudminiNeedsEmailMismatchAdminReview(state) {
 		return "Không nêu tài khoản khác, chủ sở hữu, email không khớp, LIVE, chuyển nhượng hoặc mua IP mới. Bắt buộc gọi escalate_to_admin với đúng IP và email Cloudmini khách đã cung cấp; không được nói đã/sẽ chuyển nếu tool chưa trả ticket."
 	}
+	if cloudminiNeedsConfiguredEmailAdminReview(state) {
+		return "Email khách đã cung cấp thuộc danh sách chuyển Admin trực tiếp. Bắt buộc gọi escalate_to_admin với đúng IP/hostname và email Cloudmini khách đã cung cấp; không gọi live_check, không tự xử lý và không nói đã chuyển nếu chưa có Ticket thật."
+	}
 	if state != nil && len(state.Cloudmini.RequestHosts) > 0 {
 		return "Residential VN dùng hostname " + strings.Join(state.Cloudmini.RequestHosts, ", ") + "; không yêu cầu IP dạng số và không gọi cloudmini_proxy_check. Hỗ trợ cấu hình bằng hostname/Proxy Port. Nếu khách đang báo lỗi thực tế, chậm kéo dài hoặc yêu cầu thay proxy và email đã có, gọi escalate_to_admin ngay với đúng hostname và email, không kèm port:user:pass."
 	}
@@ -353,6 +364,10 @@ func cloudminiNeedsEmailMismatchAdminReview(state *RunState) bool {
 	}
 	intent := strings.ToLower(cloudminiSupportIntentText(state))
 	return containsAny(intent, "khôi phục", "khoi phuc", "phục hồi", "phuc hoi", "gia hạn", "gia han")
+}
+
+func cloudminiNeedsConfiguredEmailAdminReview(state *RunState) bool {
+	return state != nil && state.Cloudmini.AdminHandoffRequired
 }
 
 func cloudminiEmailMismatchReply(state *RunState, ticket string) string {

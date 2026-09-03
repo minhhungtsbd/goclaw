@@ -290,6 +290,45 @@ func TestCloudminiProxyCheckFlagsConfiguredResellerOnlyAfterEmailMatch(t *testin
 	}
 }
 
+func TestCloudminiProxyCheckFlagsConfiguredAdminHandoffEmail(t *testing.T) {
+	settings := cloudminiProxyCheckSettings{AdminHandoffEmails: []string{"priority@example.com"}}
+	body := []byte(`{"error":false,"msg":"Success","data":[{"ip":"191.101.251.120","expire":"2099-08-12","plan":"PrivateV4","user_email":"priority@example.com"}]}`)
+	got, err := sanitizeCloudminiProxyResponseWithSettings("service_info", "191.101.251.120", "Priority@Example.com", settings, body)
+	if err != nil {
+		t.Fatalf("sanitizeCloudminiProxyResponseWithSettings: %v", err)
+	}
+	if !strings.Contains(got, `"admin_handoff_required":true`) ||
+		!strings.Contains(got, "EMAIL NGOẠI LỆ BẮT BUỘC") {
+		t.Fatalf("configured Admin handoff flag missing: %s", got)
+	}
+	if strings.Contains(strings.ToLower(got), "priority@example.com") {
+		t.Fatalf("customer email leaked into sanitized tool output: %s", got)
+	}
+
+	got, err = sanitizeCloudminiProxyResponseWithSettings("service_info", "191.101.251.120", "ordinary@example.com", settings, body)
+	if err != nil {
+		t.Fatalf("sanitizeCloudminiProxyResponseWithSettings ordinary email: %v", err)
+	}
+	if strings.Contains(got, `"admin_handoff_required":true`) {
+		t.Fatalf("unlisted email received mandatory Admin handoff: %s", got)
+	}
+}
+
+func TestCloudminiAdminHandoffEmailConfiguredUsesMergedSettings(t *testing.T) {
+	ctx := WithBuiltinToolSettings(context.Background(), BuiltinToolSettings{
+		"cloudmini_proxy_check": []byte(`{"admin_handoff_emails":["global@example.com"]}`),
+	})
+	ctx = WithTenantToolSettings(ctx, BuiltinToolSettings{
+		"cloudmini_proxy_check": []byte(`{"admin_handoff_emails":["tenant@example.com"]}`),
+	})
+	if !CloudminiAdminHandoffEmailConfigured(ctx, "Tenant@Example.com") {
+		t.Fatal("tenant-scoped configured email was not detected")
+	}
+	if CloudminiAdminHandoffEmailConfigured(ctx, "global@example.com") {
+		t.Fatal("global list must not leak through a tenant tool-level override")
+	}
+}
+
 func TestCloudminiProxyCheckMarksPastExpiryAsExpired(t *testing.T) {
 	got, err := sanitizeCloudminiProxyResponse("service_info", "191.101.251.120", "customer@example.com", nil, []byte(`{"error":false,"msg":"Success","data":[{"ip":"191.101.251.120","expire":"2020-01-01","plan":"PrivateV4","user_email":"customer@example.com"}]}`))
 	if err != nil {

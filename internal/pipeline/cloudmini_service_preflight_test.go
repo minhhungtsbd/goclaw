@@ -7,7 +7,39 @@ import (
 
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
+	goclawtools "github.com/nextlevelbuilder/goclaw/internal/tools"
 )
+
+func TestCloudminiServicePreflightRoutesConfiguredEmailDirectlyToAdmin(t *testing.T) {
+	for _, message := range []string{
+		"94.103.56.231 xem giúp em, priority@example.com",
+		"Proxy ipv4-vt-04.resvn.net bị lỗi, priority@example.com",
+	} {
+		t.Run(message, func(t *testing.T) {
+			state := NewRunState(&RunInput{Message: message}, nil, "", nil)
+			state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
+			toolCalled := false
+			stage := NewCloudminiServicePreflightStage(&PipelineDeps{ExecuteToolCall: func(context.Context, *RunState, providers.ToolCall) ([]providers.Message, error) {
+				toolCalled = true
+				return nil, nil
+			}})
+			ctx := exceptionEmailTestContext(t, "", `{"admin_handoff_emails":["priority@example.com"]}`)
+
+			if err := stage.Execute(ctx, state); err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if toolCalled {
+				t.Fatal("configured email must not call service_info or live_check")
+			}
+			if !state.Cloudmini.AdminHandoffRequired {
+				t.Fatalf("configured email did not require Admin handoff: %#v", state.Cloudmini)
+			}
+			if !strings.Contains(state.Messages.System().Content, "CLOUDMINI EMAIL NGOẠI LỆ") {
+				t.Fatal("configured email handoff instruction was not injected")
+			}
+		})
+	}
+}
 
 func TestCloudminiServicePreflightCallsServiceInfoBeforeLLM(t *testing.T) {
 	state := NewRunState(&RunInput{Message: "Kiểm tra Proxy 94.103.56.231 lỗi kết nối"}, nil, "", nil)
@@ -685,6 +717,36 @@ func TestCloudminiHandoffAllowsEscalationAfterLiveCheckDie(t *testing.T) {
 	}
 }
 
+func TestCloudminiConfiguredEmailHandoffSkipsLiveTriage(t *testing.T) {
+	const ip = "94.103.56.231"
+	state := NewRunState(&RunInput{Message: "Kiểm tra " + ip + " giúp em, priority@example.com"}, nil, "", nil)
+	state.Cloudmini.RequestIPs = []string{ip}
+	state.Cloudmini.AdminHandoffRequired = true
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{{
+		IP: ip, PlanFamily: "private_v4", Status: "active", AccountEmailMatches: true, AdminHandoffRequired: true,
+	}}
+	if requiresCloudminiProxyLiveCheck(state, ip) {
+		t.Fatal("configured Admin handoff email must skip live_check")
+	}
+	serviceCall := providers.ToolCall{Name: cloudminiProxyCheckToolName, Arguments: map[string]any{
+		"operation": "service_info", "ip": ip, "account_email": "priority@example.com",
+	}}
+	if ok, reason := validateCloudminiCurrentRequestToolCall(state, serviceCall); ok || !strings.Contains(reason, "không gọi") {
+		t.Fatalf("service_info for configured email accepted: ok=%v reason=%q", ok, reason)
+	}
+	call := providers.ToolCall{Name: "escalate_to_admin", Arguments: map[string]any{
+		"summary":     "Kiểm tra Proxy " + ip,
+		"identifiers": []any{ip, "priority@example.com"},
+	}}
+	if ok, reason := validateCloudminiCurrentRequestToolCall(state, call); !ok {
+		t.Fatalf("configured email handoff rejected: %s", reason)
+	}
+	call.Arguments["identifiers"] = []any{ip, "other@example.com"}
+	if ok, reason := validateCloudminiCurrentRequestToolCall(state, call); ok || !strings.Contains(reason, "đúng email") {
+		t.Fatalf("handoff with wrong email accepted: ok=%v reason=%q", ok, reason)
+	}
+}
+
 func TestCaptureCloudminiLiveCheckMapsHTTPFailureToDieForTheRequestedIP(t *testing.T) {
 	const ip = "154.16.151.89"
 	state := NewRunState(&RunInput{Message: "Proxy " + ip + " lỗi kết nối"}, nil, "", nil)
@@ -741,5 +803,185 @@ func TestCloudminiServicePreflightDoesNotForceCancellationHandoffWhenUnsupported
 	}
 	if len(state.Cloudmini.ServiceFacts) != 1 || state.Cloudmini.ServiceFacts[0].CancellationPolicy != "not_supported" {
 		t.Fatalf("cancellation policy facts = %#v", state.Cloudmini.ServiceFacts)
+	}
+}
+
+func exceptionEmailTestContext(t *testing.T, agentKey, settingsJSON string) context.Context {
+	t.Helper()
+	return goclawtools.WithToolAgentKey(goclawtools.WithBuiltinToolSettings(context.Background(), goclawtools.BuiltinToolSettings{
+		cloudminiProxyCheckToolName: []byte(settingsJSON),
+	}), agentKey)
+}
+
+func TestCloudminiExceptionEmailSkippedWithoutProxyCheckToolGrant(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "94.103.56.231 xem giúp em, priority@example.com"}, nil, "", nil)
+	toolCalled := false
+	stage := NewCloudminiServicePreflightStage(&PipelineDeps{ExecuteToolCall: func(context.Context, *RunState, providers.ToolCall) ([]providers.Message, error) {
+		toolCalled = true
+		return nil, nil
+	}})
+	ctx := exceptionEmailTestContext(t, "", `{"admin_handoff_emails":["priority@example.com"]}`)
+
+	if err := stage.Execute(ctx, state); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if state.Cloudmini.AdminHandoffRequired {
+		t.Fatal("exception email must not activate when cloudmini_proxy_check is not granted to the agent")
+	}
+	if toolCalled {
+		t.Fatal("without the tool grant the preflight must not run Cloudmini checks either")
+	}
+	if strings.Contains(state.Messages.System().Content, "CLOUDMINI EMAIL NGOẠI LỆ") {
+		t.Fatal("exception email handoff instruction must not be injected without the tool grant")
+	}
+}
+
+func TestCloudminiExceptionEmailSkippedForAgentOutsideAllowedKeys(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "94.103.56.231 xem giúp em, priority@example.com"}, nil, "", nil)
+	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
+	toolCalled := false
+	stage := NewCloudminiServicePreflightStage(&PipelineDeps{ExecuteToolCall: func(_ context.Context, _ *RunState, tc providers.ToolCall) ([]providers.Message, error) {
+		toolCalled = true
+		return []providers.Message{{Role: "tool", ToolCallID: tc.ID, Content: `{"services":[{"ip":"94.103.56.231","service_status":"active","account_email_matches":true}]}`}}, nil
+	}})
+	ctx := exceptionEmailTestContext(t, "linh-nhi", `{"allowed_agent_keys":["other-agent"],"admin_handoff_emails":["priority@example.com"]}`)
+
+	if err := stage.Execute(ctx, state); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if state.Cloudmini.AdminHandoffRequired {
+		t.Fatal("exception email must not activate for an agent outside allowed_agent_keys")
+	}
+	if !toolCalled {
+		t.Fatal("outside agent must keep the normal service_info path")
+	}
+	if state.Tool.AllowedTools != nil && !state.Tool.AllowedTools[cloudminiProxyCheckToolName] {
+		t.Fatalf("allowed tools = %#v", state.Tool.AllowedTools)
+	}
+}
+
+func TestCloudminiExceptionEmailActivatesForAllowedAgent(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "94.103.56.231 xem giúp em, priority@example.com"}, nil, "", nil)
+	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
+	toolCalled := false
+	stage := NewCloudminiServicePreflightStage(&PipelineDeps{ExecuteToolCall: func(context.Context, *RunState, providers.ToolCall) ([]providers.Message, error) {
+		toolCalled = true
+		return nil, nil
+	}})
+	ctx := exceptionEmailTestContext(t, "linh-nhi", `{"allowed_agent_keys":["linh-nhi"],"admin_handoff_emails":["priority@example.com"]}`)
+
+	if err := stage.Execute(ctx, state); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if toolCalled {
+		t.Fatal("allowed agent with exception email must skip service_info/live_check")
+	}
+	if !state.Cloudmini.AdminHandoffRequired {
+		t.Fatal("exception email did not require Admin handoff for allowed agent")
+	}
+}
+
+func TestCloudminiExceptionEmailEndToEndCreatesRealTicketReply(t *testing.T) {
+	ctx := exceptionEmailTestContext(t, "", `{"admin_handoff_emails":["priority@example.com"]}`)
+	state := NewRunState(&RunInput{RunID: "run-e2e-exception", Message: "94.103.56.231 xem giúp em, priority@example.com"}, nil, "", nil)
+	state.Messages.SetSystem(providers.Message{Role: "system", Content: "base"})
+	state.Think.Tools = []providers.ToolDefinition{
+		{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}},
+		{Function: &providers.ToolFunctionSchema{Name: "escalate_to_admin"}},
+	}
+
+	var serviceCalls int
+	preflight := NewCloudminiServicePreflightStage(&PipelineDeps{ExecuteToolCall: func(_ context.Context, _ *RunState, tc providers.ToolCall) ([]providers.Message, error) {
+		serviceCalls++
+		return []providers.Message{{Role: "tool", ToolCallID: tc.ID, Content: `{"services":[]}`}}, nil
+	}})
+	if err := preflight.Execute(ctx, state); err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	if serviceCalls != 0 || !state.Cloudmini.AdminHandoffRequired {
+		t.Fatalf("preflight must route the exception email straight to Admin: calls=%d state=%#v", serviceCalls, state.Cloudmini)
+	}
+
+	think := NewThinkStage(&PipelineDeps{
+		Config: PipelineConfig{MaxIterations: 5, MaxTokens: 1000},
+		BuildFilteredTools: func(_ *RunState) ([]providers.ToolDefinition, error) {
+			return state.Think.Tools, nil
+		},
+		CallLLM: func(_ context.Context, _ *RunState, req providers.ChatRequest) (*providers.ChatResponse, error) {
+			if req.Options[providers.OptToolChoice] != "required" || len(req.Tools) != 1 ||
+				req.Tools[0].Function.Name != "escalate_to_admin" {
+				t.Fatalf("first turn must only offer escalate_to_admin: tools=%#v", req.Tools)
+			}
+			return &providers.ChatResponse{FinishReason: "tool_calls", ToolCalls: []providers.ToolCall{{
+				ID: "call-e2e-handoff", Name: "escalate_to_admin", Arguments: map[string]any{
+					"summary":     "Kiểm tra Proxy 94.103.56.231, email ngoại lệ priority@example.com",
+					"identifiers": []any{"94.103.56.231", "priority@example.com"},
+				},
+			}}}, nil
+		},
+	})
+	if err := think.Execute(ctx, state); err != nil {
+		t.Fatalf("think: %v", err)
+	}
+
+	tool := NewToolStage(&PipelineDeps{ExecuteToolCall: func(_ context.Context, _ *RunState, tc providers.ToolCall) ([]providers.Message, error) {
+		return []providers.Message{{Role: "tool", ToolCallID: tc.ID,
+			Content: `{"status":"sent","ticket_id":"Ticket-000411","customer_notified":false}`}}, nil
+	}})
+	if err := tool.Execute(ctx, state); err != nil {
+		t.Fatalf("tool stage: %v", err)
+	}
+	if state.Tool.AdminHandoffTicket != "Ticket-000411" {
+		t.Fatalf("ticket = %q", state.Tool.AdminHandoffTicket)
+	}
+
+	observe := NewObserveStage(&PipelineDeps{})
+	if err := observe.Execute(ctx, state); err != nil {
+		t.Fatalf("observe: %v", err)
+	}
+	ensureAdminHandoffCustomerReply(state)
+	if !strings.Contains(state.Observe.FinalContent, "Ticket-000411") {
+		t.Fatalf("final reply must contain the real ticket: %q", state.Observe.FinalContent)
+	}
+}
+
+func TestCloudminiExceptionEmailMultipleIPsAndHostnameHandoff(t *testing.T) {
+	ctx := exceptionEmailTestContext(t, "", `{"admin_handoff_emails":["priority@example.com"]}`)
+	message := "94.103.56.231 và 178.218.146.11 cùng ipv4-vt-04.resvn.net đều lỗi, priority@example.com"
+	state := NewRunState(&RunInput{RunID: "run-multi-exception", Message: message}, nil, "", nil)
+	state.Messages.SetSystem(providers.Message{Role: "system", Content: "base"})
+	state.Think.Tools = []providers.ToolDefinition{
+		{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}},
+		{Function: &providers.ToolFunctionSchema{Name: "escalate_to_admin"}},
+	}
+	toolCalls := 0
+	stage := NewCloudminiServicePreflightStage(&PipelineDeps{ExecuteToolCall: func(_ context.Context, _ *RunState, tc providers.ToolCall) ([]providers.Message, error) {
+		toolCalls++
+		return []providers.Message{{Role: "tool", ToolCallID: tc.ID, Content: `{"services":[]}`}}, nil
+	}})
+	if err := stage.Execute(ctx, state); err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	if toolCalls != 0 {
+		t.Fatalf("exception email must skip every preflight check, got %d calls", toolCalls)
+	}
+	if !state.Cloudmini.AdminHandoffRequired || len(state.Cloudmini.RequestIPs) != 2 ||
+		len(state.Cloudmini.RequestHosts) != 1 {
+		t.Fatalf("request scope = %#v", state.Cloudmini)
+	}
+
+	handoff := providers.ToolCall{Name: "escalate_to_admin", Arguments: map[string]any{
+		"summary":     "Kiểm tra Proxy 94.103.56.231, 178.218.146.11 và ipv4-vt-04.resvn.net cho email ngoại lệ",
+		"identifiers": []any{"94.103.56.231", "178.218.146.11", "ipv4-vt-04.resvn.net", "priority@example.com"},
+	}}
+	if ok, reason := validateCloudminiCurrentRequestToolCall(state, handoff); !ok {
+		t.Fatalf("multi-IP + hostname handoff rejected: %s", reason)
+	}
+	missingHost := providers.ToolCall{Name: "escalate_to_admin", Arguments: map[string]any{
+		"summary":     "Kiểm tra hai IP, email ngoại lệ priority@example.com",
+		"identifiers": []any{"94.103.56.231", "178.218.146.11", "priority@example.com"},
+	}}
+	if ok, reason := validateCloudminiCurrentRequestToolCall(state, missingHost); ok {
+		t.Fatalf("handoff missing the Residential VN hostname must be rejected, reason=%q", reason)
 	}
 }

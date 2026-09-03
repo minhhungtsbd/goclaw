@@ -125,7 +125,7 @@ func (t *CloudminiProxyCheckTool) Execute(ctx context.Context, args map[string]a
 		return ErrorResult(fmt.Sprintf("Cloudmini proxy check returned HTTP %d", resp.StatusCode))
 	}
 
-	result, err := sanitizeCloudminiProxyResponse(operation, ip.String(), argString(args, "account_email"), t.settings(ctx).ResellerEmails, body)
+	result, err := sanitizeCloudminiProxyResponseWithSettings(operation, ip.String(), argString(args, "account_email"), t.settings(ctx), body)
 	if err != nil {
 		if operation == "live_check" {
 			return cloudminiLiveCheckResult(ip.String(), false)
@@ -160,11 +160,24 @@ func marshalCloudminiLiveCheckResult(ip string, live bool) (string, error) {
 }
 
 func (t *CloudminiProxyCheckTool) allowedForAgent(ctx context.Context) bool {
-	settings := t.settings(ctx)
+	return cloudminiAgentAllowedBySettings(t.settings(ctx), ToolAgentKeyFromCtx(ctx))
+}
+
+// CloudminiProxyCheckAgentAllowed reports whether the agent identified by the
+// context may use cloudmini_proxy_check under the merged settings'
+// allowed_agent_keys allowlist. An empty allowlist grants every agent.
+func CloudminiProxyCheckAgentAllowed(ctx context.Context) bool {
+	var settings cloudminiProxyCheckSettings
+	if raw := BuiltinToolSettingsFromCtx(ctx)["cloudmini_proxy_check"]; len(raw) > 0 {
+		_ = json.Unmarshal(raw, &settings)
+	}
+	return cloudminiAgentAllowedBySettings(settings, ToolAgentKeyFromCtx(ctx))
+}
+
+func cloudminiAgentAllowedBySettings(settings cloudminiProxyCheckSettings, agentKey string) bool {
 	if len(settings.AllowedAgentKeys) == 0 {
 		return true
 	}
-	agentKey := ToolAgentKeyFromCtx(ctx)
 	for _, allowed := range settings.AllowedAgentKeys {
 		if agentKey != "" && agentKey == strings.TrimSpace(allowed) {
 			return true
@@ -182,9 +195,10 @@ func (t *CloudminiProxyCheckTool) timeout(ctx context.Context) time.Duration {
 }
 
 type cloudminiProxyCheckSettings struct {
-	AllowedAgentKeys []string `json:"allowed_agent_keys"`
-	TimeoutSeconds   int      `json:"timeout_seconds"`
-	ResellerEmails   []string `json:"reseller_emails"`
+	AllowedAgentKeys   []string `json:"allowed_agent_keys"`
+	TimeoutSeconds     int      `json:"timeout_seconds"`
+	ResellerEmails     []string `json:"reseller_emails"`
+	AdminHandoffEmails []string `json:"admin_handoff_emails"`
 }
 
 func (t *CloudminiProxyCheckTool) settings(ctx context.Context) cloudminiProxyCheckSettings {
@@ -195,7 +209,25 @@ func (t *CloudminiProxyCheckTool) settings(ctx context.Context) cloudminiProxyCh
 	return settings
 }
 
+// CloudminiAdminHandoffEmailConfigured reports whether a customer-supplied
+// email is configured for direct Admin routing in the merged tool settings.
+// It deliberately returns only a boolean so the configured list is never
+// exposed to the model or other customers.
+func CloudminiAdminHandoffEmailConfigured(ctx context.Context, email string) bool {
+	var settings cloudminiProxyCheckSettings
+	if raw := BuiltinToolSettingsFromCtx(ctx)["cloudmini_proxy_check"]; len(raw) > 0 {
+		if err := json.Unmarshal(raw, &settings); err != nil {
+			return false
+		}
+	}
+	return emailInCloudminiList(email, settings.AdminHandoffEmails)
+}
+
 func isResellerEmail(email string, allowed []string) bool {
+	return emailInCloudminiList(email, allowed)
+}
+
+func emailInCloudminiList(email string, allowed []string) bool {
 	email = strings.ToLower(strings.TrimSpace(email))
 	for _, candidate := range allowed {
 		if email != "" && email == strings.ToLower(strings.TrimSpace(candidate)) {
@@ -279,6 +311,12 @@ func getServiceClassificationNote(plan string) string {
 }
 
 func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, resellerEmails []string, body []byte) (string, error) {
+	return sanitizeCloudminiProxyResponseWithSettings(operation, ip, accountEmail, cloudminiProxyCheckSettings{
+		ResellerEmails: resellerEmails,
+	}, body)
+}
+
+func sanitizeCloudminiProxyResponseWithSettings(operation, ip, accountEmail string, settings cloudminiProxyCheckSettings, body []byte) (string, error) {
 	var response struct {
 		Error bool            `json:"error"`
 		Msg   string          `json:"msg"`
@@ -311,6 +349,11 @@ func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, reseller
 			items[i].PlanFamily = classifyCloudminiPlan(items[i].Plan)
 			rawUserEmail := strings.TrimSpace(items[i].UserEmail)
 			items[i].UserEmail = "" // Redact system account email from LLM view
+			if emailInCloudminiList(expectedEmail, settings.AdminHandoffEmails) {
+				required := true
+				items[i].AdminHandoffRequired = &required
+				items[i].AdminHandoffInstruction = "EMAIL NGOẠI LỆ BẮT BUỘC: Yêu cầu từ email khách đã cung cấp phải được chuyển trực tiếp cho Admin bằng escalate_to_admin. Không gọi live_check và không xác nhận đã chuyển nếu chưa có mã Ticket thật."
+			}
 
 			if expectedEmail == "" {
 				// Do not let the model answer a recovery/renewal request from an
@@ -346,7 +389,7 @@ func sanitizeCloudminiProxyResponse(operation, ip, accountEmail string, reseller
 					items[i].AccountEmailMatches = &matches
 
 					if matches {
-						isReseller := isResellerEmail(rawUserEmail, resellerEmails)
+						isReseller := isResellerEmail(rawUserEmail, settings.ResellerEmails)
 						if isReseller {
 							items[i].IsReseller = &isReseller
 							items[i].IsResellerVIP = &isReseller
@@ -427,6 +470,8 @@ type cloudminiServiceInfo struct {
 	IsResellerVIP           *bool   `json:"is_reseller_vip,omitempty"`
 	CancellationPolicy      string  `json:"cancellation_policy,omitempty"`
 	CancellationInstruction string  `json:"cancellation_instruction,omitempty"`
+	AdminHandoffRequired    *bool   `json:"admin_handoff_required,omitempty"`
+	AdminHandoffInstruction string  `json:"admin_handoff_instruction,omitempty"`
 }
 
 type cloudminiLiveCheck struct {

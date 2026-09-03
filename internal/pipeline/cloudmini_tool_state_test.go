@@ -54,6 +54,29 @@ func TestToolStageCapturesEmailGateAfterLLMServiceInfo(t *testing.T) {
 	}
 }
 
+func TestToolStageCapturesConfiguredEmailAdminHandoff(t *testing.T) {
+	state := NewRunState(&RunInput{RunID: "run-cloudmini-admin-email", Message: "Kiểm tra 178.218.146.11 giúp em"}, nil, "", nil)
+	state.Messages.SetHistory([]providers.Message{{Role: "user", Content: "Email Cloudmini của em là priority@example.com"}})
+	state.Think.LastResponse = &providers.ChatResponse{ToolCalls: []providers.ToolCall{{
+		ID: "call-admin-email", Name: cloudminiProxyCheckToolName,
+		Arguments: map[string]any{"ip": "178.218.146.11", "operation": "service_info", "account_email": "priority@example.com"},
+	}}}
+	stage := NewToolStage(&PipelineDeps{ExecuteToolCall: func(_ context.Context, _ *RunState, call providers.ToolCall) ([]providers.Message, error) {
+		return []providers.Message{{Role: "tool", ToolCallID: call.ID, Content: `{"operation":"service_info","services":[{"ip":"178.218.146.11","plan":"PrivateV4","plan_family":"private_v4","service_status":"active","account_email_matches":true,"admin_handoff_required":true}]}`}}, nil
+	}})
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !state.Cloudmini.AdminHandoffRequired || len(state.Cloudmini.ServiceFacts) != 1 ||
+		!state.Cloudmini.ServiceFacts[0].AdminHandoffRequired {
+		t.Fatalf("configured email handoff state = %#v", state.Cloudmini)
+	}
+	if !strings.Contains(state.Messages.System().Content, "CLOUDMINI EMAIL NGOẠI LỆ") {
+		t.Fatal("configured email handoff instruction was not injected")
+	}
+}
+
 func TestToolStageRejectsLiveCheckWithoutVerifiedServiceInfo(t *testing.T) {
 	state := NewRunState(&RunInput{RunID: "run-cloudmini-live-guard", Message: "Proxy 178.218.146.11 bị lỗi"}, nil, "", nil)
 	state.Messages.SetHistory([]providers.Message{{Role: "user", Content: "Email Cloudmini của em là customer@example.com"}})

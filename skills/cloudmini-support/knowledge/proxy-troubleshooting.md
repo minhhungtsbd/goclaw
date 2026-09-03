@@ -37,9 +37,14 @@ Dữ liệu tối thiểu là IP Proxy; riêng Residential VN chấp nhận host
 1. Nếu đã có IP, dùng `cloudmini_proxy_check` với `service_info` trước để kiểm tra IP thuộc gói nào và còn hạn hay không. Không hỏi lại gói hoặc email nếu API và hội thoại đã đủ dữ liệu.
 2. Nếu API cho thấy dịch vụ hết hạn hoặc không còn trong trạng thái sử dụng, giải thích theo trạng thái đó và chuyển sang luồng gia hạn/khôi phục; không kết luận đây là lỗi kết nối.
 3. Với dịch vụ còn hạn, dùng `live_check`. Kết quả cuối chỉ có LIVE hoặc DIE: API `error:false` cùng `data.ip` hợp lệ, đúng IP đang kiểm tra là LIVE, kể cả payload chỉ có GeoIP; timeout, HTTP lỗi, `error:true`, dữ liệu rỗng/sai IP/không hợp lệ hoặc tín hiệu DIE rõ ràng đều là DIE. Với DIE, chuyển Admin/Kỹ thuật kèm IP, gói/hạn đã tra được và nội dung lỗi khách gửi.
-4. Nếu có kết quả live nhưng khách vẫn không dùng được, hướng dẫn thử mạng khác/4G/5G, Cloudflare WARP, kiểm tra ứng dụng, xóa cache antidetect browser hoặc thử ứng dụng khác khi phù hợp.
-5. Ping chỉ là tín hiệu bổ sung, không dùng một kết quả ping để kết luận.
-6. Vẫn lỗi sau kiểm tra cơ bản → chuyển Admin/Kỹ thuật.
+4. Khi `live_check` trả LIVE nhưng khách vẫn báo không thể kết nối, khả năng cao vấn đề nằm ở mạng máy tính của khách, không phải Proxy. Hướng dẫn triage theo trình tự sau:
+   - Tư vấn khách thử đổi mạng 4G/5G hoặc dùng Cloudflare WARP 1.1.1.1 để cải thiện đường truyền mạng đi quốc tế của máy tính, sau đó kết nối lại Proxy để test. Link hướng dẫn WARP: https://cloudmini.net/huong-dan-cai-dat-vpn-1-1-1-1-vao-mang-nhanh-hon-mua-dut-cap/
+   - Hướng dẫn khách mở CMD trên máy tính và `ping` tới IP Proxy. Nếu không ping được, khả năng cao mạng máy tính khách đi quốc tế kém. Ping được là tín hiệu tốt nhưng chưa kết luận; ping không được chỉ là tín hiệu bổ sung, không dùng một kết quả ping để kết luận cuối cùng.
+   - Nếu ping được, tư vấn khách thử đổi sang một phần mềm antidetect browser khác để test Proxy.
+   - Nếu đã thử antidetect browser khác vẫn không thành công, tư vấn khách đổi mạng 4G/5G hoặc dùng WARP 1.1.1.1 để cải thiện đường truyền đi quốc tế rồi kết nối lại.
+   - Tư vấn thêm khách nên cắm dây mạng trực tiếp vào máy tính thay vì dùng WiFi để giảm nhiễu và mất gói.
+   - Nếu khách đã thử các bước trên mà vẫn không kết nối được, chuyển Admin/Kỹ thuật kèm IP, gói/hạn đã tra được, kết quả LIVE và các bước khách đã thử.
+5. Vẫn lỗi sau kiểm tra cơ bản → chuyển Admin/Kỹ thuật.
 
 Với Residential VN dùng hostname `*.resvn.net`, không gọi API IP và không yêu cầu khách cung cấp IPv4 dạng số. Nếu hostname + port trong cột Proxy Port đã cấu hình đúng nhưng vẫn chậm/không tải được website, hoặc khách yêu cầu thay proxy, chuyển Admin/Kỹ thuật ngay khi đã có email; handoff chỉ chứa hostname và email, không chứa user/pass.
 

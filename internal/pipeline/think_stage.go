@@ -64,6 +64,29 @@ func (s *ThinkStage) Execute(ctx context.Context, state *RunState) error {
 	if err != nil {
 		return err
 	}
+	// Configured exception emails bypass automated Cloudmini checks. Restrict
+	// the very first model turn to a required Admin handoff so the request does
+	// not spend an extra text/retry turn before creating the real ticket.
+	if cloudminiNeedsConfiguredEmailAdminReview(state) && strings.TrimSpace(state.Tool.AdminHandoffTicket) == "" {
+		if handoffTools := onlyToolDefinition(req.Tools, "escalate_to_admin"); len(handoffTools) > 0 {
+			req.Tools = handoffTools
+			req.Options = cloneRequestOptions(req.Options)
+			req.Options[providers.OptToolChoice] = "required"
+		} else {
+			// Fail closed: without escalate_to_admin the mandatory handoff cannot
+			// happen, so no LLM call and no other tool may answer the routed
+			// request instead. End with a deterministic reply and surface the
+			// agent configuration error.
+			slog.Error("cloudmini configured email handoff blocked: escalate_to_admin unavailable",
+				"run_id", state.RunID, "iteration", state.Iteration)
+			state.Think.LastResponse = &providers.ChatResponse{
+				Content:      cloudminiSafeGuardResponse(state),
+				FinishReason: "stop",
+			}
+			s.result = BreakLoop
+			return nil
+		}
+	}
 
 	// 4. Call LLM (stream or sync — delegated to callback)
 	if s.deps.CallLLM == nil {
@@ -181,7 +204,8 @@ func (s *ThinkStage) Execute(ctx context.Context, state *RunState) error {
 			retryReq.Options = cloneRequestOptions(req.Options)
 			retryReq.Options[providers.OptToolChoice] = "required"
 		}
-		requiresCloudminiAdminReview := cloudminiNeedsEmailMismatchAdminReview(state) &&
+		requiresCloudminiAdminReview := (cloudminiNeedsEmailMismatchAdminReview(state) ||
+			cloudminiNeedsConfiguredEmailAdminReview(state)) &&
 			strings.TrimSpace(state.Tool.AdminHandoffTicket) == ""
 		if requiresCloudminiAdminReview {
 			retryReq.Tools = onlyToolDefinition(req.Tools, "escalate_to_admin")

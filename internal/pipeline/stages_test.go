@@ -298,6 +298,74 @@ func TestThinkStageForcesAdminHandoffForUnverifiedRecovery(t *testing.T) {
 	}
 }
 
+func TestThinkStageForcesAdminHandoffForConfiguredEmail(t *testing.T) {
+	var calls int
+	handoffTool := providers.ToolDefinition{Function: &providers.ToolFunctionSchema{Name: "escalate_to_admin"}}
+	deps := &PipelineDeps{
+		Config: PipelineConfig{MaxIterations: 10, MaxTokens: 1000},
+		BuildFilteredTools: func(_ *RunState) ([]providers.ToolDefinition, error) {
+			return []providers.ToolDefinition{handoffTool}, nil
+		},
+		CallLLM: func(_ context.Context, _ *RunState, req providers.ChatRequest) (*providers.ChatResponse, error) {
+			calls++
+			if req.Options[providers.OptToolChoice] != "required" || len(req.Tools) != 1 ||
+				req.Tools[0].Function.Name != "escalate_to_admin" {
+				t.Fatalf("configured email direct handoff request = %#v", req)
+			}
+			return &providers.ChatResponse{FinishReason: "tool_calls", ToolCalls: []providers.ToolCall{{
+				ID: "handoff-configured-email-1", Name: "escalate_to_admin", Arguments: map[string]any{
+					"summary":     "Kiểm tra Proxy 178.218.146.11 cho email ngoại lệ",
+					"identifiers": []any{"178.218.146.11", "priority@example.com"},
+				},
+			}}}, nil
+		},
+	}
+	stage := NewThinkStage(deps)
+	state := defaultState()
+	state.Input.Message = "Kiểm tra 178.218.146.11 giúp em, priority@example.com"
+	state.Cloudmini.RequestIPs = []string{"178.218.146.11"}
+	state.Cloudmini.AdminHandoffRequired = true
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{{
+		IP: "178.218.146.11", Status: "active", AccountEmailMatches: true, AdminHandoffRequired: true,
+	}}
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if calls != 1 || stage.Result() != Continue || state.Think.LastResponse == nil ||
+		len(state.Think.LastResponse.ToolCalls) != 1 || state.Think.LastResponse.ToolCalls[0].Name != "escalate_to_admin" {
+		t.Fatalf("calls=%d result=%v response=%#v", calls, stage.Result(), state.Think.LastResponse)
+	}
+}
+
+func TestThinkStageFailsClosedWhenEscalateToAdminUnavailable(t *testing.T) {
+	deps := &PipelineDeps{
+		Config: PipelineConfig{MaxIterations: 10, MaxTokens: 1000},
+		BuildFilteredTools: func(_ *RunState) ([]providers.ToolDefinition, error) {
+			return []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: "cloudmini_proxy_check"}}}, nil
+		},
+		CallLLM: func(context.Context, *RunState, providers.ChatRequest) (*providers.ChatResponse, error) {
+			t.Fatal("LLM must not be called when escalate_to_admin is unavailable for a configured email")
+			return nil, nil
+		},
+	}
+	stage := NewThinkStage(deps)
+	state := defaultState()
+	state.Input.Message = "Kiểm tra 178.218.146.11 giúp em, priority@example.com"
+	state.Cloudmini.AdminHandoffRequired = true
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if stage.Result() != BreakLoop {
+		t.Fatalf("Result() = %v, want BreakLoop", stage.Result())
+	}
+	if state.Think.LastResponse == nil ||
+		!strings.Contains(state.Think.LastResponse.Content, "chưa tạo được mã Ticket") {
+		t.Fatalf("fail-closed response = %#v", state.Think.LastResponse)
+	}
+}
+
 func TestThinkStageUsesCanonicalUnverifiedReplyAfterAdminTicket(t *testing.T) {
 	deps := &PipelineDeps{
 		Config: PipelineConfig{MaxIterations: 10, MaxTokens: 1000},

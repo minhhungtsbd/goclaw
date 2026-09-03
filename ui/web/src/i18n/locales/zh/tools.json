@@ -72,6 +72,8 @@
       "allowedAgentsHint": "Comma-separated agent keys. Leave empty to rely only on each agent's own tool allow-list.",
       "resellerEmails": "Reseller account emails",
       "resellerEmailsHint": "One email per line, or separate with commas. Duplicates are removed automatically after saving.",
+      "adminHandoffEmails": "直接转交管理员的邮箱",
+      "adminHandoffEmailsHint": "每行填写一个邮箱，或使用逗号分隔。使用列表中客户邮箱的请求会直接转交管理员，不运行 service_info 或 live_check。",
       "scopeHint": "The tool only calls Cloudmini's fixed check_services and check_live_proxy endpoints. Each listed agent must also have this tool in its own allow-list.",
       "cancel": "Cancel",
       "save": "Save",

@@ -16,6 +16,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/cloudminiincident"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
+	goclawtools "github.com/nextlevelbuilder/goclaw/internal/tools"
 )
 
 const cloudminiProxyCheckToolName = "cloudmini_proxy_check"
@@ -38,8 +39,36 @@ func NewCloudminiServicePreflightStage(deps *PipelineDeps) *CloudminiServicePref
 
 func (s *CloudminiServicePreflightStage) Name() string { return "cloudmini_service_preflight" }
 
+// cloudminiExceptionEmailPermitted reports whether the agent may use the
+// configured direct-Admin routing at all. Two layers are checked, mirroring the
+// tool's own permission path: cloudmini_proxy_check must survive policy
+// filtering (BuildFilteredTools), and the agent key must satisfy the settings'
+// allowed_agent_keys allowlist.
+func (s *CloudminiServicePreflightStage) cloudminiExceptionEmailPermitted(ctx context.Context, state *RunState) bool {
+	if !hasCloudminiProxyCheckTool(state.Think.Tools) && s.deps.BuildFilteredTools != nil {
+		toolDefs, err := s.deps.BuildFilteredTools(state)
+		if err != nil {
+			slog.Warn("cloudmini service preflight tool refresh failed", "error", err)
+		} else {
+			state.Think.Tools = toolDefs
+		}
+	}
+	agentKey := goclawtools.ToolAgentKeyFromCtx(ctx)
+	if !hasCloudminiProxyCheckTool(state.Think.Tools) {
+		slog.Warn("cloudmini exception email routing skipped: cloudmini_proxy_check not granted to agent",
+			"agent", agentKey)
+		return false
+	}
+	if !goclawtools.CloudminiProxyCheckAgentAllowed(ctx) {
+		slog.Warn("cloudmini exception email routing skipped: agent not in allowed_agent_keys",
+			"agent", agentKey)
+		return false
+	}
+	return true
+}
+
 func (s *CloudminiServicePreflightStage) Execute(ctx context.Context, state *RunState) error {
-	if !isCloudminiServiceRequest(state) || s.deps.ExecuteToolCall == nil {
+	if !isCloudminiServiceRequest(state) {
 		return nil
 	}
 	ips := resolveCloudminiRequestIPs(state)
@@ -48,6 +77,22 @@ func (s *CloudminiServicePreflightStage) Execute(ctx context.Context, state *Run
 	state.Cloudmini.RequestHosts = append([]string(nil), hosts...)
 	appendCloudminiOperationalSubnetNotice(state, ips)
 	appendCloudminiResidentialVNContext(state, hosts)
+	accountEmail := latestCloudminiCustomerEmailForState(state)
+	if accountEmail != "" && goclawtools.CloudminiAdminHandoffEmailConfigured(ctx, accountEmail) &&
+		s.cloudminiExceptionEmailPermitted(ctx, state) {
+		// The direct-Admin routing is part of the cloudmini_proxy_check scope.
+		// An agent without the tool grant (or outside allowed_agent_keys) must
+		// not be forced into a handoff it cannot legitimately perform, so the
+		// exception only activates after the same permission checks that guard
+		// the tool itself; otherwise the request keeps the standard flow below.
+		state.Cloudmini.AdminHandoffRequired = true
+		appendCloudminiRequestScope(state, ips)
+		appendCloudminiResponseGuard(state, accountEmail)
+		return nil
+	}
+	if s.deps.ExecuteToolCall == nil {
+		return nil
+	}
 	if len(ips) == 0 {
 		return nil
 	}
@@ -68,7 +113,6 @@ func (s *CloudminiServicePreflightStage) Execute(ctx context.Context, state *Run
 	}
 
 	state.Tool.AllowedTools = map[string]bool{cloudminiProxyCheckToolName: true}
-	accountEmail := latestCloudminiCustomerEmailForState(state)
 	for index, ip := range ips {
 		if cloudminiPreflightBudgetExhausted(s.deps, state) {
 			slog.Warn("cloudmini service preflight stopped at tool budget", "checked", index, "ip_count", len(ips))
@@ -222,7 +266,11 @@ func refreshCloudminiDeterministicState(state *RunState, accountEmail string) {
 	}
 	state.Cloudmini.EmailRequired = false
 	state.Cloudmini.EmailMismatch = false
+	state.Cloudmini.AdminHandoffRequired = false
 	for _, fact := range state.Cloudmini.ServiceFacts {
+		if fact.AdminHandoffRequired {
+			state.Cloudmini.AdminHandoffRequired = true
+		}
 		if fact.Status == "email_required" || (accountEmail == "" && fact.Status != "unavailable") {
 			state.Cloudmini.EmailRequired = true
 		}
@@ -427,6 +475,9 @@ func requiresCloudminiProxyLiveCheck(state *RunState, ip string) bool {
 		return false
 	}
 	for _, fact := range state.Cloudmini.ServiceFacts {
+		if fact.IP == ip && fact.AdminHandoffRequired {
+			return false
+		}
 		if fact.IP == ip && fact.Status == "active" && fact.AccountEmailMatches &&
 			fact.Plan != "" && fact.PlanFamily != "vps" && !strings.Contains(strings.ToLower(fact.Plan), "vps") {
 			return true
@@ -544,13 +595,14 @@ func captureCloudminiServiceFacts(state *RunState, messages []providers.Message)
 		}
 		var response struct {
 			Services []struct {
-				IP                  string          `json:"ip"`
-				Plan                string          `json:"plan"`
-				PlanFamily          string          `json:"plan_family"`
-				ServiceStatus       string          `json:"service_status"`
-				AccountEmailMatches bool            `json:"account_email_matches"`
-				CancellationPolicy  string          `json:"cancellation_policy"`
-				Expire              json.RawMessage `json:"expire"`
+				IP                   string          `json:"ip"`
+				Plan                 string          `json:"plan"`
+				PlanFamily           string          `json:"plan_family"`
+				ServiceStatus        string          `json:"service_status"`
+				AccountEmailMatches  bool            `json:"account_email_matches"`
+				CancellationPolicy   string          `json:"cancellation_policy"`
+				AdminHandoffRequired bool            `json:"admin_handoff_required"`
+				Expire               json.RawMessage `json:"expire"`
 			} `json:"services"`
 		}
 		if json.Unmarshal([]byte(message.Content), &response) != nil {
@@ -565,12 +617,13 @@ func captureCloudminiServiceFacts(state *RunState, messages []providers.Message)
 				status = "deleted"
 			}
 			fact := CloudminiServiceFact{
-				IP:                  service.IP,
-				Plan:                service.Plan,
-				PlanFamily:          service.PlanFamily,
-				Status:              status,
-				AccountEmailMatches: service.AccountEmailMatches,
-				CancellationPolicy:  service.CancellationPolicy,
+				IP:                   service.IP,
+				Plan:                 service.Plan,
+				PlanFamily:           service.PlanFamily,
+				Status:               status,
+				AccountEmailMatches:  service.AccountEmailMatches,
+				CancellationPolicy:   service.CancellationPolicy,
+				AdminHandoffRequired: service.AdminHandoffRequired,
 			}
 			replaced := false
 			if fact.IP != "" {
@@ -606,7 +659,7 @@ func isCloudminiServiceRequest(state *RunState) bool {
 		return false
 	}
 	return containsAny(message,
-		"cloudmini", "proxy", "vps", "kiểm tra", "kiem tra", "check", "lỗi", "loi", "error",
+		"cloudmini", "proxy", "vps", "kiểm tra", "kiem tra", "check", "xem", "tra cứu", "tra cuu", "lỗi", "loi", "error",
 		"không kết nối", "khong ket noi", "không hoạt động", "khong hoat dong", "timeout", "die",
 		"khôi phục", "khoi phuc", "phục hồi", "phuc hoi", "gia hạn", "gia han", "hủy", "huỷ", "huy",
 		"hoàn tiền", "hoan tien", "đổi ip", "doi ip", "thay ip")
@@ -659,7 +712,7 @@ func cloudminiSupportIntentText(state *RunState) string {
 }
 
 func appendCloudminiResponseGuard(state *RunState, accountEmail string) {
-	if state == nil || len(state.Cloudmini.ServiceFacts) == 0 {
+	if state == nil || (len(state.Cloudmini.ServiceFacts) == 0 && !state.Cloudmini.AdminHandoffRequired) {
 		return
 	}
 	system := state.Messages.System()
@@ -673,6 +726,10 @@ func appendCloudminiResponseGuard(state *RunState, accountEmail string) {
 			system.Content += "\n\n[CLOUDMINI KHÔI PHỤC KHÔNG XÁC MINH ĐƯỢC - BẮT BUỘC]\n" +
 				"Không nói IP thuộc tài khoản khác, chủ sở hữu khác, email không khớp, IP đang LIVE, chuyển nhượng hoặc đề xuất mua IP mới. Không tiết lộ dữ liệu đối chiếu nội bộ và không gọi live_check. Bắt buộc gọi escalate_to_admin với đúng IP và email Cloudmini khách đã cung cấp để Admin kiểm tra trực tiếp. Chỉ được xác nhận đã chuyển sau khi tool thành công và phải kèm mã Ticket thật."
 		}
+	}
+	if state.Cloudmini.AdminHandoffRequired && !strings.Contains(system.Content, "[CLOUDMINI EMAIL NGOẠI LỆ - BẮT BUỘC]") {
+		system.Content += "\n\n[CLOUDMINI EMAIL NGOẠI LỆ - BẮT BUỘC]\n" +
+			"Email khách đã cung cấp thuộc danh sách chuyển Admin trực tiếp. Không gọi live_check và không tự xử lý yêu cầu. Bắt buộc gọi escalate_to_admin với đúng IP/hostname và đúng email khách đã cung cấp. Chỉ xác nhận đã chuyển sau khi tool thành công và phải kèm mã Ticket thật."
 	}
 	state.Messages.SetSystem(system)
 }
@@ -786,6 +843,9 @@ func validateCloudminiCurrentRequestToolCall(state *RunState, tc providers.ToolC
 
 	switch strings.TrimSpace(tc.Name) {
 	case cloudminiProxyCheckToolName:
+		if cloudminiNeedsConfiguredEmailAdminReview(state) {
+			return false, "email khách thuộc danh sách chuyển Admin trực tiếp; không gọi service_info hoặc live_check"
+		}
 		if len(currentIPs) == 0 && len(currentHosts) > 0 {
 			return false, "Residential VN dùng hostname; không gọi service_info/live_check và không yêu cầu khách cung cấp IPv4 dạng số"
 		}
@@ -826,6 +886,7 @@ func validateCloudminiCurrentRequestToolCall(state *RunState, tc providers.ToolC
 		}
 	case "escalate_to_admin":
 		intent := strings.ToLower(cloudminiSupportIntentText(state))
+		configuredEmailReview := cloudminiNeedsConfiguredEmailAdminReview(state)
 		needsOperationalReview := containsAny(intent,
 			"lỗi", "loi", "không kết nối", "khong ket noi", "không vào được", "khong vao duoc",
 			"không hoạt động", "khong hoat dong", "die", "error", "timeout", "manual", "kỹ thuật", "ky thuat",
@@ -839,15 +900,24 @@ func validateCloudminiCurrentRequestToolCall(state *RunState, tc providers.ToolC
 		if len(currentIPs) > 0 && len(referencedIPs) == 0 {
 			return false, "Admin handoff cho yêu cầu Cloudmini hiện tại phải chứa IP trong tin nhắn khách vừa gửi"
 		}
-		if cloudminiIncidentBlocksHandoff(state, referencedIPs) {
+		if !configuredEmailReview && cloudminiIncidentBlocksHandoff(state, referencedIPs) {
 			return false, "thông báo vận hành đã match IP này không cho phép tạo Admin handoff; phải giải thích đúng thông báo cho khách"
 		}
-		if !needsOperationalReview && !cloudminiIncidentsAllowHandoff(state, referencedIPs) {
+		if !configuredEmailReview && !needsOperationalReview && !cloudminiIncidentsAllowHandoff(state, referencedIPs) {
 			return false, "chỉ tạo Admin handoff khi khách báo lỗi/cần xử lý kỹ thuật hoặc incident cho phép handoff"
 		}
 		for _, ip := range referencedIPs {
 			if !containsCloudminiIP(allowedIPs, ip) {
 				return false, "Admin handoff chỉ được chứa IP trong tin nhắn Cloudmini hiện tại; không dùng danh sách IP cũ"
+			}
+		}
+		if configuredEmailReview {
+			customerEmail := latestCloudminiCustomerEmailForState(state)
+			if customerEmail == "" {
+				return false, "phải có email Cloudmini của khách trước khi chuyển Admin theo danh sách ngoại lệ"
+			}
+			if !containsCloudminiString(cloudminiHandoffEmails(tc.Arguments), customerEmail) {
+				return false, "Admin handoff theo danh sách ngoại lệ phải dùng đúng email Cloudmini do khách cung cấp"
 			}
 		}
 		if blocked, reason := cloudminiHandoffNeedsMoreLiveTriage(state, referencedIPs, intent); blocked {
@@ -887,7 +957,7 @@ func validateCloudminiCurrentRequestToolCall(state *RunState, tc providers.ToolC
 }
 
 func cloudminiHandoffNeedsMoreLiveTriage(state *RunState, ips []string, intent string) (bool, string) {
-	if state == nil || cloudminiIncidentsAllowHandoff(state, ips) ||
+	if state == nil || cloudminiNeedsConfiguredEmailAdminReview(state) || cloudminiIncidentsAllowHandoff(state, ips) ||
 		!containsAny(intent, "lỗi", "loi", "error", "không kết nối", "khong ket noi", "die", "timeout") ||
 		containsAny(intent, "đã thử", "da thu", "warp", "4g", "5g", "mạng khác", "mang khac", "restart", "khởi động", "khoi dong", "ứng dụng khác", "ung dung khac", "xóa cache", "xoa cache") {
 		return false, ""

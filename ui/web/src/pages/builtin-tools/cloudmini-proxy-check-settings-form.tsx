@@ -44,6 +44,12 @@ function resolveResellerEmails(settings: Record<string, unknown>): string[] {
   return value.filter((item): item is string => typeof item === "string" && item.trim() !== "");
 }
 
+function resolveAdminHandoffEmails(settings: Record<string, unknown>): string[] {
+  const value = settings.admin_handoff_emails;
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && item.trim() !== "");
+}
+
 function normalizeEmails(value: string): string[] {
   const seen = new Set<string>();
   return value
@@ -62,6 +68,7 @@ export function CloudminiProxyCheckSettingsForm({
   const [timeoutSeconds, setTimeoutSeconds] = useState(() => resolveTimeoutSeconds(initialSettings));
   const [allowedAgentKeys, setAllowedAgentKeys] = useState(() => resolveAllowedAgentKeys(initialSettings));
   const [resellerEmails, setResellerEmails] = useState(() => resolveResellerEmails(initialSettings).join("\n"));
+  const [adminHandoffEmails, setAdminHandoffEmails] = useState(() => resolveAdminHandoffEmails(initialSettings).join("\n"));
   const [apiToken, setApiToken] = useState("");
   const [saving, setSaving] = useState(false);
   const tokenConfigured = secretsSet?.[TOKEN_SECRET_KEY] === true;
@@ -70,6 +77,7 @@ export function CloudminiProxyCheckSettingsForm({
     setTimeoutSeconds(resolveTimeoutSeconds(initialSettings));
     setAllowedAgentKeys(resolveAllowedAgentKeys(initialSettings));
     setResellerEmails(resolveResellerEmails(initialSettings).join("\n"));
+    setAdminHandoffEmails(resolveAdminHandoffEmails(initialSettings).join("\n"));
     setApiToken("");
   }, [initialSettings]);
 
@@ -82,6 +90,7 @@ export function CloudminiProxyCheckSettingsForm({
       timeout_seconds: timeout,
       allowed_agent_keys: allowedAgentKeys,
       reseller_emails: normalizeEmails(resellerEmails),
+      admin_handoff_emails: normalizeEmails(adminHandoffEmails),
     };
     if (apiToken.trim()) {
       settings.auth = { api_token: apiToken.trim() };
@@ -181,6 +190,23 @@ export function CloudminiProxyCheckSettingsForm({
           />
           <p className="text-xs text-muted-foreground">
             {t("builtin.cloudminiProxyCheck.resellerEmailsHint")}
+          </p>
+        </div>
+
+        <div className="grid gap-1.5">
+          <Label htmlFor="cloudmini-admin-handoff-emails" className="text-sm">
+            {t("builtin.cloudminiProxyCheck.adminHandoffEmails")}
+          </Label>
+          <Textarea
+            id="cloudmini-admin-handoff-emails"
+            value={adminHandoffEmails}
+            onChange={(event) => setAdminHandoffEmails(event.target.value)}
+            placeholder="priority@example.com"
+            rows={5}
+            className="font-mono text-base md:text-sm"
+          />
+          <p className="text-xs text-muted-foreground">
+            {t("builtin.cloudminiProxyCheck.adminHandoffEmailsHint")}
           </p>
         </div>
 

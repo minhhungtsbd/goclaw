@@ -50,6 +50,7 @@ Khi khách yêu cầu khôi phục hoặc gia hạn lại Proxy hết hạn đã
 
 ## Thuộc tính kỹ thuật
 
+- **Định dạng kết nối Proxy:** Proxy Cloudmini hiện hỗ trợ hai loại giao thức kết nối là **SOCKS5** và **HTTP** (không phải HTTPS). Khi khách hỏi loại proxy/port dùng giao thức gì, trả lời đúng hai định dạng này; không nói khách cấu hình HTTPS. Nếu phần mềm của khách chỉ có lựa chọn HTTPS, hướng dẫn chọn HTTP thay thế.
 - **Residential VN** dùng hostname `*.resvn.net` (ví dụ `ipv4-vt-04.resvn.net`) thay cho IPv4 dạng số. Nhập hostname vào trường Host/IP và lấy port đúng tại cột Proxy Port; không yêu cầu khách tìm IP số. `service_info`/`live_check` có thể không hỗ trợ nên được bỏ qua; lỗi cần xử lý thủ công được chuyển Admin bằng hostname + email.
 - **Rotating Residential**: tại Quản lý Rotating Proxy, khách có thể tùy chọn **Country**, **State/Region**, **City** và **TTL** (thời gian xoay). Hostname kết nối chuẩn là `rota.cloudmini.net`. Khi tạo Authentication kết nối Proxy, khách chọn dạng endpoint **Hostname** hoặc **IP** theo cấu hình hiển thị trên trang tạo authentication; nếu dùng Hostname thì nhập `rota.cloudmini.net` cùng port do dashboard tạo authentication hiển thị. Không đoán IP, port hoặc thông tin xác thực; không gửi user/password qua chat.
 - Với Rotating Residential, mỗi lần kết nối có thể nhận một IP xoay đang tạm thời không khả dụng, nên một lần lỗi kết nối chưa đủ để kết luận gói hoặc Proxy bị lỗi. Hướng dẫn khách ngắt/kết nối lại để nhận IP khác; nếu vẫn lỗi, chọn lại Region/State/City khác để tìm khu vực có nhiều IP khả dụng hơn, rồi thử lại.
@@ -57,7 +58,7 @@ Khi khách yêu cầu khôi phục hoặc gia hạn lại Proxy hết hạn đã
 - **Residential Static** và **Budget Residential Static** là hai gói riêng biệt. Luôn giữ nguyên chữ `Budget` khi đọc tên gói và đối chiếu chính sách; không rút gọn cả hai thành “Residential Static”.
 - Khi đặt **Residential Static**, khách không chọn được Bang/State/Region. Trang đặt hàng chỉ cho chọn **Local** và **tên ISP**; không hứa chọn chi tiết Bang hoặc Thành phố.
 - Quy tắc đặt hàng trên không tự động áp dụng cho **Budget Residential Static** nếu tài liệu hoặc giao diện không xác nhận như vậy.
-- BudgetV4 và Budget Residential Static mặc định dùng HTTPS 50100 và SOCKS5 50101.
+- BudgetV4 và Budget Residential Static mặc định dùng HTTP port 50100 và SOCKS5 port 50101 (cả hai đều thuộc hai giao thức HTTP/SOCKS5; không có giao thức HTTPS riêng).
 - GeoIP có thể khác giữa database; có thể đối chiếu https://www.iplocation.net/ip-lookup nhưng không cam kết mọi nguồn cùng thành phố.
 - Không kết luận IP không dùng được chỉ vì có mặt trên một blacklist. Spamhaus SBL chủ yếu liên quan uy tín chống spam/email.
 

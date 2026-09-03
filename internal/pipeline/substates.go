@@ -88,25 +88,27 @@ type AdminHandoffStatusFact struct {
 // CloudminiState is scoped to one pipeline run. It keeps deterministic service
 // facts out of shared agent state so concurrent customer sessions cannot leak.
 type CloudminiState struct {
-	RequestIPs     []string
-	RequestHosts   []string
-	ScopeAmbiguous bool
-	OutageCIDRs    []string
-	EmailRequired  bool
-	EmailMismatch  bool
-	ServiceFacts   []CloudminiServiceFact
-	IncidentsByIP  map[string]store.OperationalIncident
-	LiveChecks     map[string]bool
-	LiveAttempts   map[string]bool
+	RequestIPs           []string
+	RequestHosts         []string
+	ScopeAmbiguous       bool
+	OutageCIDRs          []string
+	EmailRequired        bool
+	EmailMismatch        bool
+	AdminHandoffRequired bool
+	ServiceFacts         []CloudminiServiceFact
+	IncidentsByIP        map[string]store.OperationalIncident
+	LiveChecks           map[string]bool
+	LiveAttempts         map[string]bool
 }
 
 type CloudminiServiceFact struct {
-	IP                  string
-	Plan                string
-	PlanFamily          string
-	Status              string
-	AccountEmailMatches bool
-	CancellationPolicy  string
+	IP                   string
+	Plan                 string
+	PlanFamily           string
+	Status               string
+	AccountEmailMatches  bool
+	CancellationPolicy   string
+	AdminHandoffRequired bool
 }
 
 // ObserveState: owned by ObserveStage.
