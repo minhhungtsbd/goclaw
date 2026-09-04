@@ -40,7 +40,10 @@ Mẫu phản hồi:
 
 > Dạ, ưu đãi hiện có của Cloudmini là cộng Point khi nạp tiền theo cấp VIP dựa trên số dịch vụ đang hoạt động. Ví dụ tài khoản có từ 100 dịch vụ đang hoạt động là VIP 2, được cộng 15% Point khi nạp tiền thành công ạ. Point được dùng cho đơn/gia hạn khi đủ thanh toán toàn bộ; ưu đãi này không phải giảm trực tiếp giá từng Proxy/VPS.
 
-## VAT và tiền hoàn
+## VAT và hoá đơn
 
-- Nạp tiền tự động hiện chưa hỗ trợ xuất VAT trực tiếp. Khách cần hóa đơn tạo Ticket để Admin xử lý; không cam kết trước khi xác nhận.
+- Các giao dịch mua hàng tự động (nạp tiền, đặt dịch vụ qua web) trước đến nay **chưa tính VAT** nên **không xuất được hoá đơn** cho các giao dịch đó. Không hứa xuất bổ sung hoá đơn cho giao dịch đã hoàn tất.
+- Nếu khách có nhu cầu xuất hoá đơn VAT: khách cần **chuyển tiền vào tài khoản công ty do Admin cung cấp**. Lưu ý tư vấn rõ: khi chuyển tiền xuất hoá đơn sẽ bị **trừ 10% VAT**.
+- Việc xuất hoá đơn cần Admin can thiệp. Sau khi tư vấn và khách xác nhận có nhu cầu, gọi `escalate_to_admin` để Admin cung cấp thông tin tài khoản chuyển tiền và xuất hoá đơn sau đó. Ticket chứa email tài khoản Cloudmini và nhu cầu xuất hoá đơn của khách; case hoá đơn không cần IP.
+- Không tự cung cấp số tài khoản công ty, không cam kết thời gian xuất hoá đơn; chỉ xác nhận đã chuyển Admin khi tool thành công và kèm mã Ticket thật.
 - Tiền hoàn hợp lệ được cộng vào số dư chính Cloudmini, không hoàn về ngân hàng.

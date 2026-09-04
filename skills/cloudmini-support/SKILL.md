@@ -83,6 +83,7 @@ Tool trả dữ kiện, không thay thế suy luận CSKH. Kết hợp kết qu�
 - `is_reseller=true` cùng email khớp: ưu tiên quy trình Reseller trong `reseller.md` và chuyển xử lý khi tài liệu yêu cầu.
 - `admin_handoff_required=true`: email khách thuộc danh sách ngoại lệ chuyển Admin. Không gọi `live_check`, không tự xử lý tiếp; bắt buộc gọi `escalate_to_admin` với đúng IP/hostname và email khách đã cung cấp. Chỉ báo đã chuyển khi có mã Ticket thật.
 - `cancellation_policy`: chỉ dùng sau email khớp. `not_supported` là chính sách, không phải lỗi; `self_service` chỉ chuyển khi khách thực sự gặp lỗi thao tác; `admin_review` theo quy trình Reseller.
+- Yêu cầu **xuất hoá đơn VAT**: giao dịch tự động trước nay chưa tính VAT nên không xuất được; khách cần chuyển tiền vào tài khoản công ty (sẽ bị trừ 10% VAT) và case được chuyển Admin để cung cấp thông tin chuyển khoản + xuất hoá đơn. Đọc `billing-and-balance.md` mục "VAT và hoá đơn" để tư vấn đúng trước khi handoff.
 
 ## 5. Chuyển Admin/Kỹ thuật
 
