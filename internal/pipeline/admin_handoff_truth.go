@@ -116,38 +116,7 @@ func adminHandoffCustomerConfirmationWithFacts(state *RunState, ticket string) s
 	if cloudminiNeedsEmailMismatchAdminReview(state) {
 		return cloudminiEmailMismatchReply(state, ticket)
 	}
-	facts := make([]string, 0, len(state.Cloudmini.ServiceFacts))
-	for _, fact := range state.Cloudmini.ServiceFacts {
-		label := "Dịch vụ"
-		if strings.TrimSpace(fact.IP) != "" {
-			label = "IP " + strings.TrimSpace(fact.IP)
-		}
-		status := "chưa thể xác định trạng thái dịch vụ"
-		switch fact.Status {
-		case "active", "running", "linked":
-			status = "có dịch vụ còn hiệu lực trên hệ thống"
-		case "not_verified":
-			status = "hiện chưa thể xác minh theo thông tin tài khoản"
-		case "unavailable":
-			status = "hiện chưa thể xác minh do công cụ kiểm tra chưa trả dữ liệu"
-		case "email_required":
-			status = "cần email tài khoản Cloudmini để xác minh"
-		case "expired":
-			status = "đã hết hạn theo kết quả kiểm tra hiện tại"
-		case "deleted":
-			status = "đã bị xoá theo kết quả kiểm tra hiện tại"
-		}
-		if live, checked := state.Cloudmini.LiveChecks[fact.IP]; checked {
-			if live {
-				status += ", kiểm tra kết nối hiện là LIVE"
-			} else {
-				status += ", kiểm tra kết nối hiện là DIE"
-			}
-		} else if state.Cloudmini.LiveAttempts[fact.IP] {
-			status += ", kiểm tra kết nối hiện là DIE"
-		}
-		facts = append(facts, label+" "+status)
-	}
+	facts := cloudminiGroupedFactClauses(state)
 	reason := "Theo yêu cầu hiện tại"
 	intent := strings.ToLower(cloudminiSupportIntentText(state))
 	switch {
@@ -167,6 +136,94 @@ func adminHandoffCustomerConfirmationWithFacts(state *RunState, ticket string) s
 	return "Dạ, " + incidentPrefix + "Em đã kiểm tra: " + strings.Join(facts, "; ") + ". " + reason +
 		", em đã chuyển bộ phận Admin/Kỹ thuật kiểm tra thêm. Mã theo dõi của anh là " +
 		strings.TrimSpace(ticket) + ". Bên em sẽ cập nhật lại anh khi có kết quả ạ."
+}
+
+// cloudminiFactStatusText maps a normalized service status to the canonical
+// customer-facing explanation shared by the deterministic replies.
+func cloudminiFactStatusText(status string) string {
+	switch status {
+	case "active", "running", "linked":
+		return "có dịch vụ còn hiệu lực trên hệ thống"
+	case "not_verified":
+		return "hiện chưa thể xác minh theo thông tin tài khoản"
+	case "unavailable":
+		return "hiện chưa thể xác minh do công cụ kiểm tra chưa trả dữ liệu"
+	case "email_required":
+		return "cần email tài khoản Cloudmini để xác minh"
+	case "expired":
+		return "đã hết hạn theo kết quả kiểm tra hiện tại"
+	case "deleted":
+		return "đã bị xoá theo kết quả kiểm tra hiện tại"
+	default:
+		return "chưa thể xác định trạng thái dịch vụ"
+	}
+}
+
+func cloudminiLiveCheckSuffix(state *RunState, ip string) string {
+	if state == nil {
+		return ""
+	}
+	if live, checked := state.Cloudmini.LiveChecks[ip]; checked {
+		if live {
+			return ", kiểm tra kết nối hiện là LIVE"
+		}
+		return ", kiểm tra kết nối hiện là DIE"
+	}
+	if state.Cloudmini.LiveAttempts[ip] {
+		return ", kiểm tra kết nối hiện là DIE"
+	}
+	return ""
+}
+
+// cloudminiGroupedFactClauses renders service facts as one clause per distinct
+// (status, live-check) outcome so a many-IP request does not repeat the same
+// explanation once per IP. Every IP stays inside its own clause, so the
+// per-IP response guards can still attribute the correct status to each
+// address and the reply remains verifiable end to end.
+func cloudminiGroupedFactClauses(state *RunState) []string {
+	if state == nil {
+		return nil
+	}
+	type factGroup struct {
+		statusText string
+		liveSuffix string
+		ips        []string
+		hasUnknown bool
+	}
+	order := make([]string, 0, len(state.Cloudmini.ServiceFacts))
+	groups := make(map[string]*factGroup, len(state.Cloudmini.ServiceFacts))
+	for _, fact := range state.Cloudmini.ServiceFacts {
+		ip := strings.TrimSpace(fact.IP)
+		liveSuffix := cloudminiLiveCheckSuffix(state, ip)
+		key := fact.Status + "|" + liveSuffix
+		group, exists := groups[key]
+		if !exists {
+			group = &factGroup{statusText: cloudminiFactStatusText(fact.Status), liveSuffix: liveSuffix}
+			groups[key] = group
+			order = append(order, key)
+		}
+		if ip == "" {
+			group.hasUnknown = true
+			continue
+		}
+		group.ips = append(group.ips, ip)
+	}
+	clauses := make([]string, 0, len(order))
+	for _, key := range order {
+		group := groups[key]
+		labels := make([]string, 0, len(group.ips)+1)
+		for _, ip := range group.ips {
+			labels = append(labels, "IP "+ip)
+		}
+		if group.hasUnknown {
+			labels = append(labels, "Dịch vụ")
+		}
+		if len(labels) == 0 {
+			continue
+		}
+		clauses = append(clauses, strings.Join(labels, ", ")+" "+group.statusText+group.liveSuffix)
+	}
+	return clauses
 }
 
 func adminHandoffTruthInstruction(state *RunState, mentionedTicket string) string {

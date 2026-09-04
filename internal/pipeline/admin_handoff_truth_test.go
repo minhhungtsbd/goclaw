@@ -188,3 +188,51 @@ func TestAdminHandoffConfirmationSeparatesActiveServiceFromDieConnection(t *test
 		t.Fatalf("confirmation conflates service validity with connectivity: %s", content)
 	}
 }
+
+func TestAdminHandoffConfirmationGroupsSameStatusIPsIntoOneClause(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "Admin chuyển những proxy trên sang dải khác giúp em, email customer@example.com"}, nil, "", nil)
+	ips := []string{"103.31.210.191", "103.31.210.14", "103.31.210.183", "103.31.210.19", "103.31.210.218"}
+	for _, ip := range ips {
+		state.Cloudmini.ServiceFacts = append(state.Cloudmini.ServiceFacts, CloudminiServiceFact{IP: ip, Status: "active", AccountEmailMatches: true})
+	}
+	state.Tool.AdminHandoffTicket = "Ticket-000342"
+
+	reply := adminHandoffCustomerConfirmationWithFacts(state, "Ticket-000342")
+	if strings.Count(reply, "có dịch vụ còn hiệu lực") != 1 {
+		t.Fatalf("same-status IPs must share one explanation clause: %q", reply)
+	}
+	for _, ip := range ips {
+		if !strings.Contains(reply, "IP "+ip) {
+			t.Fatalf("grouped reply missing %s: %q", ip, reply)
+		}
+	}
+	if !strings.Contains(reply, "Ticket-000342") {
+		t.Fatalf("grouped reply missing ticket: %q", reply)
+	}
+	if adminHandoffResponseViolatesGuard(state, reply) {
+		t.Fatalf("grouped reply must still satisfy the per-IP guard: %q", reply)
+	}
+}
+
+func TestAdminHandoffConfirmationGroupsMixedStatusesSeparately(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "Khôi phục các IP này, email customer@example.com"}, nil, "", nil)
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{
+		{IP: "37.221.109.121", Status: "active", AccountEmailMatches: true},
+		{IP: "37.221.109.122", Status: "active", AccountEmailMatches: true},
+		{IP: "37.221.109.123", Status: "not_verified"},
+	}
+	state.Tool.AdminHandoffTicket = "Ticket-000343"
+
+	reply := adminHandoffCustomerConfirmationWithFacts(state, "Ticket-000343")
+	if strings.Count(reply, "có dịch vụ còn hiệu lực") != 1 || strings.Count(reply, "chưa thể xác minh") != 1 {
+		t.Fatalf("each distinct status must appear exactly once: %q", reply)
+	}
+	for _, ip := range []string{"37.221.109.121", "37.221.109.122", "37.221.109.123"} {
+		if !strings.Contains(reply, "IP "+ip) {
+			t.Fatalf("grouped reply missing %s: %q", ip, reply)
+		}
+	}
+	if adminHandoffResponseViolatesGuard(state, reply) {
+		t.Fatalf("grouped mixed-status reply must satisfy the guard: %q", reply)
+	}
+}

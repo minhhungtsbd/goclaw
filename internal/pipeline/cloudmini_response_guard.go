@@ -373,12 +373,18 @@ func cloudminiNeedsConfiguredEmailAdminReview(state *RunState) bool {
 func cloudminiEmailMismatchReply(state *RunState, ticket string) string {
 	ips := cloudminiEmailMismatchIPs(state)
 	if state != nil && len(state.Cloudmini.ServiceFacts) > 1 {
-		facts := make([]string, 0, len(state.Cloudmini.ServiceFacts))
+		// Group facts by their mismatch-aware status so a many-IP request does
+		// not repeat the same explanation once per IP. Each IP remains inside
+		// its own clause so the per-IP guards can still attribute statuses.
+		type mismatchGroup struct {
+			statusText string
+			ips        []string
+			hasUnknown bool
+		}
+		order := make([]string, 0, len(state.Cloudmini.ServiceFacts))
+		groups := make(map[string]*mismatchGroup, len(state.Cloudmini.ServiceFacts))
 		for _, fact := range state.Cloudmini.ServiceFacts {
-			label := "Dịch vụ"
-			if strings.TrimSpace(fact.IP) != "" {
-				label = "IP " + strings.TrimSpace(fact.IP)
-			}
+			ip := strings.TrimSpace(fact.IP)
 			status := "chưa thể xác định trạng thái dịch vụ"
 			switch fact.Status {
 			case "active", "running", "linked":
@@ -398,7 +404,32 @@ func cloudminiEmailMismatchReply(state *RunState, ticket string) string {
 			case "deleted":
 				status = "đã bị xoá theo kết quả kiểm tra hiện tại"
 			}
-			facts = append(facts, label+" "+status)
+			group, exists := groups[status]
+			if !exists {
+				group = &mismatchGroup{statusText: status}
+				groups[status] = group
+				order = append(order, status)
+			}
+			if ip == "" {
+				group.hasUnknown = true
+				continue
+			}
+			group.ips = append(group.ips, ip)
+		}
+		facts := make([]string, 0, len(order))
+		for _, status := range order {
+			group := groups[status]
+			labels := make([]string, 0, len(group.ips)+1)
+			for _, ip := range group.ips {
+				labels = append(labels, "IP "+ip)
+			}
+			if group.hasUnknown {
+				labels = append(labels, "Dịch vụ")
+			}
+			if len(labels) == 0 {
+				continue
+			}
+			facts = append(facts, strings.Join(labels, ", ")+" "+group.statusText)
 		}
 		reply := "Dạ em kiểm tra: " + strings.Join(facts, "; ") + ". Vì vậy em chưa thể hỗ trợ khôi phục hoặc gia hạn các IP chưa xác minh ạ."
 		if strings.TrimSpace(ticket) != "" {
