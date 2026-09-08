@@ -12,7 +12,7 @@ import (
 
 func TestCloudminiServicePreflightRoutesConfiguredEmailDirectlyToAdmin(t *testing.T) {
 	for _, message := range []string{
-		"94.103.56.231 xem giúp em, priority@example.com",
+		"Proxy 94.103.56.231 đang lỗi kết nối, priority@example.com",
 		"Proxy ipv4-vt-04.resvn.net bị lỗi, priority@example.com",
 	} {
 		t.Run(message, func(t *testing.T) {
@@ -36,6 +36,114 @@ func TestCloudminiServicePreflightRoutesConfiguredEmailDirectlyToAdmin(t *testin
 			}
 			if !strings.Contains(state.Messages.System().Content, "CLOUDMINI EMAIL NGOẠI LỆ") {
 				t.Fatal("configured email handoff instruction was not injected")
+			}
+		})
+	}
+}
+
+func TestCloudminiServicePreflightAsksIntentBeforeAnyCheck(t *testing.T) {
+	tests := []struct {
+		name    string
+		message string
+		history []providers.Message
+	}{
+		{name: "bare IP", message: "94.103.56.231"},
+		{name: "generic single check", message: "94.103.56.231 kiểm tra giúp em"},
+		{name: "bare IP and email", message: "94.103.56.231 customer@example.com"},
+		{name: "email local-part is not intent", message: "94.103.56.231 huy.live.restore@example.com"},
+		{
+			name: "trace regression generic multi check does not inherit old recovery intent",
+			message: "50.114.164.36\n191.101.207.242\n144.225.145.73\n157.254.211.125\n" +
+				"102.165.13.254\n167.148.219.11\n154.16.151.20\n157.254.213.221\n" +
+				"check lại đống ip này cho m với nhé",
+			history: []providers.Message{
+				{Role: "user", Content: "Khôi phục 174.136.231.132 giúp mình"},
+				{Role: "assistant", Content: "Yêu cầu cũ đã được xử lý."},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			state := NewRunState(&RunInput{Message: tc.message}, nil, "", nil)
+			state.Messages.SetHistory(tc.history)
+			state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
+			toolCalled := false
+			stage := NewCloudminiServicePreflightStage(&PipelineDeps{ExecuteToolCall: func(context.Context, *RunState, providers.ToolCall) ([]providers.Message, error) {
+				toolCalled = true
+				return nil, nil
+			}})
+
+			if err := stage.Execute(context.Background(), state); err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if toolCalled || len(state.Messages.Pending()) != 0 || len(state.Cloudmini.ServiceFacts) != 0 {
+				t.Fatalf("ambiguous request performed a check: called=%v pending=%#v facts=%#v", toolCalled, state.Messages.Pending(), state.Cloudmini.ServiceFacts)
+			}
+			if !state.Cloudmini.IntentClarificationRequired {
+				t.Fatalf("ambiguous request did not require intent clarification: %#v", state.Cloudmini)
+			}
+		})
+	}
+}
+
+func TestCloudminiIntentClarificationContinuationReusesExactIPs(t *testing.T) {
+	previous := NewRunState(&RunInput{Message: "50.114.164.36\n191.101.207.242\ncheck lại giúp mình"}, nil, "", nil)
+	previous.Cloudmini.RequestIPs = []string{"50.114.164.36", "191.101.207.242"}
+	question := cloudminiIntentClarificationResponse(previous)
+
+	state := NewRunState(&RunInput{Message: "Mình cần khôi phục các IP này"}, nil, "", nil)
+	state.Messages.SetHistory([]providers.Message{
+		{Role: "user", Content: previous.Input.Message},
+		{Role: "assistant", Content: question},
+	})
+	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
+	var calls []providers.ToolCall
+	stage := NewCloudminiServicePreflightStage(&PipelineDeps{ExecuteToolCall: func(_ context.Context, _ *RunState, tc providers.ToolCall) ([]providers.Message, error) {
+		calls = append(calls, tc)
+		return []providers.Message{{Role: "tool", ToolCallID: tc.ID, Content: `{"services":[{"service_status":"deleted"}]}`}}, nil
+	}})
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if state.Cloudmini.IntentClarificationRequired {
+		t.Fatal("explicit clarification answer must continue the requested workflow")
+	}
+	if len(calls) != 2 || calls[0].Arguments["ip"] != "50.114.164.36" || calls[1].Arguments["ip"] != "191.101.207.242" {
+		t.Fatalf("continuation calls = %#v", calls)
+	}
+	if got := cloudminiSupportIntentText(state); !strings.Contains(got, "check lại") || !strings.Contains(got, "khôi phục") {
+		t.Fatalf("combined intent = %q", got)
+	}
+}
+
+func TestCloudminiIntentGateRejectsToolAndHandoff(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "94.103.56.231 kiểm tra giúp em"}, nil, "", nil)
+	state.Cloudmini.RequestIPs = []string{"94.103.56.231"}
+	state.Cloudmini.IntentClarificationRequired = true
+	for _, call := range []providers.ToolCall{
+		{Name: cloudminiProxyCheckToolName, Arguments: map[string]any{"ip": "94.103.56.231", "operation": "service_info"}},
+		{Name: "escalate_to_admin", Arguments: map[string]any{"identifiers": []any{"94.103.56.231"}}},
+	} {
+		if ok, reason := validateCloudminiCurrentRequestToolCall(state, call); ok || !strings.Contains(reason, "chưa nói rõ mục đích") {
+			t.Fatalf("ambiguous call accepted: %#v ok=%v reason=%q", call, ok, reason)
+		}
+	}
+}
+
+func TestCloudminiExplicitIntentDoesNotRequireClarification(t *testing.T) {
+	for _, message := range []string{
+		"Khôi phục 94.103.56.231 giúp mình",
+		"Proxy 94.103.56.231 đang lỗi kết nối",
+		"94.103.56.231 còn hạn không?",
+		"94.103.56.231 thuộc region nào?",
+		"Cấu hình ipv4-vt-04.resvn.net thế nào?",
+		"Check live 94.103.56.231",
+	} {
+		t.Run(message, func(t *testing.T) {
+			state := NewRunState(&RunInput{Message: message}, nil, "", nil)
+			if cloudminiRequestNeedsIntentClarification(state) {
+				t.Fatalf("explicit request was treated as ambiguous: %q", message)
 			}
 		})
 	}
@@ -814,7 +922,7 @@ func exceptionEmailTestContext(t *testing.T, agentKey, settingsJSON string) cont
 }
 
 func TestCloudminiExceptionEmailSkippedWithoutProxyCheckToolGrant(t *testing.T) {
-	state := NewRunState(&RunInput{Message: "94.103.56.231 xem giúp em, priority@example.com"}, nil, "", nil)
+	state := NewRunState(&RunInput{Message: "Proxy 94.103.56.231 đang lỗi kết nối, priority@example.com"}, nil, "", nil)
 	toolCalled := false
 	stage := NewCloudminiServicePreflightStage(&PipelineDeps{ExecuteToolCall: func(context.Context, *RunState, providers.ToolCall) ([]providers.Message, error) {
 		toolCalled = true
@@ -837,7 +945,7 @@ func TestCloudminiExceptionEmailSkippedWithoutProxyCheckToolGrant(t *testing.T) 
 }
 
 func TestCloudminiExceptionEmailSkippedForAgentOutsideAllowedKeys(t *testing.T) {
-	state := NewRunState(&RunInput{Message: "94.103.56.231 xem giúp em, priority@example.com"}, nil, "", nil)
+	state := NewRunState(&RunInput{Message: "Proxy 94.103.56.231 đang lỗi kết nối, priority@example.com"}, nil, "", nil)
 	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
 	toolCalled := false
 	stage := NewCloudminiServicePreflightStage(&PipelineDeps{ExecuteToolCall: func(_ context.Context, _ *RunState, tc providers.ToolCall) ([]providers.Message, error) {
@@ -861,7 +969,7 @@ func TestCloudminiExceptionEmailSkippedForAgentOutsideAllowedKeys(t *testing.T) 
 }
 
 func TestCloudminiExceptionEmailActivatesForAllowedAgent(t *testing.T) {
-	state := NewRunState(&RunInput{Message: "94.103.56.231 xem giúp em, priority@example.com"}, nil, "", nil)
+	state := NewRunState(&RunInput{Message: "Proxy 94.103.56.231 đang lỗi kết nối, priority@example.com"}, nil, "", nil)
 	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
 	toolCalled := false
 	stage := NewCloudminiServicePreflightStage(&PipelineDeps{ExecuteToolCall: func(context.Context, *RunState, providers.ToolCall) ([]providers.Message, error) {
@@ -881,9 +989,27 @@ func TestCloudminiExceptionEmailActivatesForAllowedAgent(t *testing.T) {
 	}
 }
 
+func TestCloudminiExceptionEmailStillWaitsForExplicitIntent(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "94.103.56.231 xem giúp em, priority@example.com"}, nil, "", nil)
+	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
+	toolCalled := false
+	stage := NewCloudminiServicePreflightStage(&PipelineDeps{ExecuteToolCall: func(context.Context, *RunState, providers.ToolCall) ([]providers.Message, error) {
+		toolCalled = true
+		return nil, nil
+	}})
+	ctx := exceptionEmailTestContext(t, "linh-nhi", `{"allowed_agent_keys":["linh-nhi"],"admin_handoff_emails":["priority@example.com"]}`)
+
+	if err := stage.Execute(ctx, state); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if toolCalled || state.Cloudmini.AdminHandoffRequired || !state.Cloudmini.IntentClarificationRequired {
+		t.Fatalf("ambiguous exception-email request bypassed intent gate: called=%v state=%#v", toolCalled, state.Cloudmini)
+	}
+}
+
 func TestCloudminiExceptionEmailEndToEndCreatesRealTicketReply(t *testing.T) {
 	ctx := exceptionEmailTestContext(t, "", `{"admin_handoff_emails":["priority@example.com"]}`)
-	state := NewRunState(&RunInput{RunID: "run-e2e-exception", Message: "94.103.56.231 xem giúp em, priority@example.com"}, nil, "", nil)
+	state := NewRunState(&RunInput{RunID: "run-e2e-exception", Message: "Proxy 94.103.56.231 đang lỗi kết nối, priority@example.com"}, nil, "", nil)
 	state.Messages.SetSystem(providers.Message{Role: "system", Content: "base"})
 	state.Think.Tools = []providers.ToolDefinition{
 		{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}},

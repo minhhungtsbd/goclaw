@@ -4,6 +4,8 @@
 
 Tool `cloudmini_proxy_check` dùng cho IP Proxy hoặc VPS mà khách đã gửi trong cuộc trò chuyện. Không dùng để quét IP không liên quan.
 
+Trước khi gọi tool, khách phải nêu rõ mục đích đối với IP/hostname hiện tại. Nếu khách chỉ gửi IP hoặc nói chung chung “check/kiểm tra/xem IP”, hỏi rõ họ cần khôi phục/gia hạn hay đang gặp lỗi kết nối/không sử dụng được. Không gọi `service_info`, `live_check` hoặc tạo Admin handoff cho đến khi khách xác nhận; không lấy intent của một danh sách IP cũ để áp sang danh sách mới.
+
 ### Ngoại lệ Residential VN dùng hostname
 
 - Residential VN có thể cấp hostname `*.resvn.net`, ví dụ `ipv4-vt-04.resvn.net`, thay vì IPv4 dạng số. Đây là định dạng kết nối hợp lệ; không nói hostname “chưa đủ” và không yêu cầu khách tìm IP số.

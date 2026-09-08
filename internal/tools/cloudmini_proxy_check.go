@@ -37,7 +37,7 @@ func NewCloudminiProxyCheckTool(secrets store.ConfigSecretsStore) *CloudminiProx
 func (t *CloudminiProxyCheckTool) Name() string { return "cloudmini_proxy_check" }
 
 func (t *CloudminiProxyCheckTool) Description() string {
-	return "Look up facts for one Cloudmini IP when the customer asks about that specific Proxy or VPS service. service_info returns service facts for the LLM to interpret with the Cloudmini support skill; it is not a general-IP lookup. Use account_email when the customer has supplied it. live_check is only for an active, email-verified Proxy connection fault after service_info in the same case; it requires account_email and must never be used for policy questions, VPS, deleted, expired, email_required, or not_verified services."
+	return "Look up facts for one Cloudmini IP only after the customer clearly states the purpose. A bare IP or a generic request such as check/kiểm tra/xem IP is ambiguous: first ask whether they need recovery/renewal or are reporting a connection fault; do not call this tool yet. service_info returns service facts for the LLM to interpret with the Cloudmini support skill; it is not a general-IP lookup. Use account_email when the customer has supplied it. live_check is only for an active, email-verified Proxy connection fault after service_info in the same case; it requires account_email and must never be used for policy questions, VPS, deleted, expired, email_required, or not_verified services."
 }
 
 func (t *CloudminiProxyCheckTool) Parameters() map[string]any {

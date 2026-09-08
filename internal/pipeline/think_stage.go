@@ -35,6 +35,16 @@ func (s *ThinkStage) Result() StageResult { return s.result }
 // Execute builds tools, calls LLM, handles truncation, sets flow control.
 func (s *ThinkStage) Execute(ctx context.Context, state *RunState) error {
 	s.result = Continue
+	if state != nil && state.Cloudmini.IntentClarificationRequired {
+		// This gate is deterministic: no provider call and no tool definition is
+		// needed to ask what the customer actually wants done with the IP(s).
+		state.Think.LastResponse = &providers.ChatResponse{
+			Content:      cloudminiIntentClarificationResponse(state),
+			FinishReason: "stop",
+		}
+		s.result = BreakLoop
+		return nil
+	}
 
 	// 1. Iteration budget nudges (70% / 90%)
 	s.maybeInjectNudge(state)

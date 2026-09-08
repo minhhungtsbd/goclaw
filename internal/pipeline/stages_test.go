@@ -338,6 +338,37 @@ func TestThinkStageForcesAdminHandoffForConfiguredEmail(t *testing.T) {
 	}
 }
 
+func TestThinkStageAsksCloudminiIntentWithoutLLMOrTools(t *testing.T) {
+	deps := &PipelineDeps{
+		Config: PipelineConfig{MaxIterations: 10, MaxTokens: 1000},
+		BuildFilteredTools: func(*RunState) ([]providers.ToolDefinition, error) {
+			t.Fatal("ambiguous Cloudmini intent must not build or offer tools")
+			return nil, nil
+		},
+		CallLLM: func(context.Context, *RunState, providers.ChatRequest) (*providers.ChatResponse, error) {
+			t.Fatal("ambiguous Cloudmini intent must not call the LLM")
+			return nil, nil
+		},
+	}
+	stage := NewThinkStage(deps)
+	state := defaultState()
+	state.Input.Message = "50.114.164.36\n191.101.207.242\ncheck lại giúp mình"
+	state.Cloudmini.RequestIPs = []string{"50.114.164.36", "191.101.207.242"}
+	state.Cloudmini.IntentClarificationRequired = true
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if stage.Result() != BreakLoop || state.Think.LastResponse == nil {
+		t.Fatalf("result=%v response=%#v", stage.Result(), state.Think.LastResponse)
+	}
+	content := strings.ToLower(state.Think.LastResponse.Content)
+	if !strings.Contains(content, "khôi phục hoặc gia hạn") || !strings.Contains(content, "lỗi kết nối") ||
+		!strings.Contains(content, "cho em biết rõ mục đích") {
+		t.Fatalf("clarification response = %q", state.Think.LastResponse.Content)
+	}
+}
+
 func TestThinkStageFailsClosedWhenEscalateToAdminUnavailable(t *testing.T) {
 	deps := &PipelineDeps{
 		Config: PipelineConfig{MaxIterations: 10, MaxTokens: 1000},

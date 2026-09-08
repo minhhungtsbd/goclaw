@@ -39,12 +39,11 @@ func NewCloudminiServicePreflightStage(deps *PipelineDeps) *CloudminiServicePref
 
 func (s *CloudminiServicePreflightStage) Name() string { return "cloudmini_service_preflight" }
 
-// cloudminiExceptionEmailPermitted reports whether the agent may use the
-// configured direct-Admin routing at all. Two layers are checked, mirroring the
-// tool's own permission path: cloudmini_proxy_check must survive policy
-// filtering (BuildFilteredTools), and the agent key must satisfy the settings'
-// allowed_agent_keys allowlist.
-func (s *CloudminiServicePreflightStage) cloudminiExceptionEmailPermitted(ctx context.Context, state *RunState) bool {
+// cloudminiAutomationPermitted reports whether Cloudmini-specific deterministic
+// routing may run for this agent. Two layers are checked, mirroring the tool's
+// own permission path: cloudmini_proxy_check must survive policy filtering
+// (BuildFilteredTools), and the agent key must satisfy allowed_agent_keys.
+func (s *CloudminiServicePreflightStage) cloudminiAutomationPermitted(ctx context.Context, state *RunState) bool {
 	if !hasCloudminiProxyCheckTool(state.Think.Tools) && s.deps.BuildFilteredTools != nil {
 		toolDefs, err := s.deps.BuildFilteredTools(state)
 		if err != nil {
@@ -75,11 +74,20 @@ func (s *CloudminiServicePreflightStage) Execute(ctx context.Context, state *Run
 	hosts := resolveCloudminiRequestHosts(state)
 	state.Cloudmini.RequestIPs = append([]string(nil), ips...)
 	state.Cloudmini.RequestHosts = append([]string(nil), hosts...)
+	if cloudminiRequestNeedsIntentClarification(state) {
+		if s.cloudminiAutomationPermitted(ctx, state) {
+			// A generic "check this IP" request does not authorize a service lookup,
+			// live test, recovery decision, or Admin handoff. Stop before every
+			// downstream Cloudmini branch and ask one deterministic question.
+			state.Cloudmini.IntentClarificationRequired = true
+		}
+		return nil
+	}
 	appendCloudminiOperationalSubnetNotice(state, ips)
 	appendCloudminiResidentialVNContext(state, hosts)
 	accountEmail := latestCloudminiCustomerEmailForState(state)
 	if accountEmail != "" && goclawtools.CloudminiAdminHandoffEmailConfigured(ctx, accountEmail) &&
-		s.cloudminiExceptionEmailPermitted(ctx, state) {
+		s.cloudminiAutomationPermitted(ctx, state) {
 		// The direct-Admin routing is part of the cloudmini_proxy_check scope.
 		// An agent without the tool grant (or outside allowed_agent_keys) must
 		// not be forced into a handoff it cannot legitimately perform, so the
@@ -341,7 +349,7 @@ func appendCloudminiResidentialVNContext(state *RunState, hosts []string) {
 func resolveCloudminiRequestIPs(state *RunState) []string {
 	current := cloudminiIPs(state.Input.Message)
 	if len(current) == 0 {
-		if !isCloudminiEmailContinuation(state) {
+		if !isCloudminiEmailContinuation(state) && !isCloudminiIntentContinuation(state) {
 			return nil
 		}
 		for i := len(state.Messages.History()) - 1; i >= 0; i-- {
@@ -392,7 +400,7 @@ func resolveCloudminiRequestHosts(state *RunState) []string {
 		return current
 	}
 	message := strings.ToLower(state.Input.Message)
-	if !isCloudminiEmailContinuation(state) && !containsAny(message,
+	if !isCloudminiEmailContinuation(state) && !isCloudminiIntentContinuation(state) && !containsAny(message,
 		"lỗi", "loi", "chậm", "cham", "lag", "treo", "không", "khong", "kko", "ko ",
 		"vẫn", "van", "giúp", "giup", "kiểm tra", "kiem tra", "thay proxy", "đổi proxy", "doi proxy") {
 		return nil
@@ -649,7 +657,7 @@ func isCloudminiServiceRequest(state *RunState) bool {
 		return false
 	}
 	message := strings.ToLower(state.Input.Message)
-	if isCloudminiEmailContinuation(state) {
+	if isCloudminiEmailContinuation(state) || isCloudminiIntentContinuation(state) {
 		return true
 	}
 	if len(resolveCloudminiRequestHosts(state)) > 0 {
@@ -658,11 +666,80 @@ func isCloudminiServiceRequest(state *RunState) bool {
 	if len(cloudminiIPs(message)) == 0 {
 		return false
 	}
-	return containsAny(message,
+	return cloudminiMessageIsOnlyServiceIdentifiers(message) || containsAny(message,
 		"cloudmini", "proxy", "vps", "kiểm tra", "kiem tra", "check", "xem", "tra cứu", "tra cuu", "lỗi", "loi", "error",
 		"không kết nối", "khong ket noi", "không hoạt động", "khong hoat dong", "timeout", "die",
 		"khôi phục", "khoi phuc", "phục hồi", "phuc hoi", "gia hạn", "gia han", "hủy", "huỷ", "huy",
 		"hoàn tiền", "hoan tien", "đổi ip", "doi ip", "thay ip")
+}
+
+func cloudminiMessageIsOnlyServiceIdentifiers(message string) bool {
+	remainder := cloudminiIPCandidate.ReplaceAllString(message, "")
+	remainder = cloudminiEmailCandidate.ReplaceAllString(remainder, "")
+	remainder = cloudminiHostnameCandidate.ReplaceAllString(remainder, "")
+	remainder = strings.Trim(remainder, " \t\r\n.,:;!?-_/()[]{}")
+	return remainder == ""
+}
+
+func cloudminiHasExplicitSupportIntent(message string) bool {
+	// Email local-parts often contain words such as huy/live/die. They are
+	// identifiers, not customer intent, so exclude them before classification.
+	message = strings.ToLower(cloudminiEmailCandidate.ReplaceAllString(message, " "))
+	return containsAny(message,
+		// Restore, renew, or reactivate.
+		"khôi phục", "khoi phuc", "phục hồi", "phuc hoi", "gia hạn", "gia han",
+		"kích hoạt lại", "kich hoat lai", "mở lại", "mo lai", "cấp lại", "cap lai",
+		// Connection health or a concrete usage fault.
+		"lỗi", "loi", "không kết nối", "khong ket noi", "không vào", "khong vao",
+		"không dùng được", "khong dung duoc", "không hoạt động", "khong hoat dong",
+		"không chạy", "khong chay", "timeout", "time out", "die", "check live", " live",
+		"hoạt động không", "hoat dong khong", "có hoạt động", "co hoat dong",
+		"dùng được không", "dung duoc khong", "kết nối được", "ket noi duoc",
+		"chậm", "cham", "lag", "treo", "không load", "khong load", "connection", "connect",
+		// Explicit service-information, policy, or configuration requests.
+		"còn hạn", "con han", "hết hạn", "het han", "ngày hết hạn", "ngay het han",
+		"expire", "gói nào", "goi nao", " plan", "status", "khu vực", "khu vuc", "region",
+		"vị trí", "vi tri", "location", "country", "city", "nhà mạng", "nha mang",
+		"trạng thái dịch vụ", "trang thai dich vu", "còn trong tài khoản", "con trong tai khoan",
+		"hủy", "huỷ", "huy ip", "huy proxy", "huy dich vu", "muon huy", "cần huy", "can huy", "cho huy",
+		"hoàn tiền", "hoan tien", "đổi ip", "doi ip", "thay ip",
+		"restore", "renew", "reactivate", "cancel", "refund", "replace",
+		"cấu hình", "cau hinh", "config", "authentication", "hostname", "port", "user/pass")
+}
+
+func cloudminiRequestNeedsIntentClarification(state *RunState) bool {
+	if state == nil || state.Input == nil || isCloudminiEmailContinuation(state) || isCloudminiIntentContinuation(state) {
+		return false
+	}
+	if len(cloudminiIPs(state.Input.Message)) == 0 && len(cloudminiResidentialVNHosts(state.Input.Message)) == 0 {
+		return false
+	}
+	return !cloudminiHasExplicitSupportIntent(state.Input.Message)
+}
+
+func isCloudminiIntentContinuation(state *RunState) bool {
+	if state == nil || state.Input == nil || len(cloudminiIPs(state.Input.Message)) > 0 ||
+		len(cloudminiResidentialVNHosts(state.Input.Message)) > 0 ||
+		!cloudminiHasExplicitSupportIntent(state.Input.Message) || len(strings.Fields(state.Input.Message)) > 16 {
+		return false
+	}
+	history := state.Messages.History()
+	for i := len(history) - 1; i >= 0; i-- {
+		if history[i].Role != "assistant" {
+			continue
+		}
+		if !strings.Contains(strings.ToLower(history[i].Content), "cho em biết rõ mục đích để em kiểm tra đúng quy trình") {
+			return false
+		}
+		for j := i - 1; j >= 0; j-- {
+			if history[j].Role != "user" {
+				continue
+			}
+			return len(cloudminiIPs(history[j].Content)) > 0 || len(cloudminiResidentialVNHosts(history[j].Content)) > 0
+		}
+		return false
+	}
+	return false
 }
 
 func isCloudminiEmailContinuation(state *RunState) bool {
@@ -696,7 +773,7 @@ func isCloudminiEmailContinuation(state *RunState) bool {
 }
 
 func cloudminiSupportIntentText(state *RunState) string {
-	if state == nil || state.Input == nil || !isCloudminiEmailContinuation(state) {
+	if state == nil || state.Input == nil || (!isCloudminiEmailContinuation(state) && !isCloudminiIntentContinuation(state)) {
 		if state == nil || state.Input == nil {
 			return ""
 		}
@@ -709,6 +786,22 @@ func cloudminiSupportIntentText(state *RunState) string {
 		}
 	}
 	return state.Input.Message
+}
+
+func cloudminiIntentClarificationResponse(state *RunState) string {
+	target := "IP này"
+	if state != nil {
+		total := len(state.Cloudmini.RequestIPs) + len(state.Cloudmini.RequestHosts)
+		switch {
+		case total > 1:
+			target = "danh sách IP/proxy này"
+		case len(state.Cloudmini.RequestHosts) > 0:
+			target = "proxy này"
+		}
+	}
+	return "Dạ, anh/chị cần em kiểm tra " + target +
+		" để khôi phục hoặc gia hạn, hay " + target +
+		" đang gặp lỗi kết nối/không sử dụng được ạ? Anh/chị cho em biết rõ mục đích để em kiểm tra đúng quy trình nhé."
 }
 
 func appendCloudminiResponseGuard(state *RunState, accountEmail string) {
@@ -843,6 +936,9 @@ func validateCloudminiCurrentRequestToolCall(state *RunState, tc providers.ToolC
 
 	switch strings.TrimSpace(tc.Name) {
 	case cloudminiProxyCheckToolName:
+		if state.Cloudmini.IntentClarificationRequired {
+			return false, "khách chưa nói rõ mục đích kiểm tra IP; phải hỏi khôi phục/gia hạn hay lỗi kết nối trước khi gọi Cloudmini tool"
+		}
 		if cloudminiNeedsConfiguredEmailAdminReview(state) {
 			return false, "email khách thuộc danh sách chuyển Admin trực tiếp; không gọi service_info hoặc live_check"
 		}
@@ -885,6 +981,9 @@ func validateCloudminiCurrentRequestToolCall(state *RunState, tc providers.ToolC
 			}
 		}
 	case "escalate_to_admin":
+		if state.Cloudmini.IntentClarificationRequired {
+			return false, "khách chưa nói rõ mục đích kiểm tra IP; không tạo Admin handoff trước khi làm rõ nhu cầu"
+		}
 		intent := strings.ToLower(cloudminiSupportIntentText(state))
 		configuredEmailReview := cloudminiNeedsConfiguredEmailAdminReview(state)
 		needsOperationalReview := containsAny(intent,
