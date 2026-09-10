@@ -158,6 +158,42 @@ func TestAdminHandoffRecoveryConfirmationDoesNotInventConnectionError(t *testing
 	if strings.Contains(content, "lỗi kết nối") {
 		t.Fatalf("recovery reply invented connection error: %s", content)
 	}
+	if !strings.Contains(content, "hiện tại không còn gắn với dịch vụ nào") ||
+		strings.Contains(content, "bị xóa") || strings.Contains(content, "bị xoá") {
+		t.Fatalf("deleted service must use the neutral customer wording: %s", content)
+	}
+}
+
+func TestCloudminiCustomerStatusWordingByServiceState(t *testing.T) {
+	tests := []struct {
+		status string
+		want   string
+	}{
+		{status: "active", want: "có dịch vụ còn hiệu lực trên hệ thống"},
+		{status: "expired", want: "đã hết hạn theo kết quả kiểm tra hiện tại"},
+		{status: "deleted", want: "hiện tại không còn gắn với dịch vụ nào"},
+		{status: "not_verified", want: "hiện chưa thể xác minh theo thông tin tài khoản"},
+		{status: "unavailable", want: "hiện chưa thể xác minh do công cụ kiểm tra chưa trả dữ liệu"},
+		{status: "unknown", want: "chưa thể xác định trạng thái dịch vụ"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.status, func(t *testing.T) {
+			if got := cloudminiFactStatusText(tc.status); got != tc.want {
+				t.Fatalf("cloudminiFactStatusText(%q) = %q, want %q", tc.status, got, tc.want)
+			}
+			state := NewRunState(&RunInput{Message: "Nhờ kiểm tra IP 31.57.203.88"}, nil, "", nil)
+			state.Cloudmini.ServiceFacts = []CloudminiServiceFact{{IP: "31.57.203.88", Status: tc.status}}
+			state.Tool.AdminHandoffTicket = "Ticket-000383"
+			state.Tool.AdminHandoffCustomerReplyRequired = true
+			reply := adminHandoffCustomerConfirmationWithFacts(state, state.Tool.AdminHandoffTicket)
+			if !strings.Contains(reply, tc.want) {
+				t.Fatalf("status %q reply = %q, want phrase %q", tc.status, reply, tc.want)
+			}
+			if adminHandoffResponseViolatesGuard(state, reply) {
+				t.Fatalf("status %q canonical reply failed guard: %q", tc.status, reply)
+			}
+		})
+	}
 }
 
 func TestAdminHandoffConfirmationIncludesLiveCheckResult(t *testing.T) {

@@ -214,7 +214,7 @@ func TestThinkStageDoesNotForceHandoffFromCloudminiFacts(t *testing.T) {
 	}
 }
 
-func TestThinkStageUsesDeterministicOperationalIncidentResponse(t *testing.T) {
+func TestThinkStageIncidentRetryFallsBackWithoutCopyingOperatorNotes(t *testing.T) {
 	const (
 		ip      = "185.255.115.190"
 		notice  = "Proxy thuộc dải này đã ngưng hoạt động hoàn toàn do thay đổi hạ tầng từ nhà cung cấp. Cloudmini có thể hỗ trợ thay Proxy mới miễn phí hoặc xem xét hoàn tiền; Admin sẽ xác nhận phương án cụ thể."
@@ -240,11 +240,11 @@ func TestThinkStageUsesDeterministicOperationalIncidentResponse(t *testing.T) {
 	if err := stage.Execute(context.Background(), state); err != nil {
 		t.Fatalf("Execute() error: %v", err)
 	}
-	if calls != 1 {
-		t.Fatalf("LLM calls = %d, want 1 deterministic correction without retry", calls)
+	if calls != 2 {
+		t.Fatalf("LLM calls = %d, want one bounded rewrite retry", calls)
 	}
 	got := state.Think.LastResponse.Content
-	for _, required := range []string{ip, "gói PrivateV4", "có dịch vụ còn hiệu lực", "đã xác minh đúng tài khoản", notice} {
+	for _, required := range []string{ip, "gói PrivateV4", "có dịch vụ còn hiệu lực", "đã xác minh đúng tài khoản"} {
 		if !strings.Contains(got, required) {
 			t.Fatalf("deterministic response missing %q: %q", required, got)
 		}
@@ -252,8 +252,8 @@ func TestThinkStageUsesDeterministicOperationalIncidentResponse(t *testing.T) {
 	if strings.Contains(strings.ToLower(got), "chưa thể xác minh") {
 		t.Fatalf("verified service degraded to an unverified fallback: %q", got)
 	}
-	if cloudminiResponseViolatesGuard(state, got) {
-		t.Fatalf("deterministic response must satisfy the response guard: %q", got)
+	if strings.Contains(got, notice) {
+		t.Fatalf("failed rewrite copied operator notes to customer: %q", got)
 	}
 }
 

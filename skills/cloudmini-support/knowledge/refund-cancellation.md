@@ -1,5 +1,7 @@
 # Chính sách đổi, hủy và hoàn tiền
 
+Ưu tiên thông báo vận hành đã match IP: nếu nội dung đã duyệt cho phép thay miễn phí hoặc xem xét hoàn tiền, áp dụng phương án đó thay cho phí đổi/hủy thông thường bên dưới. Sau khi xác minh IP/email và khách yêu cầu thực hiện, chuyển Admin nếu thông báo cho phép; không hứa đã thay/đã hoàn khi chưa có kết quả. Diễn đạt lại thông báo tự nhiên, giữ đúng ngày và điều kiện, kể cả thông báo sắp ngưng dịch vụ khi IP vẫn còn hiệu lực hoặc LIVE.
+
 ## Nguyên tắc bắt buộc
 
 Trước khi xử lý phải xác định:

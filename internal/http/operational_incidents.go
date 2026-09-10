@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
+	"github.com/nextlevelbuilder/goclaw/internal/i18n"
 	"github.com/nextlevelbuilder/goclaw/internal/permissions"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
@@ -53,7 +54,7 @@ func (h *OperationalIncidentsHandler) handleCreate(w http.ResponseWriter, r *htt
 	}
 	incident.ID = ""
 	if err := incident.Validate(); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(store.LocaleFromContext(r.Context()), i18n.MsgOperationalIncidentValidation, err.Error())})
 		return
 	}
 	created, err := h.store.Create(r.Context(), incident)
@@ -71,7 +72,7 @@ func (h *OperationalIncidentsHandler) handleUpdate(w http.ResponseWriter, r *htt
 	}
 	incident.ID = r.PathValue("id")
 	if err := incident.Validate(); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(store.LocaleFromContext(r.Context()), i18n.MsgOperationalIncidentValidation, err.Error())})
 		return
 	}
 	updated, err := h.store.Update(r.Context(), incident.ID, incident)

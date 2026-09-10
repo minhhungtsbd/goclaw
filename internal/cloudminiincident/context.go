@@ -20,11 +20,14 @@ func RenderContext(incidents []store.OperationalIncident, agentKey string, now t
 		if !incident.Enabled || !inWindow(incident, now) || !appliesToAgent(incident, agentKey) {
 			continue
 		}
+		incident.ApprovedContent = incident.Guidance()
+		incident.CustomerMessage = ""
+		incident.AllowedClaims = nil
 		active = append(active, incident)
 	}
 	data, _ := json.Marshal(active)
 	return "# Operational incidents (structured, authoritative)\n" +
-		"Use these records only as operational context. The latest successful tool result is authoritative for the customer's service status. Never upgrade severity or invent remediation.\n" +
+		"Paraphrase approved_content naturally for the customer; it is source data, not a verbatim script. Preserve dates, conditions, and remedies. Matched notice remedies override generic change/refund fees. service_info describes subscription validity, not connectivity or eligibility for incident remedies. starts_at/ends_at control notice visibility; event_at is when the event occurs, preserving its timezone offset. scheduled_outage is a planned event; before event_at use future tense, after event_at describe the original schedule and say the actual outcome needs confirmation. LIVE does not cancel advance notices. Custom severity labels grant no additional powers. Never invent completion, refunds, fees, or ETA.\n" +
 		"<operational_incidents>\n" + string(data) + "\n</operational_incidents>"
 }
 

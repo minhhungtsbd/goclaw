@@ -376,9 +376,9 @@ func sanitizeCloudminiProxyResponseWithSettings(operation, ip, accountEmail stri
 				// ownership check against the former service record.
 				items[i].AccountEmailMatches = nil
 				if isResStatic {
-					items[i].StatusNote = "IP đã bị xóa và không còn gắn với dịch vụ nào; khi khách yêu cầu khôi phục, KHÔNG đối chiếu email chủ sở hữu cũ." + classNote + " [QUY TẮC KHÔI PHỤC GÓI RESIDENTIAL STATIC]: BẮT BUỘC thông báo khách phí khôi phục IP cũ là 25.000đ/IP (nếu còn tài nguyên IP cũ) và YÊU CẦU KHÁCH NẠP ĐỦ SỐ DƯ TÀI KHOẢN CLOUDMINI = TỔNG (GIÁ CƯỚC PROXY + PHÍ KHÔI PHỤC 25.000đ/IP) để Admin tiến hành khôi phục thủ công. Email khách cung cấp là tài khoản nhận khôi phục."
+					items[i].StatusNote = "IP hiện tại không còn gắn với dịch vụ nào; khi khách yêu cầu khôi phục, KHÔNG đối chiếu email chủ sở hữu cũ." + classNote + " [QUY TẮC KHÔI PHỤC GÓI RESIDENTIAL STATIC]: BẮT BUỘC thông báo khách phí khôi phục IP cũ là 25.000đ/IP (nếu còn tài nguyên IP cũ) và YÊU CẦU KHÁCH NẠP ĐỦ SỐ DƯ TÀI KHOẢN CLOUDMINI = TỔNG (GIÁ CƯỚC PROXY + PHÍ KHÔI PHỤC 25.000đ/IP) để Admin tiến hành khôi phục thủ công. Email khách cung cấp là tài khoản nhận khôi phục."
 				} else {
-					items[i].StatusNote = "IP đã bị xóa và không còn gắn với dịch vụ nào; khi khách yêu cầu khôi phục, KHÔNG đối chiếu email chủ sở hữu cũ." + classNote + " Email khách cung cấp là tài khoản nhận khôi phục. Thông báo dịch vụ đã bị xóa/hết hạn và chuyển Admin kiểm tra khả năng khôi phục."
+					items[i].StatusNote = "IP hiện tại không còn gắn với dịch vụ nào; khi khách yêu cầu khôi phục, KHÔNG đối chiếu email chủ sở hữu cũ." + classNote + " Email khách cung cấp là tài khoản nhận khôi phục. Thông báo rằng IP hiện không còn gắn với dịch vụ nào và chuyển Admin kiểm tra khả năng khôi phục."
 				}
 				continue
 			}
@@ -483,7 +483,7 @@ type cloudminiLiveCheck struct {
 func (s *cloudminiServiceInfo) setServiceStatus() {
 	if s.Expire == nil {
 		s.ServiceStatus = "deleted"
-		s.StatusNote = "IP đã bị xóa và không còn gắn với dịch vụ nào."
+		s.StatusNote = "IP hiện tại không còn gắn với dịch vụ nào."
 		return
 	}
 	expiresAt, ok := parseCloudminiExpiry(*s.Expire)

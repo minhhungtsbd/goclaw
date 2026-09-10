@@ -1,12 +1,40 @@
 package http
 
 import (
+	"encoding/json"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
+
+func TestOperationalIncidentUnifiedFormContract(t *testing.T) {
+	body := `{"name":"FPT","service":"PrivateV4","cidrs":["103.161.96.0/24"],"severity":"scheduled_outage","starts_at":"2026-09-08T00:00:00+07:00","event_at":"2026-11-30T00:00:00+07:00","approved_content":"Thay proxy miễn phí hoặc xem xét hoàn tiền.","customer_message":"old text","allowed_claims":["old claim"],"enabled":true,"requires_live_check":false,"allows_admin_handoff":true}`
+	var incident store.OperationalIncident
+	r := httptest.NewRequest("POST", "/v1/cloudmini/operational-incidents", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	if err := decodeIncident(w, r, &incident); err != nil {
+		t.Fatal(err)
+	}
+	if err := incident.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if incident.CustomerMessage != "" || len(incident.AllowedClaims) != 0 {
+		t.Fatal("two sources of truth persisted")
+	}
+	encoded, err := json.Marshal(incident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got store.OperationalIncident
+	if err := json.Unmarshal(encoded, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.EventAt != "2026-11-30T00:00:00+07:00" || got.ApprovedContent != incident.ApprovedContent {
+		t.Fatalf("contract lost event or guidance: %s", encoded)
+	}
+}
 
 func TestDecodeOperationalIncidentRejectsUnknownAndTrailingJSON(t *testing.T) {
 	tests := []struct {

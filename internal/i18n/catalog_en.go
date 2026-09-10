@@ -2,6 +2,7 @@ package i18n
 
 func init() {
 	register(LocaleEN, map[string]string{
+		MsgOperationalIncidentValidation: "Invalid operational notice: %s",
 		// Common validation
 		MsgRequired:         "%s is required",
 		MsgInvalidID:        "invalid %s ID",

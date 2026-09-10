@@ -117,6 +117,10 @@ func TestCloudminiProxyCheckDeletedRestoreIgnoresFormerOwnerEmail(t *testing.T) 
 	if !strings.Contains(got, "KHÔNG đối chiếu email chủ sở hữu cũ") || !strings.Contains(got, "tài khoản nhận khôi phục") {
 		t.Fatalf("deleted restore instruction missing: %s", got)
 	}
+	if !strings.Contains(got, "IP hiện tại không còn gắn với dịch vụ nào") ||
+		strings.Contains(got, "IP đã bị xóa") || strings.Contains(got, "IP đã bị xoá") {
+		t.Fatalf("deleted service must expose neutral status wording: %s", got)
+	}
 }
 
 func TestCloudminiProxyCheckRedactsExpiryAndEmailWhenNoAccountEmail(t *testing.T) {

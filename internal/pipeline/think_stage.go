@@ -77,7 +77,10 @@ func (s *ThinkStage) Execute(ctx context.Context, state *RunState) error {
 	// Configured exception emails bypass automated Cloudmini checks. Restrict
 	// the very first model turn to a required Admin handoff so the request does
 	// not spend an extra text/retry turn before creating the real ticket.
-	if cloudminiNeedsConfiguredEmailAdminReview(state) && strings.TrimSpace(state.Tool.AdminHandoffTicket) == "" {
+	if (cloudminiNeedsConfiguredEmailAdminReview(state) || (cloudminiNeedsIncidentAdminReview(state) && adminHandoffTicketNeedingCheck(state, state.Input.Message) == "")) && strings.TrimSpace(state.Tool.AdminHandoffTicket) == "" {
+		if cloudminiNeedsIncidentAdminReview(state) {
+			req.Messages = append(append([]providers.Message(nil), req.Messages...), providers.Message{Role: "system", Content: cloudminiResponseGuardInstruction(state)})
+		}
 		if handoffTools := onlyToolDefinition(req.Tools, "escalate_to_admin"); len(handoffTools) > 0 {
 			req.Tools = handoffTools
 			req.Options = cloneRequestOptions(req.Options)
@@ -177,16 +180,8 @@ func (s *ThinkStage) Execute(ctx context.Context, state *RunState) error {
 		strings.TrimSpace(state.Tool.AdminHandoffTicket) != "" {
 		resp.Content = cloudminiEmailMismatchReply(state, state.Tool.AdminHandoffTicket)
 	}
-	// A matched operational incident is structured, operator-authored data. If
-	// the model omits or rewrites it unsafely, produce the grounded response
-	// locally instead of spending another LLM call and risking a generic fallback
-	// that contradicts service_info facts already verified in this run.
-	if len(resp.ToolCalls) == 0 && cloudminiResponseViolatesGuard(state, resp.Content) {
-		if deterministic, ok := cloudminiOperationalIncidentResponse(state); ok {
-			resp.Content = deterministic
-			resp.FinishReason = "stop"
-		}
-	}
+	// Incident guidance is paraphrased by the model. A failed guard gets one
+	// bounded retry below, never an automatic copy of the operator's raw notes.
 
 	// A model may cite a historical ticket only after the read-only status tool
 	// verifies it for this exact customer route. A pending historical ticket also
@@ -215,9 +210,9 @@ func (s *ThinkStage) Execute(ctx context.Context, state *RunState) error {
 			retryReq.Options[providers.OptToolChoice] = "required"
 		}
 		requiresCloudminiAdminReview := (cloudminiNeedsEmailMismatchAdminReview(state) ||
-			cloudminiNeedsConfiguredEmailAdminReview(state)) &&
+			cloudminiNeedsConfiguredEmailAdminReview(state) || cloudminiNeedsIncidentAdminReview(state)) &&
 			strings.TrimSpace(state.Tool.AdminHandoffTicket) == ""
-		if requiresCloudminiAdminReview {
+		if requiresCloudminiAdminReview && !requiresStatusCheck {
 			retryReq.Tools = onlyToolDefinition(req.Tools, "escalate_to_admin")
 			if len(retryReq.Tools) == 0 {
 				canRetry = false

@@ -41,6 +41,51 @@ func TestCloudminiServicePreflightRoutesConfiguredEmailDirectlyToAdmin(t *testin
 	}
 }
 
+func TestCloudminiServicePreflightRoutesProvisioningLanguageForConfiguredEmail(t *testing.T) {
+	const email = "sanchezburns85563@gmail.com"
+	tests := []struct {
+		name    string
+		message string
+		ip      string
+	}{
+		{
+			name:    "new purchase needs account assignment",
+			message: "147.124.196.163 texas\nEmail tài khoản: " + email + "\nTình trạng: Vừa mua, cần thêm vào tài khoản",
+			ip:      "147.124.196.163",
+		},
+		{
+			name:    "add request",
+			message: "154.16.32.224 Florida\nEmail tài khoản: " + email + "\nAdd giúp mình nha",
+			ip:      "154.16.32.224",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			state := NewRunState(&RunInput{Message: tc.message}, nil, "", nil)
+			state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
+			toolCalled := false
+			stage := NewCloudminiServicePreflightStage(&PipelineDeps{ExecuteToolCall: func(context.Context, *RunState, providers.ToolCall) ([]providers.Message, error) {
+				toolCalled = true
+				return nil, nil
+			}})
+			ctx := exceptionEmailTestContext(t, "linh-nhi-support-lead", `{"allowed_agent_keys":["linh-nhi-support-lead"],"admin_handoff_emails":["sanchezburns85563@gmail.com"]}`)
+
+			if err := stage.Execute(ctx, state); err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if toolCalled {
+				t.Fatal("configured email provisioning request must bypass service_info/live_check")
+			}
+			if !state.Cloudmini.AdminHandoffRequired || state.Cloudmini.IntentClarificationRequired {
+				t.Fatalf("provisioning request routing = %#v", state.Cloudmini)
+			}
+			if len(state.Cloudmini.RequestIPs) != 1 || state.Cloudmini.RequestIPs[0] != tc.ip {
+				t.Fatalf("request IP scope = %#v", state.Cloudmini.RequestIPs)
+			}
+		})
+	}
+}
+
 func TestCloudminiServicePreflightAsksIntentBeforeAnyCheck(t *testing.T) {
 	tests := []struct {
 		name    string

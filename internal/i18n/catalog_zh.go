@@ -2,6 +2,7 @@ package i18n
 
 func init() {
 	register(LocaleZH, map[string]string{
+		MsgOperationalIncidentValidation: "运营通知无效：%s",
 		// Common validation
 		MsgRequired:         "%s 是必填项",
 		MsgInvalidID:        "无效的 %s ID",

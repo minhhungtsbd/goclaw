@@ -35,6 +35,22 @@ func TestAdminHandoffReplyAcceptsActiveServiceWithDieConnection(t *testing.T) {
 	}
 }
 
+func TestDeletedServiceGuardRequiresNeutralDetachedWording(t *testing.T) {
+	state := &RunState{}
+	state.Tool.AdminHandoffCustomerReplyRequired = true
+	state.Tool.AdminHandoffTicket = "Ticket-000383"
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{{IP: "31.57.203.88", Status: "deleted"}}
+
+	neutral := "IP 31.57.203.88 hiện tại không còn gắn với dịch vụ nào. Đã chuyển Admin, Ticket-000383."
+	if adminHandoffResponseViolatesGuard(state, neutral) {
+		t.Fatalf("neutral detached wording should pass: %s", neutral)
+	}
+	old := "IP 31.57.203.88 đã bị xoá theo kết quả kiểm tra hiện tại. Đã chuyển Admin, Ticket-000383."
+	if !adminHandoffResponseViolatesGuard(state, old) {
+		t.Fatalf("old deletion claim should be rejected: %s", old)
+	}
+}
+
 func TestAdminHandoffReplyRequiresEveryIPStatus(t *testing.T) {
 	state := &RunState{}
 	state.Tool.AdminHandoffCustomerReplyRequired = true
@@ -105,8 +121,8 @@ func TestMatchedTemporaryIncidentMustBeExplainedWhenLiveCheckFails(t *testing.T)
 	if cloudminiResponseViolatesGuard(state, "Các dải Proxy PrivateV4 Michigan này đang gặp lỗi tạm thời. IP vẫn active nhưng live_check chưa trả kết quả.") {
 		t.Fatal("reply that explains the matched temporary incident should pass")
 	}
-	if !cloudminiResponseViolatesGuard(state, "Dải Michigan đang gặp lỗi tạm thời; IP vẫn active nhưng live_check chưa trả kết quả.") {
-		t.Fatal("a generic severity phrase must not replace the operator-authored customer_message")
+	if cloudminiResponseViolatesGuard(state, "Dải Michigan đang gặp lỗi tạm thời; IP vẫn active nhưng live_check chưa trả kết quả.") {
+		t.Fatal("a faithful natural paraphrase should be allowed")
 	}
 }
 

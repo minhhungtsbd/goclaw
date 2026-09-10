@@ -2,6 +2,7 @@ package i18n
 
 func init() {
 	register(LocaleVI, map[string]string{
+		MsgOperationalIncidentValidation: "Thông báo vận hành không hợp lệ: %s",
 		// Common validation
 		MsgRequired:         "%s là bắt buộc",
 		MsgInvalidID:        "ID %s không hợp lệ",

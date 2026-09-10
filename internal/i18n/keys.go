@@ -3,6 +3,7 @@ package i18n
 // Message keys for gateway/HTTP error messages.
 // Grouped by domain for easier maintenance.
 const (
+	MsgOperationalIncidentValidation = "operational_incidents.validation_failed"
 	// --- Common validation ---
 	MsgRequired         = "error.required"          // "%s is required"
 	MsgInvalidID        = "error.invalid_id"        // "invalid %s ID"
@@ -209,10 +210,10 @@ const (
 	MsgFailedToDeleteFile    = "error.failed_to_delete_file"    // "failed to delete"
 
 	// --- OAuth ---
-	MsgNoPendingOAuth        = "error.no_pending_oauth"        // "no pending OAuth flow"
-	MsgFailedToSaveToken     = "error.failed_to_save_token"    // "failed to save token"
-	MsgOAuthCallbackSuccess  = "oauth.callback_success"        // "Authorization successful. You may close this window."
-	MsgOAuthCallbackFailed   = "oauth.callback_failed"         // "Authorization failed. You may close this window."
+	MsgNoPendingOAuth       = "error.no_pending_oauth"     // "no pending OAuth flow"
+	MsgFailedToSaveToken    = "error.failed_to_save_token" // "failed to save token"
+	MsgOAuthCallbackSuccess = "oauth.callback_success"     // "Authorization successful. You may close this window."
+	MsgOAuthCallbackFailed  = "oauth.callback_failed"      // "Authorization failed. You may close this window."
 
 	// --- Intent Classify (channel-facing status replies) ---
 	MsgStatusWorking       = "status.working"         // "🔄 I'm working on your request... Please wait."

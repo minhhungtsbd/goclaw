@@ -456,8 +456,8 @@ func appendCloudminiOperationalSubnetNotice(state *RunState, ips []string) {
 				matchedIDs[incident.ID] = true
 				encoded, _ := json.Marshal(incident)
 				block := "\n\n[THÔNG BÁO VẬN HÀNH CÓ CẤU TRÚC - BẮT BUỘC ĐỐI CHIẾU]\n" +
-					"Chỉ dẫn: đây là context vận hành, không ghi đè kết quả tool mới nhất. " +
-					"Không nâng mức độ sự cố và không tự thêm phương án đổi/hoàn tiền.\n" +
+					"Diễn đạt approved_content tự nhiên, không đọc nguyên văn. service_info chỉ xác minh dịch vụ, không phủ định chính sách hỗ trợ của thông báo. " +
+					"Phương án được duyệt trong thông báo ưu tiên hơn phí đổi/hủy thông thường. Không nâng mức độ, đổi ngày, hoặc tự thêm cam kết. Với scheduled_outage: trước event_at nói sẽ ngưng; khi ngày dự kiến đã qua, nêu lịch dự kiến và cần xác nhận kết quả, không tự nói đã ngưng.\n" +
 					"<matched_operational_incident>" + string(encoded) + "</matched_operational_incident>"
 				system.Content += block
 			}
@@ -670,7 +670,15 @@ func isCloudminiServiceRequest(state *RunState) bool {
 		"cloudmini", "proxy", "vps", "kiểm tra", "kiem tra", "check", "xem", "tra cứu", "tra cuu", "lỗi", "loi", "error",
 		"không kết nối", "khong ket noi", "không hoạt động", "khong hoat dong", "timeout", "die",
 		"khôi phục", "khoi phuc", "phục hồi", "phuc hoi", "gia hạn", "gia han", "hủy", "huỷ", "huy",
-		"hoàn tiền", "hoan tien", "đổi ip", "doi ip", "thay ip")
+		"hoàn tiền", "hoan tien", "đổi ip", "doi ip", "thay ip",
+		// Provisioning/assignment requests are operational Cloudmini requests too.
+		// Without these phrases, an exception email could bypass the preflight
+		// completely and leave the model to invent an order-code workflow.
+		"thêm vào tài khoản", "them vao tai khoan", "thêm vào tk", "them vao tk",
+		"add giúp", "add giup", "add vào", "add vao", "add ip", "add proxy", "add trực tiếp", "add truc tiep",
+		"gán vào tài khoản", "gan vao tai khoan", "gán vào tk", "gan vao tk",
+		"vừa mua", "vua mua", "mới mua", "moi mua", "tạo ip", "tao ip",
+		"tạo proxy", "tao proxy", "cấp ip", "cap ip")
 }
 
 func cloudminiMessageIsOnlyServiceIdentifiers(message string) bool {
@@ -703,6 +711,12 @@ func cloudminiHasExplicitSupportIntent(message string) bool {
 		"trạng thái dịch vụ", "trang thai dich vu", "còn trong tài khoản", "con trong tai khoan",
 		"hủy", "huỷ", "huy ip", "huy proxy", "huy dich vu", "muon huy", "cần huy", "can huy", "cho huy",
 		"hoàn tiền", "hoan tien", "đổi ip", "doi ip", "thay ip",
+		// Add/provision an IP or Proxy to an account.
+		"thêm vào tài khoản", "them vao tai khoan", "thêm vào tk", "them vao tk",
+		"add giúp", "add giup", "add vào", "add vao", "add ip", "add proxy", "add trực tiếp", "add truc tiep",
+		"gán vào tài khoản", "gan vao tai khoan", "gán vào tk", "gan vao tk",
+		"vừa mua", "vua mua", "mới mua", "moi mua", "tạo ip", "tao ip",
+		"tạo proxy", "tao proxy", "cấp ip", "cap ip",
 		"restore", "renew", "reactivate", "cancel", "refund", "replace",
 		"cấu hình", "cau hinh", "config", "authentication", "hostname", "port", "user/pass")
 }
@@ -1022,7 +1036,7 @@ func validateCloudminiCurrentRequestToolCall(state *RunState, tc providers.ToolC
 		if blocked, reason := cloudminiHandoffNeedsMoreLiveTriage(state, referencedIPs, intent); blocked {
 			return false, reason
 		}
-		if requiresAllCloudminiIPs(state.Input.Message) {
+		if requiresAllCloudminiIPs(state.Input.Message) || cloudminiNeedsIncidentAdminReview(state) {
 			for _, ip := range currentIPs {
 				if !containsCloudminiString(referencedIPs, ip) {
 					return false, "Admin handoff cho yêu cầu nhiều IP phải chứa đầy đủ toàn bộ IP trong tin nhắn khách vừa gửi"
@@ -1081,6 +1095,56 @@ func cloudminiHandoffNeedsMoreLiveTriage(state *RunState, ips []string, intent s
 		}
 	}
 	return false, ""
+}
+
+// Incident remedies are scoped to the current request and verified account.
+// A policy question alone does not authorize a ticket. A mixed request with a
+// handoff prohibition is not automatically escalated as a single ticket.
+func cloudminiNeedsIncidentAdminReview(state *RunState) bool {
+	if state == nil || state.Input == nil || state.Cloudmini.EmailRequired || state.Cloudmini.EmailMismatch || state.Cloudmini.IntentClarificationRequired || len(state.Cloudmini.RequestIPs) == 0 {
+		return false
+	}
+	intent := strings.ToLower(cloudminiEmailCandidate.ReplaceAllString(cloudminiSupportIntentText(state), " "))
+	explicitRequest := containsAny(intent, "đổi giúp", "đổi ip giúp", "thay giúp", "hoàn giúp", "giúp mình", "giúp em", "giúp anh", "giúp tôi", "giúp m", "giúp với", "mình cần", "tôi cần", "mình muốn", "tôi muốn")
+	if !containsAny(intent, "đổi", "doi ip", "thay", "hoàn tiền", "hoan tien", "lỗi", "die", "không kết nối") ||
+		(!explicitRequest && containsAny(intent, "chính sách", "bao nhiêu", "có được", "được không", "có thể không")) {
+		return false
+	}
+	for _, status := range state.Tool.AdminHandoffStatuses {
+		if status.Status != "pending" {
+			continue
+		}
+		covered := true
+		for _, ip := range state.Cloudmini.RequestIPs {
+			if !containsCloudminiString(status.RelatedIPs, ip) {
+				covered = false
+				break
+			}
+		}
+		if covered {
+			return false
+		}
+	}
+	for _, ip := range state.Cloudmini.RequestIPs {
+		incident, ok := state.Cloudmini.IncidentsByIP[ip]
+		if !ok || !incident.AllowsAdminHandoff {
+			return false
+		}
+		if live, checked := state.Cloudmini.LiveChecks[ip]; checked && live && cloudminiLiveSupersedesIncident(incident) {
+			return false
+		}
+		verified := false
+		for _, fact := range state.Cloudmini.ServiceFacts {
+			if fact.IP == ip && fact.AccountEmailMatches {
+				verified = true
+				break
+			}
+		}
+		if !verified {
+			return false
+		}
+	}
+	return true
 }
 
 func cloudminiIncidentsAllowHandoff(state *RunState, ips []string) bool {

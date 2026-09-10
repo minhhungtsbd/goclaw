@@ -1,8 +1,13 @@
 package pipeline
 
 import (
+	"fmt"
+	"regexp"
 	"sort"
 	"strings"
+	"time"
+
+	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
 func cloudminiResponseViolatesGuard(state *RunState, content string) bool {
@@ -30,6 +35,9 @@ func cloudminiResponseViolatesGuard(state *RunState, content string) bool {
 	if cloudminiNeedsConfiguredEmailAdminReview(state) && strings.TrimSpace(state.Tool.AdminHandoffTicket) == "" {
 		// A response cannot replace the mandatory tool call. The customer may only
 		// be told that the request was transferred after a real ticket exists.
+		return true
+	}
+	if cloudminiNeedsIncidentAdminReview(state) && strings.TrimSpace(state.Tool.AdminHandoffTicket) == "" {
 		return true
 	}
 	if cloudminiNeedsEmailMismatchAdminReview(state) {
@@ -75,19 +83,18 @@ func cloudminiIncidentExplanationMissing(state *RunState, lower string) bool {
 		return false
 	}
 	for ip, incident := range state.Cloudmini.IncidentsByIP {
-		message := strings.TrimSpace(incident.CustomerMessage)
+		message := incident.Guidance()
 		if message == "" {
 			continue
 		}
 		// A current successful LIVE result supersedes the incident notice for
 		// this IP. A failed/unusable live attempt does not.
-		if live, checked := state.Cloudmini.LiveChecks[ip]; checked && live {
+		if live, checked := state.Cloudmini.LiveChecks[ip]; checked && live && cloudminiLiveSupersedesIncident(incident) {
 			continue
 		}
-		// customer_message is operator-authored data. Requiring it verbatim
-		// prevents the model from replacing a scoped notice with a vague or
-		// stronger claim that happens to contain the same severity words.
-		if !strings.Contains(lower, strings.ToLower(message)) {
+		// Allow natural wording, while retaining conservative checks for known
+		// remedy concepts. This is not a general semantic equivalence checker.
+		if cloudminiIncidentRemedyMissing(incident, lower) {
 			return true
 		}
 		// A service can remain active in billing/account data while its network
@@ -110,6 +117,22 @@ func cloudminiIncidentExplanationMissing(state *RunState, lower string) bool {
 			}
 		}
 		switch incident.Severity {
+		case "scheduled_outage":
+			if cloudminiScheduledNoticeMissingAt(incident, lower, time.Now()) {
+				return true
+			}
+		case "maintenance":
+			if !strings.Contains(lower, "bảo trì") {
+				return true
+			}
+		case "resolved":
+			if !containsAny(lower, "khôi phục", "khắc phục", "ổn định trở lại", "hoạt động trở lại") {
+				return true
+			}
+		case "notice", "custom":
+			if !containsAny(lower, "thông báo", "theo chính sách", "theo cập nhật") {
+				return true
+			}
 		case "temporary_issue":
 			if !containsAny(lower, "lỗi tạm thời", "loi tam thoi", "sự cố tạm thời", "su co tam thoi") {
 				return true
@@ -144,10 +167,10 @@ func hasCloudminiUnsupportedOutageClaim(state *RunState, lower string) bool {
 		if fact.Status == "active" || fact.Status == "running" {
 			activeServiceSeen = true
 			incident, matched := state.Cloudmini.IncidentsByIP[fact.IP]
-			if !matched || incident.Severity != "permanent_outage" {
+			if !matched || (incident.Severity != "permanent_outage" && incident.Severity != "scheduled_outage") {
 				return true
 			}
-			if live, checked := state.Cloudmini.LiveChecks[fact.IP]; checked && live {
+			if live, checked := state.Cloudmini.LiveChecks[fact.IP]; checked && live && cloudminiLiveSupersedesIncident(incident) {
 				return true
 			}
 		}
@@ -156,7 +179,7 @@ func hasCloudminiUnsupportedOutageClaim(state *RunState, lower string) bool {
 		return false
 	}
 	for _, incident := range state.Cloudmini.IncidentsByIP {
-		if incident.Severity != "permanent_outage" {
+		if incident.Severity != "permanent_outage" && incident.Severity != "scheduled_outage" {
 			return true
 		}
 	}
@@ -242,7 +265,8 @@ func cloudminiFactStatusExplained(content, status string) bool {
 	case "expired":
 		return containsAny(content, "hết hạn", "het han", "expired")
 	case "deleted":
-		return containsAny(content, "đã xoá", "đã xóa", "da xoa", "deleted")
+		return containsAny(content, "không còn gắn với dịch vụ", "khong con gan voi dich vu") &&
+			!containsAny(content, "đã xoá", "đã xóa", "bị xoá", "bị xóa", "da xoa", "deleted")
 	default:
 		return containsAny(content, "chưa xác định", "chua xac dinh", "chưa thể xác định", "chua the xac dinh")
 	}
@@ -264,8 +288,14 @@ func cloudminiSafeGuardResponse(state *RunState) string {
 	if cloudminiNeedsConfiguredEmailAdminReview(state) {
 		return "Dạ, yêu cầu này cần được Admin kiểm tra trực tiếp nhưng hiện em chưa tạo được mã Ticket nên chưa thể xác nhận đã chuyển ạ."
 	}
+	if cloudminiNeedsIncidentAdminReview(state) {
+		return "Dạ, " + strings.Join(cloudminiGroupedFactClauses(state), "; ") + ". Yêu cầu theo thông báo vận hành cần Admin kiểm tra, nhưng hiện em chưa tạo được Ticket nên chưa thể xác nhận đã chuyển ạ."
+	}
 	if state != nil && state.Cloudmini.EmailMismatch {
 		return "Dạ em chưa thể xác minh thông tin IP này theo dữ liệu hiện tại ạ."
+	}
+	if response, ok := cloudminiOperationalIncidentResponse(state); ok {
+		return response
 	}
 	if state != nil && len(state.Cloudmini.RequestHosts) > 0 {
 		return "Dạ, gói Residential VN này dùng hostname " + strings.Join(state.Cloudmini.RequestHosts, ", ") + " thay cho IP dạng số nên anh không cần tìm thêm IPv4. Anh dùng hostname ở trường Host/IP và port đúng trong cột Proxy Port; không gửi lại user/pass. Nếu kết nối vẫn chậm hoặc lỗi, bên em sẽ tiếp nhận xử lý theo hostname này ạ."
@@ -273,10 +303,8 @@ func cloudminiSafeGuardResponse(state *RunState) string {
 	return "Dạ, em chưa thể xác minh thông tin IP này ngay lúc này ạ."
 }
 
-// cloudminiOperationalIncidentResponse builds a deterministic customer reply
-// from service_info facts and operator-authored incident data. It is used when
-// the model omits or rewrites a matched incident incorrectly, so verified
-// service facts never degrade into the generic "cannot verify" fallback.
+// cloudminiOperationalIncidentResponse preserves verified service facts if the
+// model cannot phrase the notice safely. Raw operator notes are never delivered.
 func cloudminiOperationalIncidentResponse(state *RunState) (string, bool) {
 	if state == nil || state.Cloudmini.EmailRequired || state.Cloudmini.EmailMismatch ||
 		len(state.Cloudmini.ServiceFacts) == 0 {
@@ -311,7 +339,7 @@ func cloudminiOperationalIncidentResponse(state *RunState) (string, bool) {
 		case "expired":
 			status = "đã hết hạn theo kết quả kiểm tra hiện tại"
 		case "deleted":
-			status = "đã bị xoá theo kết quả kiểm tra hiện tại"
+			status = cloudminiFactStatusText(fact.Status)
 		}
 		if live, checked := state.Cloudmini.LiveChecks[fact.IP]; checked {
 			if live {
@@ -329,10 +357,13 @@ func cloudminiOperationalIncidentResponse(state *RunState) (string, bool) {
 	}
 
 	return "Dạ em đã kiểm tra: " + strings.Join(facts, "; ") + " ạ.\n\n" +
-		strings.Join(messages, "\n\n"), true
+		"IP thuộc phạm vi một thông báo vận hành. Em chưa thể xác nhận đầy đủ phương án hỗ trợ lúc này, nên cần Admin kiểm tra thêm trước khi hướng dẫn anh/chị thực hiện ạ.", true
 }
 
 func cloudminiResponseGuardInstruction(state *RunState) string {
+	if cloudminiNeedsIncidentAdminReview(state) && state.Tool.AdminHandoffTicket == "" {
+		return "Khách yêu cầu xử lý IP đã khớp thông báo vận hành và đã xác minh email. Bắt buộc gọi escalate_to_admin bằng đúng IP và email trước khi xác nhận chuyển. Không áp phí đổi/hủy thông thường thay cho phương án đã duyệt."
+	}
 	if state != nil && state.Tool.AdminHandoffCustomerReplyRequired && state.Tool.AdminHandoffTicket != "" {
 		instruction := "Chỉ gửi một response cuối cho khách, gộp xác nhận đã chuyển yêu cầu và mã Ticket " + state.Tool.AdminHandoffTicket + ". Không gửi thêm tin riêng và không gọi escalate_to_admin lần nữa."
 		if cloudminiHandoffNeedsServiceExplanation(state) {
@@ -354,6 +385,9 @@ func cloudminiResponseGuardInstruction(state *RunState) string {
 	}
 	if state != nil && len(state.Cloudmini.RequestHosts) > 0 {
 		return "Residential VN dùng hostname " + strings.Join(state.Cloudmini.RequestHosts, ", ") + "; không yêu cầu IP dạng số và không gọi cloudmini_proxy_check. Hỗ trợ cấu hình bằng hostname/Proxy Port. Nếu khách đang báo lỗi thực tế, chậm kéo dài hoặc yêu cầu thay proxy và email đã có, gọi escalate_to_admin ngay với đúng hostname và email, không kèm port:user:pass."
+	}
+	if messages := cloudminiRequiredIncidentMessages(state); len(messages) > 0 {
+		return "Diễn đạt tự nhiên, không sao chép nguyên văn. Truyền đạt đầy đủ nội dung đã duyệt sau, giữ đúng thời điểm, điều kiện, phương án hỗ trợ và trạng thái từng IP. Không thêm phí hoặc cam kết hoàn tất. Nội dung: " + strings.Join(messages, " | ")
 	}
 	return "Không suy đoán dữ liệu dịch vụ hoặc quyền sở hữu."
 }
@@ -402,7 +436,7 @@ func cloudminiEmailMismatchReply(state *RunState, ticket string) string {
 			case "expired":
 				status = "đã hết hạn theo kết quả kiểm tra hiện tại"
 			case "deleted":
-				status = "đã bị xoá theo kết quả kiểm tra hiện tại"
+				status = cloudminiFactStatusText(fact.Status)
 			}
 			group, exists := groups[status]
 			if !exists {
@@ -483,11 +517,11 @@ func cloudminiRequiredIncidentMessages(state *RunState) []string {
 	messages := make([]string, 0, len(state.Cloudmini.IncidentsByIP))
 	seen := make(map[string]struct{})
 	for ip, incident := range state.Cloudmini.IncidentsByIP {
-		message := strings.TrimSpace(incident.CustomerMessage)
+		message := incident.Guidance()
 		if message == "" {
 			continue
 		}
-		if live, checked := state.Cloudmini.LiveChecks[ip]; checked && live {
+		if live, checked := state.Cloudmini.LiveChecks[ip]; checked && live && cloudminiLiveSupersedesIncident(incident) {
 			continue
 		}
 		if _, exists := seen[message]; exists {
@@ -498,4 +532,48 @@ func cloudminiRequiredIncidentMessages(state *RunState) []string {
 	}
 	sort.Strings(messages)
 	return messages
+}
+
+func cloudminiLiveSupersedesIncident(incident store.OperationalIncident) bool {
+	return incident.Severity == "temporary_issue" || incident.Severity == "degraded" || incident.Severity == "permanent_outage"
+}
+
+func cloudminiIncidentRemedyMissing(incident store.OperationalIncident, reply string) bool {
+	guidance := strings.ToLower(incident.Guidance())
+	if containsAny(guidance, "miễn phí", "không tính phí") &&
+		(!containsAny(reply, "miễn phí", "không tính phí", "không mất phí") || cloudminiIncidentPrice.MatchString(reply)) {
+		return true
+	}
+	refund := containsAny(guidance, "hoàn tiền", "hoàn phần", "hoàn lại", "hoàn số", "hoàn phí")
+	if refund && !containsAny(reply, "hoàn tiền", "hoàn phần", "hoàn lại", "hoàn số", "hoàn phí") {
+		return true
+	}
+	if strings.Contains(guidance, "xem xét") && refund &&
+		!containsAny(reply, "xem xét", "kiểm tra", "cân nhắc", "xác nhận") {
+		return true
+	}
+	return false
+}
+
+var cloudminiIncidentPrice = regexp.MustCompile(`\b[1-9][0-9.,]*\s*(?:(?:đồng|vnđ|vnd|đ|k)(?:\s|$|[.,;:/!?])|/ip)`)
+
+func cloudminiScheduledNoticeMissingAt(incident store.OperationalIncident, reply string, now time.Time) bool {
+	when, err := time.Parse(time.RFC3339, incident.EventAt)
+	if err != nil {
+		return true
+	}
+	if !containsAny(reply, "ngưng", "ngừng", "dừng") || containsAny(reply, "đã ngưng", "đã ngừng", "đã dừng") {
+		return true
+	}
+	// Check the event date without demanding a verbatim sentence. Keep the
+	// offset in event_at so a local midnight is not shifted to yesterday.
+	day, month := when.Day(), int(when.Month())
+	if !containsAny(reply, when.Format("2006-01-02"), when.Format("02/01"), fmt.Sprintf("%d/%d", day, month), fmt.Sprintf("%d tháng %d", day, month), when.Format("02-01")) {
+		return true
+	}
+	if now.Before(when) {
+		return !containsAny(reply, "sẽ", "sắp", "dự kiến", "theo lịch")
+	}
+	// Passing the scheduled date is not proof that the network was shut down.
+	return !containsAny(reply, "dự kiến", "theo lịch") || !containsAny(reply, "xác nhận", "kiểm tra") || containsAny(reply, "sẽ ngưng", "sẽ ngừng", "sắp ngưng", "sắp ngừng")
 }

@@ -4,7 +4,10 @@ export interface OperationalIncident {
   service: string;
   region?: string;
   cidrs: string[];
-  severity: "temporary_issue" | "degraded" | "permanent_outage";
+  severity: "notice" | "maintenance" | "scheduled_outage" | "resolved" | "temporary_issue" | "degraded" | "permanent_outage" | "custom";
+  severity_label?: string;
+  approved_content?: string;
+  event_at?: string;
   starts_at?: string;
   ends_at?: string;
   enabled: boolean;

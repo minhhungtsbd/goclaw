@@ -24,7 +24,10 @@ type OperationalIncident struct {
 	Service            string   `json:"service"`
 	Region             string   `json:"region,omitempty"`
 	CIDRs              []string `json:"cidrs"`
-	Severity           string   `json:"severity"` // temporary_issue, degraded, permanent_outage
+	Severity           string   `json:"severity"` // Notice category; validated below, with SeverityLabel for custom.
+	SeverityLabel      string   `json:"severity_label,omitempty"`
+	EventAt            string   `json:"event_at,omitempty"` // event time, independent of notice visibility
+	ApprovedContent    string   `json:"approved_content,omitempty"`
 	StartsAt           string   `json:"starts_at,omitempty"`
 	EndsAt             string   `json:"ends_at,omitempty"`
 	Enabled            bool     `json:"enabled"`
@@ -52,6 +55,13 @@ func (i *OperationalIncident) Validate() error {
 	i.Service = strings.TrimSpace(i.Service)
 	i.Region = strings.TrimSpace(i.Region)
 	i.Severity = strings.TrimSpace(i.Severity)
+	i.SeverityLabel = strings.TrimSpace(i.SeverityLabel)
+	i.EventAt = strings.TrimSpace(i.EventAt)
+	i.ApprovedContent = strings.TrimSpace(i.ApprovedContent)
+	if i.ApprovedContent != "" {
+		i.CustomerMessage = ""
+		i.AllowedClaims = nil
+	}
 	i.StartsAt = strings.TrimSpace(i.StartsAt)
 	i.EndsAt = strings.TrimSpace(i.EndsAt)
 	i.CustomerMessage = strings.TrimSpace(i.CustomerMessage)
@@ -67,9 +77,26 @@ func (i *OperationalIncident) Validate() error {
 		return fmt.Errorf("service is required and must be at most 120 characters")
 	}
 	switch i.Severity {
-	case "temporary_issue", "degraded", "permanent_outage":
+	case "notice", "maintenance", "scheduled_outage", "resolved", "temporary_issue", "degraded", "permanent_outage", "custom":
 	default:
-		return fmt.Errorf("severity must be temporary_issue, degraded, or permanent_outage")
+		return fmt.Errorf("invalid incident severity")
+	}
+	if len(i.SeverityLabel) > 160 || (i.Severity == "custom" && i.SeverityLabel == "") {
+		return fmt.Errorf("custom severity requires a label of at most 160 characters")
+	}
+	if i.Severity != "custom" {
+		i.SeverityLabel = ""
+	}
+	if i.EventAt != "" {
+		if _, err := time.Parse(time.RFC3339, i.EventAt); err != nil {
+			return fmt.Errorf("event_at must be RFC3339")
+		}
+	}
+	if i.Severity == "scheduled_outage" && i.EventAt == "" {
+		return fmt.Errorf("scheduled_outage requires event_at")
+	}
+	if len(i.ApprovedContent) > 6000 {
+		return fmt.Errorf("approved_content must be at most 6000 characters")
 	}
 	if len(i.CIDRs) == 0 || len(i.CIDRs) > 100 {
 		return fmt.Errorf("at least one CIDR is required")
@@ -117,6 +144,9 @@ func (i *OperationalIncident) Validate() error {
 		}
 	}
 	for _, forbidden := range i.ForbiddenClaims {
+		if i.ApprovedContent != "" && strings.Contains(strings.ToLower(i.ApprovedContent), strings.ToLower(forbidden)) {
+			return fmt.Errorf("approved_content contains a forbidden claim")
+		}
 		if i.CustomerMessage != "" && strings.Contains(strings.ToLower(i.CustomerMessage), strings.ToLower(forbidden)) {
 			return fmt.Errorf("customer_message contains a forbidden claim")
 		}
@@ -126,6 +156,21 @@ func (i *OperationalIncident) Validate() error {
 		return fmt.Errorf("customer_message must be at most 1000 characters")
 	}
 	return nil
+}
+
+// Guidance is the single runtime source. Legacy fields remain readable for old
+// clients and existing rows; an explicitly supplied unified field supersedes them.
+func (i OperationalIncident) Guidance() string {
+	if content := strings.TrimSpace(i.ApprovedContent); content != "" {
+		return content
+	}
+	parts := []string{strings.TrimSpace(i.CustomerMessage)}
+	for _, claim := range i.AllowedClaims {
+		if claim = strings.TrimSpace(claim); claim != "" && !strings.Contains(i.CustomerMessage, claim) {
+			parts = append(parts, claim)
+		}
+	}
+	return strings.Join(uniqueNonEmpty(parts), "\n")
 }
 
 func uniqueNonEmpty(values []string) []string {

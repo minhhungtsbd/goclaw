@@ -131,7 +131,7 @@ func adminHandoffCustomerConfirmationWithFacts(state *RunState, ticket string) s
 	}
 	incidentPrefix := ""
 	if messages := cloudminiRequiredIncidentMessages(state); len(messages) > 0 {
-		incidentPrefix = "theo thông báo vận hành hiện tại: " + strings.Join(messages, " ") + " "
+		incidentPrefix = "IP thuộc phạm vi thông báo vận hành cần được đối chiếu phương án hỗ trợ. "
 	}
 	return "Dạ, " + incidentPrefix + "Em đã kiểm tra: " + strings.Join(facts, "; ") + ". " + reason +
 		", em đã chuyển bộ phận Admin/Kỹ thuật kiểm tra thêm. Mã theo dõi của anh là " +
@@ -153,7 +153,7 @@ func cloudminiFactStatusText(status string) string {
 	case "expired":
 		return "đã hết hạn theo kết quả kiểm tra hiện tại"
 	case "deleted":
-		return "đã bị xoá theo kết quả kiểm tra hiện tại"
+		return "hiện tại không còn gắn với dịch vụ nào"
 	default:
 		return "chưa thể xác định trạng thái dịch vụ"
 	}
