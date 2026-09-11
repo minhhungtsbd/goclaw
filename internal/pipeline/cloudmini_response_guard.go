@@ -315,49 +315,48 @@ func cloudminiOperationalIncidentResponse(state *RunState) (string, bool) {
 		return "", false
 	}
 
-	facts := make([]string, 0, len(state.Cloudmini.ServiceFacts))
-	for _, fact := range state.Cloudmini.ServiceFacts {
-		label := "Dịch vụ"
-		if ip := strings.TrimSpace(fact.IP); ip != "" {
-			label = "IP " + ip
-		}
-		if plan := strings.TrimSpace(fact.Plan); plan != "" {
-			label += " thuộc gói " + plan
-		}
-
-		status := "hiện chưa thể xác định trạng thái dịch vụ"
-		switch fact.Status {
-		case "active", "running", "linked":
-			status = "có dịch vụ còn hiệu lực trên hệ thống"
-			if fact.AccountEmailMatches {
-				status += " và đã xác minh đúng tài khoản"
-			}
-		case "not_verified":
-			status = "hiện chưa thể xác minh theo thông tin tài khoản"
-		case "unavailable":
-			status = "hiện chưa thể xác minh do công cụ kiểm tra chưa trả dữ liệu"
-		case "expired":
-			status = "đã hết hạn theo kết quả kiểm tra hiện tại"
-		case "deleted":
-			status = cloudminiFactStatusText(fact.Status)
-		}
-		if live, checked := state.Cloudmini.LiveChecks[fact.IP]; checked {
-			if live {
-				status += ", kiểm tra kết nối hiện là LIVE"
-			} else {
-				status += ", kiểm tra kết nối hiện là DIE"
-			}
-		} else if state.Cloudmini.LiveAttempts[fact.IP] {
-			status += ", kiểm tra kết nối hiện là DIE"
-		}
-		facts = append(facts, label+" "+status)
-	}
+	facts := cloudminiGroupedFactClauses(state)
 	if len(facts) == 0 {
 		return "", false
 	}
+	incidentScope := cloudminiOperationalIncidentScope(state)
 
 	return "Dạ em đã kiểm tra: " + strings.Join(facts, "; ") + " ạ.\n\n" +
-		"IP thuộc phạm vi một thông báo vận hành. Em chưa thể xác nhận đầy đủ phương án hỗ trợ lúc này, nên cần Admin kiểm tra thêm trước khi hướng dẫn anh/chị thực hiện ạ.", true
+		incidentScope + " Em chưa thể xác nhận đầy đủ phương án hỗ trợ lúc này, nên cần Admin kiểm tra thêm trước khi hướng dẫn anh/chị thực hiện ạ.", true
+}
+
+func cloudminiOperationalIncidentScope(state *RunState) string {
+	if state == nil {
+		return "IP thuộc phạm vi một thông báo vận hành."
+	}
+	seen := make(map[string]struct{}, len(state.Cloudmini.IncidentsByIP))
+	ips := make([]string, 0, len(state.Cloudmini.IncidentsByIP))
+	for _, fact := range state.Cloudmini.ServiceFacts {
+		ip := strings.TrimSpace(fact.IP)
+		incident, matched := state.Cloudmini.IncidentsByIP[ip]
+		if ip == "" || !matched || incident.Guidance() == "" {
+			continue
+		}
+		if live, checked := state.Cloudmini.LiveChecks[ip]; checked && live && cloudminiLiveSupersedesIncident(incident) {
+			continue
+		}
+		if _, exists := seen[ip]; exists {
+			continue
+		}
+		seen[ip] = struct{}{}
+		ips = append(ips, ip)
+	}
+	if len(ips) == 0 {
+		return "IP thuộc phạm vi một thông báo vận hành."
+	}
+	labels := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		labels = append(labels, "IP "+ip)
+	}
+	if len(labels) == 1 {
+		return labels[0] + " thuộc phạm vi một thông báo vận hành."
+	}
+	return "Trong đó " + strings.Join(labels, ", ") + " thuộc phạm vi một thông báo vận hành."
 }
 
 func cloudminiResponseGuardInstruction(state *RunState) string {

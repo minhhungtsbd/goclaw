@@ -319,6 +319,7 @@ func appendCloudminiRequestScope(state *RunState, ips []string) {
 	system.Content += "\n\n[PHẠM VI YÊU CẦU CLOUDMINI HIỆN TẠI]\n" +
 		"Chỉ xử lý các IP thuộc " + scopeSource + ": " + strings.Join(ips, ", ") + ".\n" +
 		"Không dùng, không kiểm tra lại và không đưa IP từ các danh sách cũ trong lịch sử vào phản hồi hoặc Admin handoff. " +
+		"Nếu nhiều IP có cùng gói, trạng thái dịch vụ, kết quả xác minh và live_check, liệt kê các IP đó trong cùng một mệnh đề rồi nêu kết quả chung đúng một lần; danh sách IP và kết quả phải ở cùng mệnh đề để có thể đối chiếu từng IP. " +
 		"Nếu cần chuyển Admin cho yêu cầu nhiều IP này, ticket phải chứa đúng toàn bộ các IP trên."
 	if state.Cloudmini.ScopeAmbiguous {
 		system.Content += " Khách nêu số lượng IP không khớp dữ liệu hiện có; phải hỏi lại danh sách, không tự suy đoán IP cũ."

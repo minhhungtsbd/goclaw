@@ -126,6 +126,58 @@ func TestMatchedTemporaryIncidentMustBeExplainedWhenLiveCheckFails(t *testing.T)
 	}
 }
 
+func TestOperationalIncidentFallbackGroupsTraceFactsOnce(t *testing.T) {
+	allIPs := []string{
+		"103.155.162.54", "103.155.163.69", "103.155.163.70",
+		"103.162.22.132", "103.155.162.19", "103.155.162.187",
+		"103.162.22.61", "103.155.163.8", "103.155.163.20",
+	}
+	affected := map[string]bool{
+		"103.155.162.54": true, "103.155.163.69": true, "103.155.163.70": true,
+		"103.155.162.19": true, "103.155.162.187": true,
+		"103.155.163.8": true, "103.155.163.20": true,
+	}
+	state := &RunState{}
+	state.Cloudmini.IncidentsByIP = make(map[string]store.OperationalIncident, len(affected))
+	for _, ip := range allIPs {
+		state.Cloudmini.ServiceFacts = append(state.Cloudmini.ServiceFacts, CloudminiServiceFact{
+			IP: ip, Plan: "PrivateV4", Status: "active", AccountEmailMatches: true,
+		})
+		if affected[ip] {
+			state.Cloudmini.IncidentsByIP[ip] = store.OperationalIncident{
+				Severity: "scheduled_outage", EventAt: "2026-11-30T00:00:00+07:00",
+				ApprovedContent: "Các dải dự kiến ngưng ngày 30/11; có thể hỗ trợ thay miễn phí hoặc xem xét hoàn tiền.",
+			}
+		}
+	}
+
+	reply, ok := cloudminiOperationalIncidentResponse(state)
+	if !ok {
+		t.Fatal("matched trace fixture did not produce incident fallback")
+	}
+	for _, shared := range []string{"thuộc gói PrivateV4", "có dịch vụ còn hiệu lực", "đã xác minh đúng tài khoản"} {
+		if count := strings.Count(reply, shared); count != 1 {
+			t.Fatalf("shared fact %q repeated %d times: %s", shared, count, reply)
+		}
+	}
+	for _, ip := range allIPs {
+		if !strings.Contains(reply, ip) {
+			t.Fatalf("fallback omitted IP %s: %s", ip, reply)
+		}
+	}
+	incidentClause := strings.SplitN(reply, "\n\n", 2)[1]
+	for ip := range affected {
+		if !strings.Contains(incidentClause, ip) {
+			t.Fatalf("incident scope omitted affected IP %s: %s", ip, incidentClause)
+		}
+	}
+	for _, unaffected := range []string{"103.162.22.132", "103.162.22.61"} {
+		if strings.Contains(incidentClause, unaffected) {
+			t.Fatalf("incident scope included unaffected IP %s: %s", unaffected, incidentClause)
+		}
+	}
+}
+
 func TestSuccessfulLiveCheckSupersedesMatchedTemporaryIncident(t *testing.T) {
 	state := &RunState{Cloudmini: CloudminiState{
 		LiveChecks: map[string]bool{"147.189.140.177": true},

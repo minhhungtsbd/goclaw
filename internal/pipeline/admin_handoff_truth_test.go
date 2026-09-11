@@ -250,6 +250,34 @@ func TestAdminHandoffConfirmationGroupsSameStatusIPsIntoOneClause(t *testing.T) 
 	}
 }
 
+func TestCloudminiGroupingKeepsDifferentFactsSeparate(t *testing.T) {
+	state := NewRunState(&RunInput{}, nil, "", nil)
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{
+		{IP: "192.0.2.1", Plan: "PrivateV4", Status: "active", AccountEmailMatches: true},
+		{IP: "192.0.2.2", Plan: "PrivateV4", Status: "active", AccountEmailMatches: true},
+		{IP: "192.0.2.3", Plan: "PrivateV4", Status: "active", AccountEmailMatches: true},
+		{IP: "192.0.2.4", Plan: "BudgetV4", Status: "active", AccountEmailMatches: true},
+		{IP: "192.0.2.5", Plan: "PrivateV4", Status: "active"},
+	}
+	state.Cloudmini.LiveChecks = map[string]bool{"192.0.2.1": true, "192.0.2.2": true, "192.0.2.3": false}
+	clauses := cloudminiGroupedFactClauses(state)
+	if len(clauses) != 4 {
+		t.Fatalf("distinct outcomes merged: %#v", clauses)
+	}
+	if !strings.Contains(clauses[0], "192.0.2.1, IP 192.0.2.2") || !strings.Contains(clauses[0], "LIVE") {
+		t.Fatalf("equal LIVE outcomes not grouped: %s", clauses[0])
+	}
+	if !strings.Contains(clauses[1], "DIE") || strings.Contains(clauses[1], "LIVE") {
+		t.Fatalf("DIE inherited LIVE: %s", clauses[1])
+	}
+	if !strings.Contains(clauses[2], "BudgetV4") || strings.Contains(clauses[2], "kiểm tra kết nối") {
+		t.Fatalf("different plan or unchecked connection merged: %s", clauses[2])
+	}
+	if strings.Contains(clauses[3], "đã xác minh") {
+		t.Fatalf("unverified fact inherited verification: %s", clauses[3])
+	}
+}
+
 func TestAdminHandoffConfirmationGroupsMixedStatusesSeparately(t *testing.T) {
 	state := NewRunState(&RunInput{Message: "Khôi phục các IP này, email customer@example.com"}, nil, "", nil)
 	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{

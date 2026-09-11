@@ -176,15 +176,16 @@ func cloudminiLiveCheckSuffix(state *RunState, ip string) string {
 }
 
 // cloudminiGroupedFactClauses renders service facts as one clause per distinct
-// (status, live-check) outcome so a many-IP request does not repeat the same
-// explanation once per IP. Every IP stays inside its own clause, so the
-// per-IP response guards can still attribute the correct status to each
-// address and the reply remains verifiable end to end.
+// customer-visible (plan, status, account verification, live-check) outcome so
+// a many-IP request does not repeat the same explanation once per IP. Every IP
+// stays inside its own clause, so per-IP guards can still attribute the shared
+// facts to each address and the reply remains verifiable end to end.
 func cloudminiGroupedFactClauses(state *RunState) []string {
 	if state == nil {
 		return nil
 	}
 	type factGroup struct {
+		plan       string
 		statusText string
 		liveSuffix string
 		ips        []string
@@ -194,11 +195,19 @@ func cloudminiGroupedFactClauses(state *RunState) []string {
 	groups := make(map[string]*factGroup, len(state.Cloudmini.ServiceFacts))
 	for _, fact := range state.Cloudmini.ServiceFacts {
 		ip := strings.TrimSpace(fact.IP)
+		plan := strings.TrimSpace(fact.Plan)
+		statusText := cloudminiFactStatusText(fact.Status)
+		if fact.AccountEmailMatches {
+			switch fact.Status {
+			case "active", "running", "linked":
+				statusText += " và đã xác minh đúng tài khoản"
+			}
+		}
 		liveSuffix := cloudminiLiveCheckSuffix(state, ip)
-		key := fact.Status + "|" + liveSuffix
+		key := strings.ToLower(plan) + "|" + statusText + "|" + liveSuffix
 		group, exists := groups[key]
 		if !exists {
-			group = &factGroup{statusText: cloudminiFactStatusText(fact.Status), liveSuffix: liveSuffix}
+			group = &factGroup{plan: plan, statusText: statusText, liveSuffix: liveSuffix}
 			groups[key] = group
 			order = append(order, key)
 		}
@@ -221,7 +230,11 @@ func cloudminiGroupedFactClauses(state *RunState) []string {
 		if len(labels) == 0 {
 			continue
 		}
-		clauses = append(clauses, strings.Join(labels, ", ")+" "+group.statusText+group.liveSuffix)
+		label := strings.Join(labels, ", ")
+		if group.plan != "" {
+			label += " thuộc gói " + group.plan
+		}
+		clauses = append(clauses, label+" "+group.statusText+group.liveSuffix)
 	}
 	return clauses
 }
