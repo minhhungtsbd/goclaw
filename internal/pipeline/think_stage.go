@@ -77,8 +77,9 @@ func (s *ThinkStage) Execute(ctx context.Context, state *RunState) error {
 	// Configured exception emails bypass automated Cloudmini checks. Restrict
 	// the very first model turn to a required Admin handoff so the request does
 	// not spend an extra text/retry turn before creating the real ticket.
-	if (cloudminiNeedsConfiguredEmailAdminReview(state) || (cloudminiNeedsIncidentAdminReview(state) && adminHandoffTicketNeedingCheck(state, state.Input.Message) == "")) && strings.TrimSpace(state.Tool.AdminHandoffTicket) == "" {
-		if cloudminiNeedsIncidentAdminReview(state) {
+	if (cloudminiNeedsConfiguredEmailAdminReview(state) || cloudminiNeedsCustomerApprovedAdminReview(state) ||
+		(cloudminiNeedsIncidentAdminReview(state) && adminHandoffTicketNeedingCheck(state, state.Input.Message) == "")) && strings.TrimSpace(state.Tool.AdminHandoffTicket) == "" {
+		if cloudminiNeedsIncidentAdminReview(state) || cloudminiNeedsCustomerApprovedAdminReview(state) {
 			req.Messages = append(append([]providers.Message(nil), req.Messages...), providers.Message{Role: "system", Content: cloudminiResponseGuardInstruction(state)})
 		}
 		if handoffTools := onlyToolDefinition(req.Tools, "escalate_to_admin"); len(handoffTools) > 0 {
@@ -210,7 +211,8 @@ func (s *ThinkStage) Execute(ctx context.Context, state *RunState) error {
 			retryReq.Options[providers.OptToolChoice] = "required"
 		}
 		requiresCloudminiAdminReview := (cloudminiNeedsEmailMismatchAdminReview(state) ||
-			cloudminiNeedsConfiguredEmailAdminReview(state) || cloudminiNeedsIncidentAdminReview(state)) &&
+			cloudminiNeedsConfiguredEmailAdminReview(state) || cloudminiNeedsIncidentAdminReview(state) ||
+			cloudminiNeedsCustomerApprovedAdminReview(state)) &&
 			strings.TrimSpace(state.Tool.AdminHandoffTicket) == ""
 		if requiresCloudminiAdminReview && !requiresStatusCheck {
 			retryReq.Tools = onlyToolDefinition(req.Tools, "escalate_to_admin")
@@ -243,6 +245,11 @@ func (s *ThinkStage) Execute(ctx context.Context, state *RunState) error {
 		if retryErr != nil || resp == nil || len(resp.ToolCalls) == 0 &&
 			(requiresStatusCheck || unsupportedAdminHandoffClaim(resp.Content, state) || cloudminiResponseViolatesGuard(state, resp.Content) || adminHandoffResponseViolatesGuard(state, resp.Content)) {
 			fallback := adminHandoffStatusFallback(state, mentionedTicket)
+			if mentionedTicket == "" && unsupportedAdminHandoffClaim(resp.Content, state) {
+				if offer, ok := cloudminiAdminHandoffOfferResponse(state); ok {
+					fallback = offer
+				}
+			}
 			if mentionedTicket == "" && (cloudminiGuardViolation || adminHandoffReplyViolation || (resp != nil && cloudminiResponseViolatesGuard(state, resp.Content)) || (resp != nil && adminHandoffResponseViolatesGuard(state, resp.Content))) {
 				fallback = cloudminiSafeGuardResponse(state)
 			}

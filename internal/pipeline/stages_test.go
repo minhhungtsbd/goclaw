@@ -161,6 +161,74 @@ func TestThinkStageBlocksRepeatedInventedAdminHandoffClaim(t *testing.T) {
 	}
 }
 
+func TestThinkStageOffersAdminReviewInsteadOfTicketFallbackForLiveProxy(t *testing.T) {
+	var calls int
+	deps := &PipelineDeps{
+		Config: PipelineConfig{MaxIterations: 10, MaxTokens: 1000},
+		CallLLM: func(_ context.Context, _ *RunState, _ providers.ChatRequest) (*providers.ChatResponse, error) {
+			calls++
+			return &providers.ChatResponse{Content: "Nếu vẫn lỗi em sẽ chuyển Kỹ thuật kiểm tra tiếp cho anh.", FinishReason: "stop"}, nil
+		},
+	}
+	stage := NewThinkStage(deps)
+	state := stateWithInput(&RunInput{SessionKey: "live-proxy", RunID: "live-proxy-run", Message: "Proxy 94.103.56.231 connection proxy timeout"})
+	state.Cloudmini.RequestIPs = []string{"94.103.56.231"}
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{{
+		IP: "94.103.56.231", Plan: "PrivateV4", PlanFamily: "private_v4", Status: "active", AccountEmailMatches: true,
+	}}
+	state.Cloudmini.LiveChecks = map[string]bool{"94.103.56.231": true}
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("LLM calls = %d, want safety retry", calls)
+	}
+	content := strings.ToLower(state.Think.LastResponse.Content)
+	if !strings.Contains(content, "có đồng ý để em chuyển") || !strings.Contains(content, "94.103.56.231") {
+		t.Fatalf("fallback did not offer a consent-based review: %q", state.Think.LastResponse.Content)
+	}
+	if strings.Contains(content, "chưa tạo yêu cầu admin mới") {
+		t.Fatalf("fallback leaked ticket-status wording into a support case: %q", state.Think.LastResponse.Content)
+	}
+}
+
+func TestThinkStageForcesCustomerApprovedCloudminiHandoff(t *testing.T) {
+	var calls int
+	handoffTool := providers.ToolDefinition{Function: &providers.ToolFunctionSchema{Name: "escalate_to_admin"}}
+	deps := &PipelineDeps{
+		Config: PipelineConfig{MaxIterations: 10, MaxTokens: 1000},
+		BuildFilteredTools: func(_ *RunState) ([]providers.ToolDefinition, error) {
+			return []providers.ToolDefinition{handoffTool}, nil
+		},
+		CallLLM: func(_ context.Context, _ *RunState, req providers.ChatRequest) (*providers.ChatResponse, error) {
+			calls++
+			if len(req.Tools) != 1 || req.Tools[0].Function.Name != "escalate_to_admin" || req.Options[providers.OptToolChoice] != "required" {
+				t.Fatalf("approved handoff was not forced: %#v", req)
+			}
+			return &providers.ChatResponse{FinishReason: "tool_calls", ToolCalls: []providers.ToolCall{{
+				ID: "approved-handoff", Name: "escalate_to_admin", Arguments: map[string]any{"identifiers": []any{"94.103.56.231", "customer@example.com"}},
+			}}}, nil
+		},
+	}
+	stage := NewThinkStage(deps)
+	state := stateWithInput(&RunInput{SessionKey: "approved-live-proxy", RunID: "approved-live-proxy-run", Message: "Đồng ý chuyển giúp em"})
+	state.Messages.SetHistory([]providers.Message{{Role: "user", Content: "Proxy 94.103.56.231 connection timeout, customer@example.com"}, {Role: "assistant", Content: "Anh/chị có đồng ý để em chuyển case này cho Admin/Kỹ thuật kiểm tra trực tiếp không ạ?"}})
+	state.Cloudmini.RequestIPs = []string{"94.103.56.231"}
+	state.Cloudmini.AdminHandoffConsent = true
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{{
+		IP: "94.103.56.231", Plan: "PrivateV4", PlanFamily: "private_v4", Status: "active", AccountEmailMatches: true,
+	}}
+	state.Cloudmini.LiveChecks = map[string]bool{"94.103.56.231": true}
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if calls != 1 || stage.Result() != Continue || len(state.Think.LastResponse.ToolCalls) != 1 || state.Think.LastResponse.ToolCalls[0].Name != "escalate_to_admin" {
+		t.Fatalf("calls=%d result=%v response=%#v", calls, stage.Result(), state.Think.LastResponse)
+	}
+}
+
 func TestThinkStageForcesStatusCheckBeforeHistoricalTicketClaim(t *testing.T) {
 	var calls int
 	statusTool := providers.ToolDefinition{Function: &providers.ToolFunctionSchema{Name: "admin_handoff_status"}}

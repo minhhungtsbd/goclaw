@@ -162,6 +162,78 @@ func TestCloudminiIntentClarificationContinuationReusesExactIPs(t *testing.T) {
 	}
 }
 
+func TestCloudminiAdminHandoffConsentContinuationRechecksAndPermitsHandoff(t *testing.T) {
+	state := NewRunState(&RunInput{RunID: "consent-run", Message: "Đồng ý, chuyển giúp em"}, nil, "", nil)
+	state.Messages.SetHistory([]providers.Message{
+		{Role: "user", Content: "Proxy 94.103.56.231 connection proxy timeout, customer@example.com"},
+		{Role: "assistant", Content: "Dạ, anh/chị có đồng ý để em chuyển case này cho Admin/Kỹ thuật kiểm tra trực tiếp không ạ?"},
+	})
+	state.Think.Tools = []providers.ToolDefinition{{Function: &providers.ToolFunctionSchema{Name: cloudminiProxyCheckToolName}}}
+	var calls []providers.ToolCall
+	stage := NewCloudminiServicePreflightStage(&PipelineDeps{ExecuteToolCall: func(_ context.Context, _ *RunState, tc providers.ToolCall) ([]providers.Message, error) {
+		calls = append(calls, tc)
+		if tc.Arguments["operation"] == "live_check" {
+			return []providers.Message{{Role: "tool", ToolCallID: tc.ID, Content: `{"live_check":{"ip":"94.103.56.231","live":true}}`}}, nil
+		}
+		return []providers.Message{{Role: "tool", ToolCallID: tc.ID, Content: `{"services":[{"ip":"94.103.56.231","plan":"PrivateV4","plan_family":"private_v4","service_status":"active","account_email_matches":true}]}`}}, nil
+	}})
+
+	if err := stage.Execute(context.Background(), state); err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	if !requiresCloudminiProxyLiveCheck(state, "94.103.56.231") {
+		t.Fatalf("consent continuation did not retain connection intent: %q facts=%#v", cloudminiSupportIntentText(state), state.Cloudmini.ServiceFacts)
+	}
+	if !state.Cloudmini.AdminHandoffConsent || !cloudminiNeedsCustomerApprovedAdminReview(state) {
+		t.Fatalf("customer consent was not recognized: %#v", state.Cloudmini)
+	}
+	if len(calls) != 2 || calls[0].Arguments["operation"] != "service_info" || calls[1].Arguments["operation"] != "live_check" {
+		t.Fatalf("consent continuation did not re-check the current service: %#v", calls)
+	}
+	handoff := providers.ToolCall{Name: "escalate_to_admin", Arguments: map[string]any{
+		"summary":     "Proxy 94.103.56.231 connection proxy timeout; service active, LIVE",
+		"identifiers": []any{"94.103.56.231", "customer@example.com"},
+	}}
+	if ok, reason := validateCloudminiCurrentRequestToolCall(state, handoff); !ok {
+		t.Fatalf("approved Admin handoff was rejected: %s", reason)
+	}
+}
+
+func TestCloudminiCustomerApprovedMultiIPHandoffRequiresFullScope(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "Đồng ý chuyển giúp em"}, nil, "", nil)
+	state.Messages.SetHistory([]providers.Message{
+		{Role: "user", Content: "Proxy 94.103.56.231 và 94.103.56.232 connection timeout, customer@example.com"},
+		{Role: "assistant", Content: "Anh/chị có đồng ý để em chuyển case này cho Admin/Kỹ thuật kiểm tra trực tiếp không ạ?"},
+	})
+	state.Cloudmini.RequestIPs = []string{"94.103.56.231", "94.103.56.232"}
+	state.Cloudmini.AdminHandoffConsent = true
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{
+		{IP: "94.103.56.231", Plan: "PrivateV4", PlanFamily: "private_v4", Status: "active", AccountEmailMatches: true},
+		{IP: "94.103.56.232", Plan: "PrivateV4", PlanFamily: "private_v4", Status: "active", AccountEmailMatches: true},
+	}
+	state.Cloudmini.LiveChecks = map[string]bool{"94.103.56.231": true, "94.103.56.232": true}
+	partial := providers.ToolCall{Name: "escalate_to_admin", Arguments: map[string]any{
+		"summary":     "Proxy 94.103.56.231 timeout; active, LIVE",
+		"identifiers": []any{"94.103.56.231", "customer@example.com"},
+	}}
+	if ok, reason := validateCloudminiCurrentRequestToolCall(state, partial); ok {
+		t.Fatal("customer-approved multi-IP handoff accepted an incomplete scope")
+	} else if !strings.Contains(reason, "đầy đủ") {
+		t.Fatalf("unexpected incomplete-scope reason: %q", reason)
+	}
+}
+
+func TestCloudminiAdminHandoffConsentRejectsUnrelatedOK(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "ok"}, nil, "", nil)
+	state.Messages.SetHistory([]providers.Message{
+		{Role: "user", Content: "Proxy 94.103.56.231 lỗi kết nối, customer@example.com"},
+		{Role: "assistant", Content: "Anh thử bật WARP rồi kiểm tra lại giúp em nhé."},
+	})
+	if isCloudminiAdminHandoffConsentContinuation(state) {
+		t.Fatal("unrelated OK was treated as consent to an Admin handoff")
+	}
+}
+
 func TestCloudminiIntentGateRejectsToolAndHandoff(t *testing.T) {
 	state := NewRunState(&RunInput{Message: "94.103.56.231 kiểm tra giúp em"}, nil, "", nil)
 	state.Cloudmini.RequestIPs = []string{"94.103.56.231"}

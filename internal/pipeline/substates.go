@@ -96,10 +96,14 @@ type CloudminiState struct {
 	EmailRequired               bool
 	EmailMismatch               bool
 	AdminHandoffRequired        bool
-	ServiceFacts                []CloudminiServiceFact
-	IncidentsByIP               map[string]store.OperationalIncident
-	LiveChecks                  map[string]bool
-	LiveAttempts                map[string]bool
+	// AdminHandoffConsent is set only when the customer explicitly accepts the
+	// immediately preceding offer for an Admin/Kỹ thuật review. It is scoped to
+	// this run; the offer itself remains in conversation history as evidence.
+	AdminHandoffConsent bool
+	ServiceFacts        []CloudminiServiceFact
+	IncidentsByIP       map[string]store.OperationalIncident
+	LiveChecks          map[string]bool
+	LiveAttempts        map[string]bool
 }
 
 type CloudminiServiceFact struct {

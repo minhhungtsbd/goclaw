@@ -360,6 +360,9 @@ func cloudminiOperationalIncidentScope(state *RunState) string {
 }
 
 func cloudminiResponseGuardInstruction(state *RunState) string {
+	if cloudminiNeedsCustomerApprovedAdminReview(state) && state.Tool.AdminHandoffTicket == "" {
+		return "Khách đã đồng ý chuyển case lỗi kết nối cho Admin/Kỹ thuật sau khi Proxy verified LIVE. Bắt buộc gọi escalate_to_admin bằng đúng IP và email Cloudmini, có tóm tắt lỗi, trạng thái dịch vụ và LIVE. Chỉ xác nhận chuyển sau khi tool trả Ticket thật."
+	}
 	if cloudminiNeedsIncidentAdminReview(state) && state.Tool.AdminHandoffTicket == "" {
 		return "Khách yêu cầu xử lý IP đã khớp thông báo vận hành và đã xác minh email. Bắt buộc gọi escalate_to_admin bằng đúng IP và email trước khi xác nhận chuyển. Không áp phí đổi/hủy thông thường thay cho phương án đã duyệt."
 	}

@@ -70,6 +70,7 @@ func (s *CloudminiServicePreflightStage) Execute(ctx context.Context, state *Run
 	if !isCloudminiServiceRequest(state) {
 		return nil
 	}
+	state.Cloudmini.AdminHandoffConsent = isCloudminiAdminHandoffConsentContinuation(state)
 	ips := resolveCloudminiRequestIPs(state)
 	hosts := resolveCloudminiRequestHosts(state)
 	state.Cloudmini.RequestIPs = append([]string(nil), ips...)
@@ -350,7 +351,7 @@ func appendCloudminiResidentialVNContext(state *RunState, hosts []string) {
 func resolveCloudminiRequestIPs(state *RunState) []string {
 	current := cloudminiIPs(state.Input.Message)
 	if len(current) == 0 {
-		if !isCloudminiEmailContinuation(state) && !isCloudminiIntentContinuation(state) {
+		if !isCloudminiRequestContinuation(state) {
 			return nil
 		}
 		for i := len(state.Messages.History()) - 1; i >= 0; i-- {
@@ -401,7 +402,7 @@ func resolveCloudminiRequestHosts(state *RunState) []string {
 		return current
 	}
 	message := strings.ToLower(state.Input.Message)
-	if !isCloudminiEmailContinuation(state) && !isCloudminiIntentContinuation(state) && !containsAny(message,
+	if !isCloudminiRequestContinuation(state) && !containsAny(message,
 		"lỗi", "loi", "chậm", "cham", "lag", "treo", "không", "khong", "kko", "ko ",
 		"vẫn", "van", "giúp", "giup", "kiểm tra", "kiem tra", "thay proxy", "đổi proxy", "doi proxy") {
 		return nil
@@ -476,7 +477,8 @@ func requiresCloudminiProxyLiveCheck(state *RunState, ip string) bool {
 	message := strings.ToLower(cloudminiSupportIntentText(state))
 	if containsAny(message,
 		"khôi phục", "khoi phuc", "phục hồi", "phuc hoi", "gia hạn", "gia han",
-		"hủy", "huỷ", "huy", "hoàn", "hoan", "đổi ip", "doi ip", "thay ip") {
+		"hủy", "huỷ", "hoàn", "hoan", "đổi ip", "doi ip", "thay ip") ||
+		cloudminiHasUnaccentedCancellationIntent(message) {
 		return false
 	}
 	if !containsAny(message, "lỗi", "loi", "không kết nối", "khong ket noi", "check live", "die", "error", "timeout", "không hoạt động", "khong hoat dong") ||
@@ -493,6 +495,13 @@ func requiresCloudminiProxyLiveCheck(state *RunState, ip string) bool {
 		}
 	}
 	return false
+}
+
+// Do not use a bare "huy" substring here: it is contained in "chuyển" and
+// previously stopped live_check for a customer who accepted an Admin-review
+// offer. Unaccented cancellation needs enough surrounding intent to be clear.
+func cloudminiHasUnaccentedCancellationIntent(message string) bool {
+	return containsAny(message, "huy ip", "huy proxy", "huy dich vu", "muon huy", "can huy", "cho huy")
 }
 
 func cloudminiIPInOutage(state *RunState, value string) bool {
@@ -658,7 +667,7 @@ func isCloudminiServiceRequest(state *RunState) bool {
 		return false
 	}
 	message := strings.ToLower(state.Input.Message)
-	if isCloudminiEmailContinuation(state) || isCloudminiIntentContinuation(state) {
+	if isCloudminiRequestContinuation(state) {
 		return true
 	}
 	if len(resolveCloudminiRequestHosts(state)) > 0 {
@@ -723,7 +732,7 @@ func cloudminiHasExplicitSupportIntent(message string) bool {
 }
 
 func cloudminiRequestNeedsIntentClarification(state *RunState) bool {
-	if state == nil || state.Input == nil || isCloudminiEmailContinuation(state) || isCloudminiIntentContinuation(state) {
+	if state == nil || state.Input == nil || isCloudminiRequestContinuation(state) {
 		return false
 	}
 	if len(cloudminiIPs(state.Input.Message)) == 0 && len(cloudminiResidentialVNHosts(state.Input.Message)) == 0 {
@@ -787,8 +796,51 @@ func isCloudminiEmailContinuation(state *RunState) bool {
 	return false
 }
 
+// isCloudminiAdminHandoffConsentContinuation accepts a compact affirmative
+// reply only when it directly follows an assistant offer to transfer this
+// Cloudmini case. This prevents an unrelated "ok" from creating a ticket.
+func isCloudminiAdminHandoffConsentContinuation(state *RunState) bool {
+	if state == nil || state.Input == nil || !cloudminiAdminHandoffConsentText(state.Input.Message) {
+		return false
+	}
+	for index := len(state.Messages.History()) - 1; index >= 0; index-- {
+		message := state.Messages.History()[index]
+		switch message.Role {
+		case "assistant":
+			return cloudminiAdminHandoffOfferText(message.Content)
+		case "user":
+			// The customer sent another message after the offer, so the current
+			// affirmative is no longer an unambiguous acceptance of that offer.
+			return false
+		}
+	}
+	return false
+}
+
+func isCloudminiRequestContinuation(state *RunState) bool {
+	return isCloudminiEmailContinuation(state) || isCloudminiIntentContinuation(state) ||
+		isCloudminiAdminHandoffConsentContinuation(state)
+}
+
+func cloudminiAdminHandoffOfferText(content string) bool {
+	lower := strings.ToLower(content)
+	if !containsAny(lower, "admin", "kỹ thuật", "ky thuat") || !strings.Contains(lower, "chuyển") {
+		return false
+	}
+	return containsAny(lower, "có đồng ý", "co dong y", "có muốn", "co muon")
+}
+
+func cloudminiAdminHandoffConsentText(content string) bool {
+	lower := strings.ToLower(strings.TrimSpace(content))
+	if containsAny(lower, "không đồng ý", "khong dong y", "không muốn", "khong muon", "chưa", "chua") {
+		return false
+	}
+	return containsAny(lower, "đồng ý", "dong y", "chuyển giúp", "chuyen giup", "nhờ chuyển", "nho chuyen",
+		"ok", "okay", "được", "duoc")
+}
+
 func cloudminiSupportIntentText(state *RunState) string {
-	if state == nil || state.Input == nil || (!isCloudminiEmailContinuation(state) && !isCloudminiIntentContinuation(state)) {
+	if state == nil || state.Input == nil || !isCloudminiRequestContinuation(state) {
 		if state == nil || state.Input == nil {
 			return ""
 		}
@@ -801,6 +853,34 @@ func cloudminiSupportIntentText(state *RunState) string {
 		}
 	}
 	return state.Input.Message
+}
+
+// cloudminiNeedsCustomerApprovedAdminReview turns an explicit acceptance into
+// a required handoff only for a verified Proxy connection case that has already
+// completed LIVE triage. Mandatory exception-email/incident routes keep their
+// own rules and do not depend on customer consent.
+func cloudminiNeedsCustomerApprovedAdminReview(state *RunState) bool {
+	if state == nil || !state.Cloudmini.AdminHandoffConsent || state.Cloudmini.EmailRequired ||
+		state.Cloudmini.EmailMismatch || len(state.Cloudmini.RequestIPs) == 0 ||
+		cloudminiIncidentBlocksHandoff(state, state.Cloudmini.RequestIPs) ||
+		!containsAny(strings.ToLower(cloudminiSupportIntentText(state)), "lỗi", "loi", "không kết nối", "khong ket noi", "timeout", "die", "error") {
+		return false
+	}
+	for _, ip := range state.Cloudmini.RequestIPs {
+		matched := false
+		for _, fact := range state.Cloudmini.ServiceFacts {
+			if fact.IP != ip {
+				continue
+			}
+			matched = fact.Status == "active" && fact.AccountEmailMatches && fact.PlanFamily != "" && !strings.EqualFold(fact.PlanFamily, "vps")
+			break
+		}
+		live, checked := state.Cloudmini.LiveChecks[ip]
+		if !matched || !checked || !live {
+			return false
+		}
+	}
+	return true
 }
 
 func cloudminiIntentClarificationResponse(state *RunState) string {
@@ -838,6 +918,10 @@ func appendCloudminiResponseGuard(state *RunState, accountEmail string) {
 	if state.Cloudmini.AdminHandoffRequired && !strings.Contains(system.Content, "[CLOUDMINI EMAIL NGOẠI LỆ - BẮT BUỘC]") {
 		system.Content += "\n\n[CLOUDMINI EMAIL NGOẠI LỆ - BẮT BUỘC]\n" +
 			"Email khách đã cung cấp thuộc danh sách chuyển Admin trực tiếp. Không gọi live_check và không tự xử lý yêu cầu. Bắt buộc gọi escalate_to_admin với đúng IP/hostname và đúng email khách đã cung cấp. Chỉ xác nhận đã chuyển sau khi tool thành công và phải kèm mã Ticket thật."
+	}
+	if cloudminiNeedsCustomerApprovedAdminReview(state) && !strings.Contains(system.Content, "[CLOUDMINI KHÁCH ĐỒNG Ý CHUYỂN ADMIN - BẮT BUỘC]") {
+		system.Content += "\n\n[CLOUDMINI KHÁCH ĐỒNG Ý CHUYỂN ADMIN - BẮT BUỘC]\n" +
+			"Khách vừa đồng ý đề nghị chuyển case lỗi kết nối này cho Admin/Kỹ thuật. Bắt buộc gọi escalate_to_admin với đúng IP và email Cloudmini đã xác minh; nêu lỗi khách báo, trạng thái dịch vụ và kết quả LIVE trong tóm tắt. Chỉ xác nhận đã chuyển sau khi tool thành công và phải kèm mã Ticket thật."
 	}
 	state.Messages.SetSystem(system)
 }
@@ -1037,7 +1121,7 @@ func validateCloudminiCurrentRequestToolCall(state *RunState, tc providers.ToolC
 		if blocked, reason := cloudminiHandoffNeedsMoreLiveTriage(state, referencedIPs, intent); blocked {
 			return false, reason
 		}
-		if requiresAllCloudminiIPs(state.Input.Message) || cloudminiNeedsIncidentAdminReview(state) {
+		if requiresAllCloudminiIPs(state.Input.Message) || cloudminiNeedsIncidentAdminReview(state) || cloudminiNeedsCustomerApprovedAdminReview(state) {
 			for _, ip := range currentIPs {
 				if !containsCloudminiString(referencedIPs, ip) {
 					return false, "Admin handoff cho yêu cầu nhiều IP phải chứa đầy đủ toàn bộ IP trong tin nhắn khách vừa gửi"
@@ -1072,6 +1156,7 @@ func validateCloudminiCurrentRequestToolCall(state *RunState, tc providers.ToolC
 
 func cloudminiHandoffNeedsMoreLiveTriage(state *RunState, ips []string, intent string) (bool, string) {
 	if state == nil || cloudminiNeedsConfiguredEmailAdminReview(state) || cloudminiIncidentsAllowHandoff(state, ips) ||
+		cloudminiNeedsCustomerApprovedAdminReview(state) ||
 		!containsAny(intent, "lỗi", "loi", "error", "không kết nối", "khong ket noi", "die", "timeout") ||
 		containsAny(intent, "đã thử", "da thu", "warp", "4g", "5g", "mạng khác", "mang khac", "restart", "khởi động", "khoi dong", "ứng dụng khác", "ung dung khac", "xóa cache", "xoa cache") {
 		return false, ""

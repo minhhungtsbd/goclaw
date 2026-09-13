@@ -27,6 +27,28 @@ func TestUnsupportedAdminHandoffClaimRejectsLegacyCMHWithoutTool(t *testing.T) {
 	}
 }
 
+func TestCloudminiAdminHandoffOfferFallbackKeepsVerifiedFacts(t *testing.T) {
+	state := NewRunState(&RunInput{Message: "Proxy 94.103.56.231 connection proxy timeout"}, nil, "", nil)
+	state.Cloudmini.RequestIPs = []string{"94.103.56.231"}
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{{
+		IP: "94.103.56.231", Plan: "PrivateV4", PlanFamily: "private_v4", Status: "active", AccountEmailMatches: true,
+	}}
+	state.Cloudmini.LiveChecks = map[string]bool{"94.103.56.231": true}
+
+	reply, ok := cloudminiAdminHandoffOfferResponse(state)
+	if !ok {
+		t.Fatal("LIVE connection case did not receive an Admin-review offer")
+	}
+	for _, required := range []string{"94.103.56.231", "còn hiệu lực", "LIVE", "có đồng ý để em chuyển"} {
+		if !strings.Contains(strings.ToLower(reply), strings.ToLower(required)) {
+			t.Fatalf("offer missing %q: %q", required, reply)
+		}
+	}
+	if strings.Contains(strings.ToLower(reply), "đã chuyển") || strings.Contains(reply, "Ticket-") {
+		t.Fatalf("offer falsely confirmed a handoff: %q", reply)
+	}
+}
+
 func TestRecordAdminHandoffResultKeepsPendingReplyAcrossMergedRetry(t *testing.T) {
 	state := NewRunState(&RunInput{}, nil, "", nil)
 	call := providers.ToolCall{Name: "escalate_to_admin"}

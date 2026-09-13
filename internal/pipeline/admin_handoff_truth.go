@@ -263,9 +263,38 @@ func adminHandoffTruthInstruction(state *RunState, mentionedTicket string) strin
 		return "[ADMIN HANDOFF TRUTH CHECK] Historical ticket " + mentionedTicket + " has not been verified in this run. Call `admin_handoff_status` before describing its status or deciding whether to replace it."
 	}
 	return "[ADMIN HANDOFF TRUTH CHECK] No Admin handoff ticket has been created in this run. " +
-		"Do not say that a request was sent/transferred and do not invent CMH/Ticket codes. " +
+		"Do not say that a request was sent/transferred, promise that it will be transferred, or invent CMH/Ticket codes. " +
 		"Review the current AGENTS.md operational notice and the Cloudmini tool result. " +
-		"If Admin action is genuinely required, call `escalate_to_admin`; otherwise answer the customer directly without claiming a handoff."
+		"If Admin action is genuinely required, call `escalate_to_admin`; otherwise answer the customer directly. For an unresolved ordinary technical case, offer the choice by asking whether the customer agrees to an Admin review; do not claim or promise a handoff before that explicit consent."
+}
+
+// cloudminiAdminHandoffOfferResponse is used only after a model repeatedly
+// makes an unsupported future-handoff promise. It keeps the verified facts,
+// asks for explicit consent, and never implies that a ticket already exists.
+func cloudminiAdminHandoffOfferResponse(state *RunState) (string, bool) {
+	if state == nil || state.Cloudmini.EmailRequired || state.Cloudmini.EmailMismatch ||
+		len(state.Cloudmini.ServiceFacts) == 0 || !containsAny(strings.ToLower(cloudminiSupportIntentText(state)),
+		"lỗi", "loi", "không kết nối", "khong ket noi", "timeout", "die", "error") {
+		return "", false
+	}
+	if cloudminiIncidentBlocksHandoff(state, state.Cloudmini.RequestIPs) {
+		return "", false
+	}
+	for _, fact := range state.Cloudmini.ServiceFacts {
+		if (fact.Status != "active" && fact.Status != "running") || !fact.AccountEmailMatches ||
+			fact.PlanFamily == "" || strings.EqualFold(fact.PlanFamily, "vps") {
+			return "", false
+		}
+		live, checked := state.Cloudmini.LiveChecks[fact.IP]
+		if !checked || !live {
+			return "", false
+		}
+	}
+	facts := cloudminiGroupedFactClauses(state)
+	if len(facts) == 0 {
+		return "", false
+	}
+	return "Dạ, em đã kiểm tra: " + strings.Join(facts, "; ") + ". Anh/chị đang báo lỗi kết nối; nếu anh/chị không tiện tiếp tục các bước kiểm tra từ xa, em có thể chuyển case này cho Admin/Kỹ thuật kiểm tra trực tiếp. Anh/chị có đồng ý để em chuyển không ạ?", true
 }
 
 func adminHandoffMentionedTicket(content string) string {
