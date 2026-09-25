@@ -91,6 +91,7 @@ Mẫu phản hồi:
 
 - Không hủy/hoàn trong quá trình sử dụng.
 - Hết dung lượng có thể mua thêm GB.
+- Gói Demo Resident/Residential Rotating chỉ hiển thị thông tin mẫu để tham khảo cấu trúc Proxy và không thể kết nối. Khách cần mua thêm lưu lượng GB rồi tạo Authentication mới để sử dụng thực tế; không xử lý endpoint Demo như một lỗi dịch vụ.
 - Khách tự cấu hình Country, State/Region, City và TTL (xoay 5–30 phút hoặc random mỗi request) tại Quản lý Rotating Proxy; hostname kết nối là `rota.cloudmini.net`, và khi tạo Authentication có thể chọn endpoint Hostname hoặc IP theo cấu hình dashboard.
 - Có IP dân cư xoay tại hơn 180 quốc gia.
 - Dung lượng có hạn tối đa 120 ngày từ khi đăng ký thành công; khuyến nghị dùng hết trước hạn.

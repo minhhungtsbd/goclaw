@@ -131,6 +131,37 @@ func TestCloudminiServicePreflightAsksIntentBeforeAnyCheck(t *testing.T) {
 	}
 }
 
+func TestCloudminiDescriptiveRequestsReachModelWithoutAutomaticChecks(t *testing.T) {
+	for _, message := range []string{
+		"202.158.245.157\nbạn ơi mình nhờ chút\ncái proxy này chặn cái web taobao\ngiờ làm ntn cho nó hết chặn bạn nhỉ\nnếu sửa thì sửa luôn mình cái này với: 103.162.22.137\nđể vào đc taobao bình thường với\nmình đổi sang 4G thì vào bình thường, mà vào qua proxy thì bị nên chắc chắn là do proxy roài\nxem hộ mình với",
+		"proxy 94.103.56.231 mở taobao cứ quay vòng mãi",
+		"proxy 94.103.56.231 bị captcha liên tục",
+		"proxy 94.103.56.231 nhờ tư vấn thêm",
+	} {
+		t.Run(message, func(t *testing.T) {
+			state := NewRunState(&RunInput{Message: message}, nil, "", nil)
+			stage := NewCloudminiServicePreflightStage(&PipelineDeps{ExecuteToolCall: func(context.Context, *RunState, providers.ToolCall) ([]providers.Message, error) {
+				t.Fatal("unclassified request must be interpreted before automatic checks")
+				return nil, nil
+			}})
+			if err := stage.Execute(context.Background(), state); err != nil {
+				t.Fatal(err)
+			}
+			if state.Cloudmini.IntentClarificationRequired || !strings.Contains(state.Messages.System().Content, "CLOUDMINI INTENT REVIEW") {
+				t.Fatalf("request was not routed to contextual interpretation: %#v", state.Cloudmini)
+			}
+			called := false
+			think := NewThinkStage(&PipelineDeps{Config: PipelineConfig{MaxIterations: 10, MaxTokens: 1000}, CallLLM: func(context.Context, *RunState, providers.ChatRequest) (*providers.ChatResponse, error) {
+				called = true
+				return &providers.ChatResponse{Content: "Anh cho em xin email tài khoản Cloudmini nhé.", FinishReason: "stop"}, nil
+			}})
+			if err := think.Execute(context.Background(), state); err != nil || !called {
+				t.Fatalf("model did not receive the request: called=%v err=%v", called, err)
+			}
+		})
+	}
+}
+
 func TestCloudminiIntentClarificationContinuationReusesExactIPs(t *testing.T) {
 	previous := NewRunState(&RunInput{Message: "50.114.164.36\n191.101.207.242\ncheck lại giúp mình"}, nil, "", nil)
 	previous.Cloudmini.RequestIPs = []string{"50.114.164.36", "191.101.207.242"}

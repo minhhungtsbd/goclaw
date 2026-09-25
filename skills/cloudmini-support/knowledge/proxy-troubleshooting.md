@@ -20,6 +20,8 @@ Mẫu phản hồi khi khách hỏi Proxy xoay có dùng cho PayPal không:
 
 Khi khách dùng Proxy xoay, để vị trí/cấu hình mặc định và báo không kết nối được:
 
+Trước khi chẩn đoán, xác định có phải **Demo Resident/Residential Rotating** hay không. Thông tin kết nối của gói Demo chỉ minh họa cấu trúc Proxy và chắc chắn không dùng để kết nối; giải thích khách cần mua thêm lưu lượng GB rồi tạo Authentication mới. Không chạy check live hoặc troubleshooting kết nối cho endpoint Demo.
+
 1. Hướng dẫn khách chọn đúng quốc gia hoặc khu vực cần sử dụng trước.
 2. Khi để mặc định, hệ thống có thể xoay tới khu vực chưa có IP khả dụng tại thời điểm đó, nên Proxy có thể không kết nối được.
 3. Không kết luận Proxy hỏng hoặc hết dung lượng chỉ từ lỗi kết nối đầu tiên.
@@ -29,6 +31,10 @@ Khi khách dùng Proxy xoay, để vị trí/cấu hình mặc định và báo 
 Mẫu phản hồi:
 
 > Dạ, với Proxy xoay anh/chị vui lòng chọn đúng quốc gia hoặc khu vực cần sử dụng trước giúp em ạ. Khi để chế độ mặc định, hệ thống có thể xoay vào khu vực đang chưa có IP khả dụng nên Proxy sẽ không kết nối được. Anh/chị chọn lại khu vực rồi kiểm tra thử giúp em nhé.
+
+Mẫu phản hồi cho gói Demo:
+
+> Dạ, thông tin kết nối trong gói Demo Resident Rotating chỉ dùng để tham khảo cấu trúc Proxy nên không thể kết nối sử dụng ạ. Để sử dụng Rotating Residential, anh/chị vui lòng mua thêm lưu lượng GB và tạo Authentication mới từ phần dung lượng đã mua giúp em nhé.
 
 ## Proxy không kết nối
 

@@ -87,6 +87,16 @@ func (s *CloudminiServicePreflightStage) Execute(ctx context.Context, state *Run
 	appendCloudminiOperationalSubnetNotice(state, ips)
 	appendCloudminiResidentialVNContext(state, hosts)
 	accountEmail := latestCloudminiCustomerEmailForState(state)
+	if !cloudminiHasExplicitSupportIntent(cloudminiSupportIntentText(state)) && !state.Cloudmini.AdminHandoffConsent &&
+		!(accountEmail != "" && goclawtools.CloudminiAdminHandoffEmailConfigured(ctx, accountEmail)) {
+		// Unrecognized wording is not proof of an ambiguous request. Let the
+		// model interpret it before selecting a lookup or asking a question.
+		appendCloudminiRequestScope(state, ips)
+		system := state.Messages.System()
+		system.Content += "\n\n[CLOUDMINI INTENT REVIEW]\nRead the customer's current message and relevant conversation context. Missing keyword matches do not mean the customer omitted their purpose. If the problem or question is clear, acknowledge it and continue the appropriate support workflow, asking only for missing information. Only ask what they want checked when genuinely unclear; phrase that question naturally and specifically. Do not infer a network cause from the customer's diagnosis alone. Apply operational notices only to matching IPs. All account verification and tool authorization requirements still apply."
+		state.Messages.SetSystem(system)
+		return nil
+	}
 	if accountEmail != "" && goclawtools.CloudminiAdminHandoffEmailConfigured(ctx, accountEmail) &&
 		s.cloudminiAutomationPermitted(ctx, state) {
 		// The direct-Admin routing is part of the cloudmini_proxy_check scope.
@@ -738,7 +748,30 @@ func cloudminiRequestNeedsIntentClarification(state *RunState) bool {
 	if len(cloudminiIPs(state.Input.Message)) == 0 && len(cloudminiResidentialVNHosts(state.Input.Message)) == 0 {
 		return false
 	}
-	return !cloudminiHasExplicitSupportIntent(state.Input.Message)
+	if cloudminiHasExplicitSupportIntent(state.Input.Message) {
+		return false
+	}
+	// Positively recognize identifier-only/generic checks instead of treating
+	// every sentence outside a fixed intent vocabulary as ambiguous.
+	remainder := strings.ToLower(cloudminiEmailCandidate.ReplaceAllString(state.Input.Message, " "))
+	remainder = cloudminiIPCandidate.ReplaceAllString(remainder, " ")
+	remainder = cloudminiHostnameCandidate.ReplaceAllString(remainder, " ")
+	genericWords := strings.Fields("ip proxy vps check kiểm kiem tra xem giúp giup hộ ho cho em anh chị chi mình minh tôi toi bạn ban với voi nhé nha nhe ạ a này nay lại lai đống dong các cac cái cai danh sách sach chút chut m ơi oi please")
+	for _, word := range strings.FieldsFunc(remainder, func(r rune) bool {
+		return strings.ContainsRune(" \t\r\n.,:;!?-_/()[]{}", r)
+	}) {
+		generic := false
+		for _, allowed := range genericWords {
+			if word == allowed {
+				generic = true
+				break
+			}
+		}
+		if !generic {
+			return false
+		}
+	}
+	return true
 }
 
 func isCloudminiIntentContinuation(state *RunState) bool {
