@@ -105,6 +105,45 @@ func TestActiveServiceRejectsPermanentOutageClaim(t *testing.T) {
 	}
 }
 
+func TestUnmatchedIPRejectsScheduledOutageClaimFromNeighboringSubnet(t *testing.T) {
+	state := &RunState{}
+	state.Cloudmini.RequestIPs = []string{"185.203.139.89"}
+	state.Cloudmini.OperationalIncidentsEvaluated = true
+	state.Cloudmini.IncidentsByIP = map[string]store.OperationalIncident{}
+
+	bad := "IP 185.203.139.89 thuộc dải dự kiến ngưng hoạt động vào 30/11 do thay đổi hạ tầng và vẫn có thể dùng đến hết tháng 11."
+	if !cloudminiResponseViolatesGuard(state, bad) {
+		t.Fatal("scheduled outage claim for unmatched neighboring subnet was accepted")
+	}
+	good := "IP 185.203.139.89 không khớp thông báo bảo trì hoặc ngưng hoạt động nào hiện có; em cần kiểm tra trạng thái dịch vụ riêng."
+	if cloudminiResponseViolatesGuard(state, good) {
+		t.Fatal("neutral no-match explanation was rejected")
+	}
+	if fallback := cloudminiSafeGuardResponse(state); !strings.Contains(fallback, "không khớp dải IP nào") || !strings.Contains(fallback, "185.203.139.89") {
+		t.Fatalf("unsafe no-match fallback: %q", fallback)
+	}
+	if instruction := cloudminiResponseGuardInstruction(state); !strings.Contains(instruction, "không khớp CIDR") {
+		t.Fatalf("retry instruction omitted deterministic no-match fact: %q", instruction)
+	}
+}
+
+func TestMixedIncidentScopeAllowsOnlyMatchedIPClaim(t *testing.T) {
+	state := &RunState{}
+	state.Cloudmini.RequestIPs = []string{"185.203.138.10", "185.203.139.89"}
+	state.Cloudmini.OperationalIncidentsEvaluated = true
+	state.Cloudmini.IncidentsByIP = map[string]store.OperationalIncident{
+		"185.203.138.10": {Severity: "scheduled_outage"},
+	}
+	good := "IP 185.203.138.10 thuộc dải dự kiến ngưng hoạt động; IP 185.203.139.89 không khớp thông báo vận hành hiện có."
+	if cloudminiResponseViolatesGuard(state, good) {
+		t.Fatal("incident claim scoped to the matched IP was rejected")
+	}
+	bad := "Các IP này dự kiến ngưng hoạt động do thay đổi hạ tầng."
+	if !cloudminiResponseViolatesGuard(state, bad) {
+		t.Fatal("collective incident claim covering an unmatched IP was accepted")
+	}
+}
+
 func TestMatchedTemporaryIncidentMustBeExplainedWhenLiveCheckFails(t *testing.T) {
 	state := &RunState{Cloudmini: CloudminiState{
 		ServiceFacts: []CloudminiServiceFact{{IP: "147.189.140.177", Status: "active"}},

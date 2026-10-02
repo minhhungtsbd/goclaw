@@ -452,9 +452,13 @@ func appendUniqueCloudminiIPs(base []string, values ...string) []string {
 func appendCloudminiOperationalSubnetNotice(state *RunState, ips []string) {
 	system := state.Messages.System()
 	if incidents, err := cloudminiincident.ParseContext(system.Content); err == nil {
+		state.Cloudmini.OperationalIncidentsEvaluated = len(ips) > 0
 		matchedIDs := make(map[string]bool)
+		matchedIPs := make(map[string][]string)
+		matchedIncidents := make([]store.OperationalIncident, 0)
 		for _, ip := range ips {
 			if incident := cloudminiincident.Match(incidents, ip, state.Input.AgentKey, time.Now().UTC()); incident != nil {
+				matchedIPs[incident.ID] = appendUniqueCloudminiIPs(matchedIPs[incident.ID], ip)
 				if state.Cloudmini.IncidentsByIP == nil {
 					state.Cloudmini.IncidentsByIP = make(map[string]store.OperationalIncident)
 				}
@@ -466,18 +470,34 @@ func appendCloudminiOperationalSubnetNotice(state *RunState, ips []string) {
 					continue
 				}
 				matchedIDs[incident.ID] = true
-				encoded, _ := json.Marshal(incident)
-				block := "\n\n[THÔNG BÁO VẬN HÀNH CÓ CẤU TRÚC - BẮT BUỘC ĐỐI CHIẾU]\n" +
-					"Diễn đạt approved_content tự nhiên, không đọc nguyên văn. service_info chỉ xác minh dịch vụ, không phủ định chính sách hỗ trợ của thông báo. " +
-					"Phương án được duyệt trong thông báo ưu tiên hơn phí đổi/hủy thông thường. Không nâng mức độ, đổi ngày, hoặc tự thêm cam kết. Với scheduled_outage: trước event_at nói sẽ ngưng; khi ngày dự kiến đã qua, nêu lịch dự kiến và cần xác nhận kết quả, không tự nói đã ngưng.\n" +
-					"<matched_operational_incident>" + string(encoded) + "</matched_operational_incident>"
-				system.Content += block
+				matchedIncidents = append(matchedIncidents, *incident)
 			}
 		}
-		if len(matchedIDs) > 0 {
-			state.Messages.SetSystem(system)
-			return
+		// The complete registry is needed for deterministic matching, but exposing
+		// unrelated neighboring CIDRs to the model lets it generalize beyond exact
+		// netip containment (for example .137/.138 -> .139). Keep only the records
+		// that matched the current request before the next LLM call.
+		system.Content = cloudminiincident.ReplaceContextIncidents(system.Content, matchedIncidents)
+		for _, incident := range matchedIncidents {
+			encoded, _ := json.Marshal(incident)
+			block := "\n\n[THÔNG BÁO VẬN HÀNH CÓ CẤU TRÚC - BẮT BUỘC ĐỐI CHIẾU]\n" +
+				"Diễn đạt approved_content tự nhiên, không đọc nguyên văn. service_info chỉ xác minh dịch vụ, không phủ định chính sách hỗ trợ của thông báo. " +
+				"Phương án được duyệt trong thông báo ưu tiên hơn phí đổi/hủy thông thường. Không nâng mức độ, đổi ngày, tự thêm cam kết hoặc suy rộng sang IP lân cận. " +
+				"Bản ghi này chỉ áp dụng cho IP hiện tại đã khớp chính xác: " + strings.Join(matchedIPs[incident.ID], ", ") + ". Với scheduled_outage: trước event_at nói sẽ ngưng; khi ngày dự kiến đã qua, nêu lịch dự kiến và cần xác nhận kết quả, không tự nói đã ngưng.\n" +
+				"<matched_operational_incident>" + string(encoded) + "</matched_operational_incident>"
+			system.Content += block
 		}
+		unmatchedIPs := make([]string, 0)
+		for _, ip := range ips {
+			if _, matched := state.Cloudmini.IncidentsByIP[ip]; !matched {
+				unmatchedIPs = append(unmatchedIPs, ip)
+			}
+		}
+		if len(unmatchedIPs) > 0 {
+			system.Content += "\n\n[CLOUDMINI OPERATIONAL INCIDENT - KHÔNG KHỚP]\nCác IP hiện tại không khớp CIDR của thông báo vận hành đang áp dụng: " + strings.Join(unmatchedIPs, ", ") + ". Không được gán bảo trì, sự cố, lịch ngưng hoạt động, nguyên nhân hạ tầng hoặc quyền lợi của thông báo cho các IP này."
+		}
+		state.Messages.SetSystem(system)
+		return
 	}
 	// Legacy free-form AGENTS.md outage sections are deliberately ignored. Only
 	// validated <operational_incidents> records may affect runtime decisions.

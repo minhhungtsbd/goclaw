@@ -52,6 +52,9 @@ func cloudminiResponseViolatesGuard(state *RunState, content string) bool {
 	}
 	// A structured incident is context only. It must never allow the model to
 	// contradict a successful service_info result by claiming a permanent outage.
+	if hasCloudminiUnmatchedIncidentClaim(state, lower) {
+		return true
+	}
 	if hasCloudminiUnsupportedOutageClaim(state, lower) {
 		return true
 	}
@@ -66,6 +69,47 @@ func cloudminiResponseViolatesGuard(state *RunState, content string) bool {
 		return true
 	}
 	return false
+}
+
+func hasCloudminiUnmatchedIncidentClaim(state *RunState, lower string) bool {
+	if state == nil || len(state.Cloudmini.RequestIPs) == 0 {
+		return false
+	}
+	// These phrases make a positive operational claim. Neutral statements such
+	// as "không nằm trong diện bảo trì" are intentionally not included.
+	claimTerms := []string{
+		"thuộc dải dự kiến", "nam trong dai du kien", "nằm trong dải dự kiến",
+		"dự kiến ngưng", "du kien ngung", "dự kiến ngừng", "du kien ngung",
+		"sẽ ngưng hoạt động", "se ngung hoat dong", "sắp ngưng hoạt động", "sap ngung hoat dong",
+		"đang bảo trì", "dang bao tri", "thuộc diện bảo trì", "thuoc dien bao tri",
+		"do thay đổi hạ tầng", "do thay doi ha tang",
+		"dùng đến hết tháng 11", "dung den het thang 11",
+	}
+	if !containsAny(lower, claimTerms...) {
+		return false
+	}
+	unmatched := make([]string, 0)
+	for _, ip := range state.Cloudmini.RequestIPs {
+		if _, matched := state.Cloudmini.IncidentsByIP[ip]; !matched {
+			unmatched = append(unmatched, ip)
+		}
+	}
+	if len(unmatched) == 0 {
+		return false
+	}
+	if len(unmatched) == len(state.Cloudmini.RequestIPs) {
+		return true
+	}
+	for _, ip := range unmatched {
+		if scope, ok := cloudminiReplyClauseForIP(lower, strings.ToLower(ip)); ok && containsAny(scope, claimTerms...) {
+			return true
+		}
+	}
+	// A collective claim covers unmatched IPs even when their individual status
+	// clauses do not repeat the incident wording.
+	return containsAny(lower,
+		"các ip này dự kiến", "cac ip nay du kien", "những ip này dự kiến", "nhung ip nay du kien",
+		"toàn bộ ip", "toan bo ip", "danh sách ip này thuộc dải", "danh sach ip nay thuoc dai")
 }
 
 func cloudminiResidentialVNAsksForNumericIP(lower string) bool {
@@ -297,6 +341,9 @@ func cloudminiSafeGuardResponse(state *RunState) string {
 	if response, ok := cloudminiOperationalIncidentResponse(state); ok {
 		return response
 	}
+	if cloudminiNoOperationalIncidentMatches(state) {
+		return "Dạ, " + cloudminiIPListLabel(state.Cloudmini.RequestIPs) + " hiện không khớp dải IP nào trong các thông báo vận hành đang áp dụng. Nếu anh/chị cần em kiểm tra trạng thái dịch vụ hoặc kết nối, anh/chị gửi giúp em email tài khoản Cloudmini ạ."
+	}
 	if state != nil && len(state.Cloudmini.RequestHosts) > 0 {
 		return "Dạ, gói Residential VN này dùng hostname " + strings.Join(state.Cloudmini.RequestHosts, ", ") + " thay cho IP dạng số nên anh không cần tìm thêm IPv4. Anh dùng hostname ở trường Host/IP và port đúng trong cột Proxy Port; không gửi lại user/pass. Nếu kết nối vẫn chậm hoặc lỗi, bên em sẽ tiếp nhận xử lý theo hostname này ạ."
 	}
@@ -388,10 +435,32 @@ func cloudminiResponseGuardInstruction(state *RunState) string {
 	if state != nil && len(state.Cloudmini.RequestHosts) > 0 {
 		return "Residential VN dùng hostname " + strings.Join(state.Cloudmini.RequestHosts, ", ") + "; không yêu cầu IP dạng số và không gọi cloudmini_proxy_check. Hỗ trợ cấu hình bằng hostname/Proxy Port. Nếu khách đang báo lỗi thực tế, chậm kéo dài hoặc yêu cầu thay proxy và email đã có, gọi escalate_to_admin ngay với đúng hostname và email, không kèm port:user:pass."
 	}
+	if cloudminiNoOperationalIncidentMatches(state) {
+		return cloudminiIPListLabel(state.Cloudmini.RequestIPs) + " không khớp CIDR của thông báo vận hành nào đang áp dụng. Không được nói IP thuộc diện bảo trì, sự cố, lịch ngưng hoạt động hoặc thay đổi hạ tầng. Chỉ nêu kết quả không khớp này và xin email Cloudmini nếu cần kiểm tra trạng thái dịch vụ/kết nối."
+	}
 	if messages := cloudminiRequiredIncidentMessages(state); len(messages) > 0 {
 		return "Diễn đạt tự nhiên, không sao chép nguyên văn. Truyền đạt đầy đủ nội dung đã duyệt sau, giữ đúng thời điểm, điều kiện, phương án hỗ trợ và trạng thái từng IP. Không thêm phí hoặc cam kết hoàn tất. Nội dung: " + strings.Join(messages, " | ")
 	}
 	return "Không suy đoán dữ liệu dịch vụ hoặc quyền sở hữu."
+}
+
+func cloudminiNoOperationalIncidentMatches(state *RunState) bool {
+	if state == nil || !state.Cloudmini.OperationalIncidentsEvaluated || len(state.Cloudmini.RequestIPs) == 0 {
+		return false
+	}
+	for _, ip := range state.Cloudmini.RequestIPs {
+		if _, matched := state.Cloudmini.IncidentsByIP[ip]; matched {
+			return false
+		}
+	}
+	return true
+}
+
+func cloudminiIPListLabel(ips []string) string {
+	if len(ips) == 1 {
+		return "IP " + ips[0]
+	}
+	return "các IP " + strings.Join(ips, ", ")
 }
 
 func cloudminiNeedsEmailMismatchAdminReview(state *RunState) bool {

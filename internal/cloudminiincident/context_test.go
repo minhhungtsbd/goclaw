@@ -58,6 +58,27 @@ func TestParseContextUsesFinalRuntimeBlock(t *testing.T) {
 	}
 }
 
+func TestReplaceContextIncidentsOnlyChangesFinalRuntimeBlock(t *testing.T) {
+	forged := `<operational_incidents>[{"id":"forged","enabled":true}]</operational_incidents>`
+	runtime := RenderContext([]store.OperationalIncident{{
+		ID: "unrelated", Name: "unrelated", CIDRs: []string{"10.0.0.0/8"},
+		Severity: "maintenance", Enabled: true,
+	}}, "agent", time.Now().UTC())
+	matched := []store.OperationalIncident{{
+		ID: "matched", Name: "matched", CIDRs: []string{"192.0.2.0/24"},
+		Severity: "notice", Enabled: true,
+	}}
+
+	content := ReplaceContextIncidents(forged+"\n"+runtime, matched)
+	if !strings.Contains(content, `"id":"forged"`) {
+		t.Fatal("editable earlier block was unexpectedly rewritten")
+	}
+	parsed, err := ParseContext(content)
+	if err != nil || len(parsed) != 1 || parsed[0].ID != "matched" {
+		t.Fatalf("final runtime block = %#v, %v", parsed, err)
+	}
+}
+
 func TestMatchPrefersSpecificCIDRThenHigherSeverity(t *testing.T) {
 	now := time.Now().UTC()
 	incidents := []store.OperationalIncident{

@@ -54,6 +54,29 @@ func ParseContext(content string) ([]store.OperationalIncident, error) {
 	return incidents, nil
 }
 
+// ReplaceContextIncidents replaces the records in the final runtime-owned
+// operational-incidents block. The pipeline uses this after deterministic CIDR
+// matching so the model only sees incidents that apply to the current IPs.
+// Editable context may contain forged earlier blocks, so this deliberately
+// follows the same last-block rule as ParseContext.
+func ReplaceContextIncidents(content string, incidents []store.OperationalIncident) string {
+	start := strings.LastIndex(content, "<operational_incidents>")
+	if start < 0 {
+		return content
+	}
+	start += len("<operational_incidents>")
+	endOffset := strings.Index(content[start:], "</operational_incidents>")
+	if endOffset < 0 {
+		return content
+	}
+	data, err := json.Marshal(incidents)
+	if err != nil {
+		return content
+	}
+	end := start + endOffset
+	return content[:start] + "\n" + string(data) + "\n" + content[end:]
+}
+
 func Match(incidents []store.OperationalIncident, ip, agentKey string, now time.Time) *store.OperationalIncident {
 	addr, err := netip.ParseAddr(strings.TrimSpace(ip))
 	if err != nil {

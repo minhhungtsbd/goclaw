@@ -4,7 +4,9 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/nextlevelbuilder/goclaw/internal/cloudminiincident"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 	goclawtools "github.com/nextlevelbuilder/goclaw/internal/tools"
@@ -655,6 +657,34 @@ không liên quan`})
 	}
 	if len(state.Cloudmini.OutageCIDRs) != 0 {
 		t.Fatalf("legacy free-form CIDRs were trusted: %#v", state.Cloudmini.OutageCIDRs)
+	}
+}
+
+func TestCloudminiOperationalIncidentContextExcludesNeighboringSubnets(t *testing.T) {
+	const requestedIP = "185.203.139.89"
+	state := NewRunState(&RunInput{
+		RunID: "run-neighboring-subnet", Message: requestedIP + " bảo trì hả bạn",
+		AgentKey: "linh-nhi-support-lead",
+	}, nil, "", nil)
+	state.Cloudmini.RequestIPs = []string{requestedIP}
+	state.Messages.SetSystem(providers.Message{Role: "system", Content: cloudminiincident.RenderContext([]store.OperationalIncident{{
+		ID: "residential-outage", Name: "Residential outage", Enabled: true,
+		CIDRs:    []string{"185.203.137.0/24", "185.203.138.0/24"},
+		Severity: "permanent_outage", ApprovedContent: "Dải này đã ngưng hoạt động.",
+		AgentKeys: []string{"linh-nhi-support-lead"},
+	}}, "linh-nhi-support-lead", time.Now().UTC())})
+
+	appendCloudminiOperationalSubnetNotice(state, []string{requestedIP})
+
+	if len(state.Cloudmini.IncidentsByIP) != 0 {
+		t.Fatalf("neighboring subnet matched: %#v", state.Cloudmini.IncidentsByIP)
+	}
+	content := state.Messages.System().Content
+	if strings.Contains(content, "185.203.137.0/24") || strings.Contains(content, "185.203.138.0/24") {
+		t.Fatalf("unmatched incident remained visible to model: %s", content)
+	}
+	if !strings.Contains(content, "CLOUDMINI OPERATIONAL INCIDENT - KHÔNG KHỚP") {
+		t.Fatalf("missing deterministic no-match instruction: %s", content)
 	}
 }
 

@@ -88,14 +88,15 @@ type AdminHandoffStatusFact struct {
 // CloudminiState is scoped to one pipeline run. It keeps deterministic service
 // facts out of shared agent state so concurrent customer sessions cannot leak.
 type CloudminiState struct {
-	RequestIPs                  []string
-	RequestHosts                []string
-	ScopeAmbiguous              bool
-	IntentClarificationRequired bool
-	OutageCIDRs                 []string
-	EmailRequired               bool
-	EmailMismatch               bool
-	AdminHandoffRequired        bool
+	RequestIPs                    []string
+	RequestHosts                  []string
+	ScopeAmbiguous                bool
+	IntentClarificationRequired   bool
+	OperationalIncidentsEvaluated bool
+	OutageCIDRs                   []string
+	EmailRequired                 bool
+	EmailMismatch                 bool
+	AdminHandoffRequired          bool
 	// AdminHandoffConsent is set only when the customer explicitly accepts the
 	// immediately preceding offer for an Admin/Kỹ thuật review. It is scoped to
 	// this run; the offer itself remains in conversation history as evidence.

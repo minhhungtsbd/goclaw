@@ -12,6 +12,16 @@ Trước khi xử lý phải xác định:
 
 Khi khách đã gửi IP, dùng `cloudmini_proxy_check` với `service_info` trước để xác định loại dịch vụ, tên gói và hạn. Chỉ xin ảnh/tên gói khi không có IP hoặc API không có kết quả; không hỏi lại dữ liệu API và hội thoại đã xác định.
 
+## Yêu cầu dùng thử Proxy hoặc VPS trong 24 giờ
+
+- Chỉ các gói **vốn hỗ trợ khách chủ động hủy và được hoàn tiền theo nhu cầu** mới đủ điều kiện để Admin xem xét cho dùng thử trong tối đa 24 giờ:
+  - Proxy **PrivateV4**.
+  - VPS series **Custom, Mini, Promo và YT**.
+- Các gói không hỗ trợ hủy/hoàn theo nhu cầu như BudgetV4, PrivateV6, Residential Static, Budget Residential Static, Residential VN, Rotating Residential và VPS NN **không thuộc phạm vi dùng thử 24 giờ**. Quyền hoàn tiền trong một thông báo vận hành riêng không biến gói đó thành gói dùng thử.
+- Đây không phải quyền dùng thử tự động. Agent phải xác định gói khách muốn thử, xin email tài khoản Cloudmini nếu chưa có, rồi gọi `escalate_to_admin` để Admin kiểm tra và quyết định có cho phép dùng thử hay không.
+- Trong handoff ghi rõ tên gói, nhu cầu dùng thử 24 giờ, email Cloudmini và cấu hình/khu vực khách quan tâm nếu đã có. Không cần yêu cầu IP khi khách đang hỏi dùng thử trước khi mua.
+- Chỉ nói yêu cầu đã được chuyển kiểm tra sau khi có Ticket thật. Không nói “được dùng thử”, không hứa mức hoàn, thời điểm hoàn hoặc chấp thuận thay cho Admin.
+
 ## Khách báo hủy trên web không thành công
 
 Không chuyển Admin ngay khi chỉ thấy ảnh hoặc thông báo “dịch vụ này không thể hủy”. Xử lý theo thứ tự:
