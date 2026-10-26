@@ -178,7 +178,7 @@ func cloudminiIncidentExplanationMissing(state *RunState, lower string) bool {
 				return true
 			}
 		case "temporary_issue":
-			if !containsAny(lower, "lỗi tạm thời", "loi tam thoi", "sự cố tạm thời", "su co tam thoi") {
+			if !cloudminiTemporaryIssueExplanation.MatchString(lower) {
 				return true
 			}
 		case "degraded":
@@ -377,7 +377,8 @@ func cloudminiOperationalIncidentScope(state *RunState) string {
 		return "IP thuộc phạm vi một thông báo vận hành."
 	}
 	seen := make(map[string]struct{}, len(state.Cloudmini.IncidentsByIP))
-	ips := make([]string, 0, len(state.Cloudmini.IncidentsByIP))
+	groups := make(map[string][]string)
+	order := make([]string, 0)
 	for _, fact := range state.Cloudmini.ServiceFacts {
 		ip := strings.TrimSpace(fact.IP)
 		incident, matched := state.Cloudmini.IncidentsByIP[ip]
@@ -391,20 +392,51 @@ func cloudminiOperationalIncidentScope(state *RunState) string {
 			continue
 		}
 		seen[ip] = struct{}{}
-		ips = append(ips, ip)
+		description := cloudminiIncidentCategoryDescription(incident, time.Now())
+		if _, exists := groups[description]; !exists {
+			order = append(order, description)
+		}
+		groups[description] = append(groups[description], "IP "+ip)
 	}
-	if len(ips) == 0 {
-		return "IP thuộc phạm vi một thông báo vận hành."
+	clauses := make([]string, 0, len(order))
+	for _, description := range order {
+		clauses = append(clauses, strings.Join(groups[description], ", ")+" "+description)
 	}
-	labels := make([]string, 0, len(ips))
-	for _, ip := range ips {
-		labels = append(labels, "IP "+ip)
-	}
-	if len(labels) == 1 {
-		return labels[0] + " thuộc phạm vi một thông báo vận hành."
-	}
-	return "Trong đó " + strings.Join(labels, ", ") + " thuộc phạm vi một thông báo vận hành."
+	return strings.Join(clauses, " ")
 }
+
+// Only structured categories and dates are rendered here. Free-form operator
+// notes are not a safe verbatim fallback and must not become invented promises.
+func cloudminiIncidentCategoryDescription(incident store.OperationalIncident, now time.Time) string {
+	switch incident.Severity {
+	case "temporary_issue":
+		return "thuộc dải đang gặp lỗi tạm thời."
+	case "degraded":
+		return "thuộc dải đang suy giảm chất lượng, kết nối không ổn định."
+	case "maintenance":
+		return "thuộc dải có thông báo bảo trì."
+	case "permanent_outage":
+		return "thuộc dải đã ngừng hoạt động theo thông báo."
+	case "scheduled_outage":
+		when, err := time.Parse(time.RFC3339, incident.EventAt)
+		if err != nil {
+			return "thuộc dải có thông báo dự kiến ngưng hoạt động; thời điểm cần được xác nhận thêm."
+		}
+		date := when.Format("02/01/2006")
+		if now.Before(when) {
+			return "thuộc dải dự kiến sẽ ngưng hoạt động vào ngày " + date + "."
+		}
+		return "thuộc dải theo lịch dự kiến ngưng hoạt động ngày " + date + "; tình trạng thực tế sau mốc này cần được kiểm tra xác nhận."
+	case "resolved":
+		return "thuộc dải có thông báo sự cố đã được khắc phục."
+	default:
+		return "thuộc phạm vi một thông báo vận hành; nội dung cụ thể cần được xác nhận thêm."
+	}
+}
+
+// Accept intervening words (e.g. “sự cố máy chủ tạm thời”), within one
+// clause, in either order. Do not join an unrelated error and time qualifier.
+var cloudminiTemporaryIssueExplanation = regexp.MustCompile(`(?:lỗi|loi|sự cố|su co)[^.!?;\n]{0,80}(?:tạm thời|tam thoi)|(?:tạm thời|tam thoi)[^.!?;\n]{0,80}(?:lỗi|loi|sự cố|su co)`)
 
 func cloudminiResponseGuardInstruction(state *RunState) string {
 	if cloudminiNeedsCustomerApprovedAdminReview(state) && state.Tool.AdminHandoffTicket == "" {

@@ -131,7 +131,7 @@ func adminHandoffCustomerConfirmationWithFacts(state *RunState, ticket string) s
 	}
 	incidentPrefix := ""
 	if messages := cloudminiRequiredIncidentMessages(state); len(messages) > 0 {
-		incidentPrefix = "IP thuộc phạm vi thông báo vận hành cần được đối chiếu phương án hỗ trợ. "
+		incidentPrefix = cloudminiOperationalIncidentScope(state) + " "
 	}
 	return "Dạ, " + incidentPrefix + "Em đã kiểm tra: " + strings.Join(facts, "; ") + ". " + reason +
 		", em đã chuyển bộ phận Admin/Kỹ thuật kiểm tra thêm. Mã theo dõi của anh là " +

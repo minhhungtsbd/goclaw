@@ -3,9 +3,97 @@ package pipeline
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
+
+func TestTemporaryIncidentTraceKeepsNaturalReplyAndFallbackCategory(t *testing.T) {
+	const ip = "77.47.157.10"
+	state := &RunState{}
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{{IP: ip, Plan: "Budget Residential Static", Status: "active", AccountEmailMatches: true}}
+	state.Cloudmini.LiveChecks = map[string]bool{ip: false}
+	state.Cloudmini.IncidentsByIP = map[string]store.OperationalIncident{ip: {
+		Severity: "temporary_issue", ApprovedContent: "Proxy thuộc dải này tạm thời lỗi do máy chủ gặp sự cố đột xuất. Kỹ thuật đang khắc phục.",
+	}}
+	state.Tool.AdminHandoffCustomerReplyRequired = true
+	state.Tool.AdminHandoffTicket = "Ticket-000678"
+	for _, explanation := range []string{
+		"IP này thuộc dải đang gặp sự cố máy chủ tạm thời; kỹ thuật đang khắc phục.",
+		"Dải này tạm thời lỗi do máy chủ gặp sự cố đột xuất.",
+	} {
+		reply := "Dạ IP 77.47.157.10 vẫn còn hiệu lực, kết nối hiện báo DIE. " + explanation + " Đã chuyển kiểm tra, Ticket-000678."
+		if cloudminiResponseViolatesGuard(state, reply) || adminHandoffResponseViolatesGuard(state, reply) {
+			t.Fatalf("valid trace paraphrase rejected: %s", reply)
+		}
+		state.Observe.FinalContent = reply
+		state.Tool.AdminHandoffCustomerReplyRequired = true
+		ensureAdminHandoffCustomerReply(state)
+		if state.Observe.FinalContent != reply {
+			t.Fatalf("final delivery replaced valid reply: %s", state.Observe.FinalContent)
+		}
+	}
+	for _, vague := range []string{"Dải có thông báo vận hành.", "Dải đang bảo trì.", "Dải có lỗi. Anh tạm thời chờ nhé."} {
+		if !cloudminiIncidentExplanationMissing(state, "ip còn hiệu lực. "+strings.ToLower(vague)) {
+			t.Fatalf("missing temporary category accepted: %s", vague)
+		}
+	}
+	state.Tool.AdminHandoffCustomerReplyRequired = true
+	state.Observe.FinalContent = "Đã chuyển Admin, Ticket-000678."
+	ensureAdminHandoffCustomerReply(state)
+	for _, required := range []string{ip, "lỗi tạm thời", "còn hiệu lực", "DIE", "Ticket-000678"} {
+		if !strings.Contains(state.Observe.FinalContent, required) {
+			t.Fatalf("fallback missing %q: %s", required, state.Observe.FinalContent)
+		}
+	}
+	if cloudminiResponseViolatesGuard(state, state.Observe.FinalContent) {
+		t.Fatalf("fallback violates incident guard: %s", state.Observe.FinalContent)
+	}
+}
+
+func TestIncidentCategoryFallbackPreservesKindAndSchedule(t *testing.T) {
+	when := time.Date(2026, 11, 30, 0, 0, 0, 0, time.FixedZone("local", 7*60*60))
+	for _, tt := range []struct{ severity, want string }{
+		{"temporary_issue", "lỗi tạm thời"}, {"degraded", "suy giảm"},
+		{"maintenance", "bảo trì"}, {"permanent_outage", "đã ngừng hoạt động"},
+		{"resolved", "đã được khắc phục"},
+	} {
+		t.Run(tt.severity, func(t *testing.T) {
+			description := cloudminiIncidentCategoryDescription(store.OperationalIncident{Severity: tt.severity}, when)
+			if !strings.Contains(description, tt.want) {
+				t.Fatalf("category lost: %s", description)
+			}
+		})
+	}
+	incident := store.OperationalIncident{Severity: "scheduled_outage", EventAt: when.Format(time.RFC3339)}
+	for _, now := range []time.Time{when.Add(-time.Hour), when.Add(time.Hour)} {
+		reply := cloudminiIncidentCategoryDescription(incident, now)
+		if cloudminiScheduledNoticeMissingAt(incident, reply, now) || !strings.Contains(reply, "30/11/2026") {
+			t.Fatalf("incorrect schedule tense/date at %s: %s", now, reply)
+		}
+	}
+}
+
+func TestIncidentFallbackScopesDifferentCategoriesToTheirIPs(t *testing.T) {
+	state := &RunState{}
+	state.Cloudmini.ServiceFacts = []CloudminiServiceFact{
+		{IP: "77.47.157.10", Status: "active"},
+		{IP: "77.47.158.10", Status: "active"},
+		{IP: "77.47.159.10", Status: "active"},
+	}
+	state.Cloudmini.IncidentsByIP = map[string]store.OperationalIncident{
+		"77.47.157.10": {Severity: "temporary_issue", ApprovedContent: "Lỗi tạm thời."},
+		"77.47.158.10": {Severity: "maintenance", ApprovedContent: "Bảo trì."},
+		"77.47.159.10": {Severity: "temporary_issue", ApprovedContent: "Lỗi tạm thời."},
+	}
+	state.Cloudmini.LiveChecks = map[string]bool{"77.47.159.10": true}
+	reply := cloudminiOperationalIncidentScope(state)
+	if !strings.Contains(reply, "IP 77.47.157.10 thuộc dải đang gặp lỗi tạm thời.") ||
+		!strings.Contains(reply, "IP 77.47.158.10 thuộc dải có thông báo bảo trì.") ||
+		strings.Contains(reply, "77.47.159.10") {
+		t.Fatalf("incorrect incident scope: %s", reply)
+	}
+}
 
 func TestAdminHandoffReplyRequiresServiceExplanation(t *testing.T) {
 	state := &RunState{}

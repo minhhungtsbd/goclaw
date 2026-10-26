@@ -9,6 +9,10 @@
 
 Không tự nêu giá/cấu hình chưa có trong tài liệu. Khi khách cần giá hiện tại, ưu tiên trang Price hoặc Order vì giá có thể thay đổi.
 
+- Mua Proxy theo lô/nguyên dải hoặc cần giá số lượng lớn: đọc `bulk-proxy-ordering.md`; không dùng giá bán lẻ trên Order để kết luận giá và tồn kho của lô riêng.
+- VPS Windows dùng Windows bản dùng thử, chưa kèm bản quyền. Chi tiết tư vấn tại `vps-operations.md` mục "Windows và bản quyền".
+- VPS và Proxy chưa có gói mua mới theo năm. Sau khi mua thành công, khách có thể gia hạn thêm 1 năm theo điều kiện gia hạn của gói; ưu đãi nạp tiền gia hạn năm cần Admin xác nhận và cộng khuyến mãi thủ công. Đọc `billing-and-balance.md` trước khi tư vấn số tiền/ưu đãi.
+
 ## VPS theo khu vực
 
 - Châu Á: https://cloudmini.net/vps-chau-a/

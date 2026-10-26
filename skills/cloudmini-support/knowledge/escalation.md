@@ -2,6 +2,8 @@
 
 ## Khi phải chuyển
 
+- Tư vấn mua Proxy theo lô/nguyên dải, xác nhận nguồn theo bang, giá số lượng lớn hoặc phương án số lượng riêng: theo `bulk-proxy-ordering.md`.
+- Khách muốn xác nhận/nhận khuyến mãi nạp tiền gia hạn năm: theo `billing-and-balance.md`; cần Admin cộng thủ công.
 - Đổi/trả cần phê duyệt hoặc ngoại lệ.
 - Yêu cầu Hủy, Đổi, Khôi phục, Gia hạn từ các tài khoản thuộc danh sách **Reseller đặc biệt** (xem chi tiết danh sách email tại `reseller.md`).
 - Khách cần đổi Port, Username hoặc Password Proxy; kiểm tra cấu hình/xác thực; nâng cấp cấu hình; hoặc thao tác nội bộ.
@@ -15,6 +17,8 @@
 
 ## Dữ liệu tối thiểu
 
+- Tư vấn mua Proxy lô trước khi có dịch vụ: email Cloudmini + nhu cầu số lượng/khu vực/chu kỳ đã biết. Không cần IP chưa được cấp; không dùng IP lỗi từ case trước cho yêu cầu mua mới. Nếu tool từ chối thiếu IP, báo chưa gửi được yêu cầu, không bịa IP hoặc khẳng định đã chuyển.
+- Khuyến mãi gia hạn năm: email + gói/nhu cầu, thêm số tiền/mã giao dịch hoặc bằng chứng khi khách đã nạp. IP chỉ cần khi thực sự can thiệp dịch vụ cụ thể.
 - Proxy lỗi đang tồn tại: IP.
 - Proxy xoay vẫn lỗi sau khi chọn khu vực: host/IP, phần mềm hoặc cách kết nối, quốc gia/thành phố đã chọn, chế độ xoay, ảnh/nội dung lỗi.
 - Yêu cầu đổi thông tin kết nối Proxy: email tài khoản khi cần đối soát và nội dung cần đổi; không lấy Username/Password hiện tại.
