@@ -78,6 +78,40 @@ func TestAdminHandoffToolDefersCustomerReplyToPipeline(t *testing.T) {
 	}
 }
 
+func TestAdminHandoffToolPendingOrderNeedsOnlyOrderID(t *testing.T) {
+	handoffStore := &testAdminHandoffStore{}
+	tool := NewAdminHandoffTool(handoffStore)
+	var sent string
+	tool.SetChannelSender(func(_ context.Context, _, _, content string) error {
+		sent = content
+		return nil
+	})
+	ctx := store.WithTenantID(context.Background(), store.MasterTenantID)
+	ctx = store.WithAgentAudio(ctx, store.AgentAudioSnapshot{
+		AgentID:     uuid.New(),
+		OtherConfig: json.RawMessage(`{"admin_handoff":{"enabled":true,"channel":"telegram","chat_id":"-5570031702"}}`),
+	})
+	ctx = WithToolChannel(ctx, "facebook")
+	ctx = WithToolChatID(ctx, "customer-1")
+	args := map[string]any{
+		"summary": "Đơn Proxy đang chờ hoàn thành, cần Admin kiểm tra tiến độ",
+		"service": "Proxy PrivateV4", "case_type": "pending_order", "order_id": "#449329",
+	}
+	result := tool.Execute(ctx, args)
+	if result.IsError || handoffStore.created == nil || !strings.Contains(sent, "#449329") {
+		t.Fatalf("pending order handoff = %#v, stored = %#v, sent = %q", result, handoffStore.created, sent)
+	}
+	if len(handoffStore.created.Identifiers) != 1 || handoffStore.created.Identifiers[0] != "#449329" {
+		t.Fatalf("identifiers = %#v", handoffStore.created.Identifiers)
+	}
+	for _, invalidOrderID := range []string{"", "Ticket-123456", "abc def"} {
+		args["order_id"] = invalidOrderID
+		if got := tool.Execute(ctx, args); !got.IsError {
+			t.Fatalf("order_id %q should be rejected", invalidOrderID)
+		}
+	}
+}
+
 func TestAdminHandoffToolDoesNotResendMergedCase(t *testing.T) {
 	existingID := uuid.New()
 	handoffStore := &testAdminHandoffStore{mergeResult: &store.AdminHandoff{ID: existingID, TicketNumber: 123456}}
@@ -251,6 +285,7 @@ func TestAdminHandoffToolSendsOnlyConfiguredDestination(t *testing.T) {
 func TestValidateAdminHandoffDetails(t *testing.T) {
 	tests := []struct {
 		name        string
+		caseType    string
 		service     string
 		summary     string
 		identifiers []string
@@ -258,6 +293,8 @@ func TestValidateAdminHandoffDetails(t *testing.T) {
 	}{
 		{name: "non-service requires email", summary: "Kiểm tra nạp tiền", wantErr: true},
 		{name: "non-service with email", summary: "Kiểm tra nạp tiền", identifiers: []string{"customer@example.com"}},
+		{name: "pending order needs no IP or email", caseType: "pending_order", service: "Proxy PrivateV4", summary: "Đơn #449329 đang chờ xử lý", identifiers: []string{"#449329"}},
+		{name: "pending order still rejects secret", caseType: "pending_order", summary: "Đơn đang chờ xử lý, token abc", identifiers: []string{"#449329"}, wantErr: true},
 		{name: "proxy requires IP", service: "Proxy PrivateV4", summary: "Khách báo lỗi", identifiers: []string{"customer@example.com"}, wantErr: true},
 		{name: "proxy requires email", service: "Proxy PrivateV4", summary: "Khách báo lỗi IP 191.101.251.120", identifiers: []string{"191.101.251.120"}, wantErr: true},
 		{name: "proxy with required details", service: "Proxy PrivateV4", summary: "Khách báo lỗi", identifiers: []string{"191.101.251.120", "customer@example.com"}},
@@ -269,7 +306,7 @@ func TestValidateAdminHandoffDetails(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateAdminHandoffDetails(tt.service, tt.summary, tt.identifiers)
+			err := validateAdminHandoffDetails(tt.caseType, tt.service, tt.summary, tt.identifiers)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("validateAdminHandoffDetails() error = %v, wantErr %t", err, tt.wantErr)
 			}

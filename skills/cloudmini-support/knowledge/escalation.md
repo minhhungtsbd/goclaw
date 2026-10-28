@@ -17,6 +17,7 @@
 
 ## Dữ liệu tối thiểu
 
+- Đơn hàng pending/chưa cấp dịch vụ: gọi `escalate_to_admin` với `case_type=pending_order`, `order_id` là mã đơn hàng; email Cloudmini chỉ thêm nếu đã có. Không cần IP chưa được cấp; ghi rõ yêu cầu kiểm tra tiến độ/trạng thái đơn.
 - Tư vấn mua Proxy lô trước khi có dịch vụ: email Cloudmini + nhu cầu số lượng/khu vực/chu kỳ đã biết. Không cần IP chưa được cấp; không dùng IP lỗi từ case trước cho yêu cầu mua mới. Nếu tool từ chối thiếu IP, báo chưa gửi được yêu cầu, không bịa IP hoặc khẳng định đã chuyển.
 - Khuyến mãi gia hạn năm: email + gói/nhu cầu, thêm số tiền/mã giao dịch hoặc bằng chứng khi khách đã nạp. IP chỉ cần khi thực sự can thiệp dịch vụ cụ thể.
 - Proxy lỗi đang tồn tại: IP.

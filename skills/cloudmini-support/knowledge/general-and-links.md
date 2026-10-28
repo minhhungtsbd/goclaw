@@ -6,7 +6,7 @@
 - Zalo: 0969297579
 - Telegram: https://t.me/cloudninidotnet
 - Email: support@cloudmini.net
-- Ticket: https://client.cloudmini.net/tickets_page
+- Ticket trên trang quản lý: https://client.cloudmini.net/tickets_page. Mã `Ticket-...` của Facebook Page Cloudmini.net chỉ theo dõi trong chat hỗ trợ Page, không tra được tại `https://client.cloudmini.net/tickets` hoặc trang ticket quản lý.
 
 Admin thường online 08:00–23:00 giờ Việt Nam. Đây không phải cam kết ETA cho từng yêu cầu.
 
@@ -26,3 +26,4 @@ Admin thường online 08:00–23:00 giờ Việt Nam. Đây không phải cam k
 ## Đặt hàng
 
 Khách đặt hàng tại trang Order. Sau khi hệ thống xử lý thành công, dịch vụ hiển thị tại trang quản lý tương ứng. VPS và Proxy Cloudmini là dịch vụ dùng riêng.
+Nếu đơn còn pending/chưa hoàn thành thì chưa có IP được cấp. Dùng mã đơn hàng để Admin kiểm tra; không yêu cầu IP của đơn chưa hoàn thành. Mã đơn hàng khác mã `Ticket-...` của Page support.

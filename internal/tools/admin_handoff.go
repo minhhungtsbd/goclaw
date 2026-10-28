@@ -61,7 +61,7 @@ func (t *AdminHandoffTool) SetChannelTenantChecker(checker ChannelTenantChecker)
 func (t *AdminHandoffTool) Name() string { return "escalate_to_admin" }
 
 func (t *AdminHandoffTool) Description() string {
-	return "Tạo và gửi yêu cầu xử lý nội bộ đến nhóm Admin đã cấu hình cho agent. Chỉ dùng khi cần Admin hoặc Kỹ thuật thao tác thủ công. Luôn có email tài khoản trong identifiers; nếu liên quan Proxy hoặc VPS thì phải có IP và email, riêng Residential VN dùng hostname *.resvn.net thay cho IP. Summary và identifiers phải viết ngắn gọn bằng tiếng Việt có dấu; không ghi mật khẩu, token, cookie, OTP, API key hoặc chuỗi host:port:user:pass. Tool chỉ gửi handoff đến nhóm Admin; sau khi tool thành công, hãy gộp mã Ticket và xác nhận ngắn gọn vào một response duy nhất gửi khách, không gọi tool hoặc gửi xác nhận riêng lần nữa."
+	return "Tạo và gửi yêu cầu xử lý nội bộ đến nhóm Admin đã cấu hình cho agent. Chỉ dùng khi cần Admin hoặc Kỹ thuật thao tác thủ công. Case dịch vụ hiện có: identifiers phải có email tài khoản; Proxy/VPS còn cần IP, riêng Residential VN dùng hostname *.resvn.net. Đơn hàng pending/chưa cấp IP: đặt case_type=pending_order và order_id=mã đơn hàng; không yêu cầu IP hoặc email nếu khách chưa cung cấp. Summary và identifiers viết ngắn gọn bằng tiếng Việt có dấu; không ghi mật khẩu, token, cookie, OTP, API key hoặc chuỗi host:port:user:pass. Tool chỉ gửi handoff đến nhóm Admin; sau khi tool thành công, hãy gộp mã Ticket và xác nhận ngắn gọn vào một response duy nhất gửi khách."
 }
 
 func (t *AdminHandoffTool) Parameters() map[string]any {
@@ -77,8 +77,14 @@ func (t *AdminHandoffTool) Parameters() map[string]any {
 			"service": map[string]any{
 				"type": "string", "description": "Loại dịch vụ và gói nếu đã xác định, viết bằng tiếng Việt có dấu.",
 			},
+			"case_type": map[string]any{
+				"type": "string", "enum": []string{"service", "pending_order"}, "description": "Dùng pending_order chỉ khi đơn chưa hoàn thành/chưa cấp dịch vụ và có mã đơn hàng; các case khác dùng service hoặc bỏ trống.",
+			},
+			"order_id": map[string]any{
+				"type": "string", "description": "Mã đơn hàng Cloudmini, bắt buộc khi case_type=pending_order. Không dùng mã Ticket-... của Facebook Page support.",
+			},
 			"identifiers": map[string]any{
-				"type": "array", "items": map[string]any{"type": "string"}, "description": "Luôn gồm email tài khoản. Nếu liên quan Proxy/VPS phải gồm IP và email; riêng Residential VN dùng hostname *.resvn.net thay cho IP. Có thể thêm mã đơn khi cần. Không ghi mật khẩu, token, cookie, OTP, API key hoặc chuỗi host:port:user:pass.",
+				"type": "array", "items": map[string]any{"type": "string"}, "description": "Case dịch vụ hiện có: gồm email tài khoản và IP nếu là Proxy/VPS (Residential VN dùng hostname *.resvn.net). Đơn pending: mã đơn lấy từ order_id, email chỉ thêm nếu đã biết. Không ghi mật khẩu, token, cookie, OTP, API key hoặc chuỗi host:port:user:pass.",
 			},
 		},
 		"required": []string{"summary"},
@@ -130,7 +136,27 @@ func (t *AdminHandoffTool) Execute(ctx context.Context, args map[string]any) *Re
 
 	identifiers := stringSlice(args["identifiers"])
 	service := strings.TrimSpace(argString(args, "service"))
-	if err := validateAdminHandoffDetails(service, summary, identifiers); err != nil {
+	caseType := strings.TrimSpace(argString(args, "case_type"))
+	orderID := strings.TrimSpace(argString(args, "order_id"))
+	if caseType != "" && caseType != "service" && caseType != "pending_order" {
+		return ErrorResult("case_type must be service or pending_order")
+	}
+	if caseType == "pending_order" {
+		if !adminHandoffOrderIDPattern.MatchString(orderID) || strings.HasPrefix(strings.ToLower(orderID), "ticket-") {
+			return ErrorResult("pending order handoff requires a valid Cloudmini order_id, not a Facebook support Ticket")
+		}
+		found := false
+		for _, identifier := range identifiers {
+			if strings.TrimSpace(identifier) == orderID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			identifiers = append(identifiers, orderID)
+		}
+	}
+	if err := validateAdminHandoffDetails(caseType, service, summary, identifiers); err != nil {
 		return ErrorResult(err.Error())
 	}
 	handoff := &store.AdminHandoff{
@@ -181,14 +207,18 @@ var (
 	adminHandoffEmailPattern    = regexp.MustCompile(`(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b`)
 	adminHandoffHostnamePattern = regexp.MustCompile(`(?i)\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b`)
 	adminHandoffSecretPattern   = regexp.MustCompile(`(?i)\b(?:password|pass(?:word)?|pwd|otp|token|cookie|api[ _-]?key|private[ _-]?key)\b|\b(?:(?:\d{1,3}\.){3}\d{1,3}|(?:[a-z0-9-]+\.)+[a-z]{2,}):\d{1,5}:[^:\s]+:[^:\s]+`)
+	adminHandoffOrderIDPattern  = regexp.MustCompile(`^#?[A-Za-z0-9][A-Za-z0-9_-]{2,63}$`)
 )
 
-func validateAdminHandoffDetails(service, summary string, identifiers []string) error {
+func validateAdminHandoffDetails(caseType, service, summary string, identifiers []string) error {
 	allDetails := append(append([]string{}, identifiers...), summary)
 	for _, detail := range allDetails {
 		if adminHandoffSecretPattern.MatchString(detail) {
 			return fmt.Errorf("Admin handoff must not contain passwords, OTPs, tokens, cookies, API keys, or Proxy user/password strings; include only the IP/Residential VN hostname and Cloudmini account email")
 		}
+	}
+	if caseType == "pending_order" {
+		return nil
 	}
 	if !containsAdminHandoffEmail(allDetails) {
 		return fmt.Errorf("email tài khoản là bắt buộc khi tạo Admin handoff; hãy xin hoặc dùng email đã có trong cuộc trò chuyện")
